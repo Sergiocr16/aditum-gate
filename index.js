@@ -1,13 +1,49 @@
 const app = require("express")();
 const gpio = require("rpi-gpio");
 const gpiop = require("rpi-gpio").promise;
+const {spawn} = require('child_process');
+let {PythonShell} = require('python-shell')
+const qrCodeReader = true;
+
+
+function runPy(){
+    return new Promise(async function(resolve, reject){
+          let options = {
+          mode: 'text',
+          pythonOptions: ['-u'],
+          scriptPath: './',//Path to your script
+         };
+
+          await PythonShell.run('python_code.py', options, function (err, results) {
+          //On 'results' we get list of strings of all print done in your py scripts sequentially. 
+          if (err) throw err;
+          console.log('results: ');
+          for(let i of results){
+                console.log(i, "---->", typeof i)
+          }
+      resolve(results[1])//I returned only JSON(Stringified) out of all string I got from py script
+     });
+   })
+ } 
+
+function runMainQrCode(){
+    return new Promise(async function(resolve, reject){
+        let r =  await runPy()
+        console.log(JSON.parse(JSON.stringify(r.toString())), "Done...!@")//Approach to parse string to JSON.
+    })
+ }
+
+ if(qrCodeReader==true){
+  runMainQrCode()
+ }
+
+
+
+
 
 const PORT = 8080;
 
 app.listen(PORT, () => console.log(`its alive on https://localhost:${PORT}`));
-
-
-
 
 let gates = [
   { id: 1, status: 0, pin: 7 },
@@ -20,10 +56,17 @@ let gates = [
   { id: 8, status: 0, pin: 22 },
 ];
 
+app.get('/',function(req,res) {
+  var dataToSend;
+ // spawn new child process to call the python script
+ const python = spawn('python', [__dirname + '/python_code.py']);
+  res.sendFile(__dirname + '/index.html');
+});
+
 
 gates.forEach(gate => {
   gpiop
-  .setup(gate.pin, gpiop.DIR_LOW)
+  .setup(gate.pin, gpiop.DIR_OUT)
   .then(() => {
     console.log(`Pin ${gate.pin} apagado.`);
     return gpiop.write(gate.pin, false);
