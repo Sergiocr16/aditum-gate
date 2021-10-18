@@ -26,12 +26,12 @@ args = vars(ap.parse_args())
 vs = VideoStream(src=0).start()  #Uncomment this if you are using Webcam
 
 #vs = VideoStream(usePiCamera=True).start()  # For Pi Camera
-time.sleep(2.0)
+
 csv = open(args['output'], 'w')
 found = set()
 
 while True:
-    time.sleep(1)
+
     frame = vs.read()
     frame = imutils.resize(frame, width=400)
     barcodes = pyzbar.decode(frame)
@@ -40,29 +40,34 @@ while True:
         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
         barcodeData = barcode.data.decode('utf-8')
         barcodeType = barcode.type
-        text = '{} ({})'.format(barcodeData, barcodeType)
-        print (text)
-        cv2.putText(
-            frame,
-            text,
-            (x, y - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0xFF),
-            2,
-            )
+        fullQrText = '{}'.format(barcodeData)
+        print (fullQrText)
+        fullQrTextArray = fullQrText.split("=")
+        if len(fullQrTextArray)==2:
+            aditumData = fullQrTextArray[1]
+            aditumQrVerifying = fullQrTextArray[0]
+            cv2.putText(
+                frame,
+                aditumData,
+                (x, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 0xFF),
+                2,
+                )
 
-        # if the barcode text is currently not in our CSV file, write
-        # the timestamp + barcode to disk and update the set
+            # if the barcode text is currently not in our CSV file, write
+            # the timestamp + barcode to disk and update the set
 
-        if barcodeData not in found:
-            csv.write('{},{}\n'.format(datetime.datetime.now(),
-                      barcodeData))
-            csv.flush()
-            found.add(barcodeData)
-            r = requests.get('http://proxy8.remoteiot.com:30689/openGate/1')  
-            print("encontrado")
-            #cv2.imshow('Aditum QR Reader', frame)
+            if barcodeData not in found:
+                csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeData))
+                csv.flush()
+                found.add(barcodeData)
+                if(aditumQrVerifying=="ADITUMGATE"):
+                  print('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)
+                 # r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)  
+                  print("encontrado")
+                  cv2.imshow('Aditum QR Reader', frame)
     key = cv2.waitKey(1) & 0xFF
 
     # if the `s` key is pressed, break from the loop
