@@ -28,7 +28,7 @@ vs = VideoStream(src=0).start()  #Uncomment this if you are using Webcam
 #vs = VideoStream(usePiCamera=True).start()  # For Pi Camera
 
 csv = open(args['output'], 'w')
-found = set()
+found = ""
 
 while True:
 
@@ -59,15 +59,15 @@ while True:
             # if the barcode text is currently not in our CSV file, write
             # the timestamp + barcode to disk and update the set
 
-            if barcodeData not in found:
+            if barcodeData != found:
                 csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeData))
                 csv.flush()
-                found.add(barcodeData)
+                found = barcodeData
                 if(aditumQrVerifying=="ADITUMGATE"):
                   print('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)
-                 # r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)  
+                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)  
                   print("encontrado")
-                  cv2.imshow('Aditum QR Reader', frame)
+                  #cv2.imshow('Aditum QR Reader', frame)
     key = cv2.waitKey(1) & 0xFF
 
     # if the `s` key is pressed, break from the loop
