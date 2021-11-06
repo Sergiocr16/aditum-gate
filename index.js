@@ -3,7 +3,7 @@ const gpio = require("rpi-gpio");
 const gpiop = require("rpi-gpio").promise;
 const {spawn} = require('child_process');
 let {PythonShell} = require('python-shell')
-const qrCodeReader = true;
+const qrCodeReader = false;
 
 
 function runPy(){
@@ -14,7 +14,7 @@ function runPy(){
           scriptPath: './',//Path to your script
          };
 
-          await PythonShell.run('python_code.py', options, function (err, results) {
+          await PythonShell.run('scanner.py', options, function (err, results) {
           //On 'results' we get list of strings of all print done in your py scripts sequentially. 
           if (err) throw err;
           console.log('results: ');
@@ -69,7 +69,7 @@ gates.forEach(gate => {
   .setup(gate.pin, gpiop.DIR_OUT)
   .then(() => {
     console.log(`Pin ${gate.pin} apagado.`);
-    return gpiop.write(gate.pin, false);
+    return gpiop.write(gate.pin, true);
   })
   .catch((err) => {
     console.log("Error: ", err.toString());
@@ -95,9 +95,14 @@ app.get("/openGate/:id", (req, res) => {
   const { id } = req.params;
   let gate = gates[id - 1];
   gate.status = 1;
-  gpio.write(gate.pin, true, function (err) {
+  gpio.write(gate.pin, false, function (err) {
     if (err) throw err;
-    res.status(200).send({ id: gate.id, status: gate.status });
+    setTimeout(() => {
+    gpio.write(gate.pin, true, function (err) {
+      if (err) throw err;
+      res.status(200).send({ id: gate.id, status: gate.status });
+    });
+   },1000)
   });
 });
 
