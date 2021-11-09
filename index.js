@@ -54,6 +54,8 @@ let gates = [
   { id: 6, status: 0, pin: 16 },
   { id: 7, status: 0, pin: 18 },
   { id: 8, status: 0, pin: 22 },
+  { id: 9, status: 0, pin: 29 },
+  { id: 10, status: 0, pin: 35 },
 ];
 
 app.get('/',function(req,res) {
