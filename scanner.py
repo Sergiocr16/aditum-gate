@@ -25,6 +25,9 @@ args = vars(ap.parse_args())
 
 vsEntry = VideoStream(src=0).start()  #Uncomment this if you are using Webcam
 
+entryDoorId = 1
+exitDoorId = 2
+
 vsExit = VideoStream(src=2).start()
 #vs = VideoStream(usePiCamera=True).start()  # For Pi Camera
 
@@ -65,7 +68,7 @@ while True:
                 found = barcodeData
                 if(aditumQrVerifying=="ADITUMGATE"):
                   print('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)
-                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)  
+                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData+'/'+entryDoorId)  
                   print("encontrado")
                   #cv2.imshow('Aditum QR Reader', frameEntry)
  
@@ -102,7 +105,7 @@ while True:
                 found = barcodeDataExit
                 if(aditumQrVerifying=="ADITUMGATE"):
                   print('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)
-                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)  
+                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData+'/'+exitDoorId)  
                   print("encontrado")
                   #cv2.imshow('Aditum QR Reader', frameExit)
     key = cv2.waitKey(1) & 0xFF
