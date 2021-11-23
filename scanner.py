@@ -24,90 +24,92 @@ ap.add_argument('-o', '--output', type=str, default='barcodes.csv',
 args = vars(ap.parse_args())
 
 vsEntry = VideoStream(src=0).start()  #Uncomment this if you are using Webcam
+entryDoorId = '1'
+exitDoorId = '0'
 
-entryDoorId = 1
-exitDoorId = 2
-
-vsExit = VideoStream(src=2).start()
+if(exitDoorId!='0'):
+    vsExit = VideoStream(src=2).start()
+ 
+if(entryDoorId!='0'):
+    vsExit = VideoStream(src=2).start()
 #vs = VideoStream(usePiCamera=True).start()  # For Pi Camera
 
 csv = open(args['output'], 'w')
 found = ""
 
 while True:
-    frameEntry = vsEntry.read()
-    frameEntry = imutils.resize(frameEntry, width=400)
-    barcodesEntry = pyzbar.decode(frameEntry)
-    for barcode in barcodesEntry:
-        (x, y, w, h) = barcode.rect
-        cv2.rectangle(frameEntry, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
-        barcodeData = barcode.data.decode('utf-8')
-        barcodeType = barcode.type
-        fullQrText = '{}'.format(barcodeData)
-        print (fullQrText)
-        fullQrTextArray = fullQrText.split("=")
-        if len(fullQrTextArray)==2:
-            aditumData = fullQrTextArray[1]
-            aditumQrVerifying = fullQrTextArray[0]
-            cv2.putText(
-                frameEntry,
-                aditumData,
-                (x, y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 0, 0xFF),
-                2,
-                )
+    if(entryDoorId!='0'):
+        frameEntry = vsEntry.read()
+        frameEntry = imutils.resize(frameEntry, width=400)
+        barcodesEntry = pyzbar.decode(frameEntry)
+        for barcode in barcodesEntry:
+            (x, y, w, h) = barcode.rect
+            cv2.rectangle(frameEntry, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
+            barcodeData = barcode.data.decode('utf-8')
+            barcodeType = barcode.type
+            fullQrText = '{}'.format(barcodeData)
+            print (fullQrText)
+            fullQrTextArray = fullQrText.split("=")
+            if len(fullQrTextArray)==2:
+                aditumData = fullQrTextArray[1]
+                aditumQrVerifying = fullQrTextArray[0]
+                cv2.putText(
+                    frameEntry,
+                    aditumData,
+                    (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 0, 0xFF),
+                    2,
+                    )
 
-            # if the barcode text is currently not in our CSV file, write
-            # the timestamp + barcode to disk and update the set
+                # if the barcode text is currently not in our CSV file, write
+                # the timestamp + barcode to disk and update the set
 
-            if barcodeData != found:
-                csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeData))
-                csv.flush()
-                found = barcodeData
-                if(aditumQrVerifying=="ADITUMGATE"):
-                  print('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)
-                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData+'/'+entryDoorId)  
-                  print("encontrado")
-                  #cv2.imshow('Aditum QR Reader', frameEntry)
- 
-    frameExit = vsExit.read()
-    frameExit = imutils.resize(frameExit, width=400)
-    barcodesExit = pyzbar.decode(frameExit)
-    for barcode in barcodesExit:
-        (x, y, w, h) = barcode.rect
-        cv2.rectangle(frameExit, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
-        barcodeDataExit = barcode.data.decode('utf-8')
-        barcodeType = barcode.type
-        fullQrText = '{}'.format(barcodeDataExit)
-        print (fullQrText)
-        fullQrTextArray = fullQrText.split("=")
-        if len(fullQrTextArray)==2:
-            aditumData = fullQrTextArray[1]
-            aditumQrVerifying = fullQrTextArray[0]
-            cv2.putText(
-                frameExit,
-                aditumData,
-                (x, y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 0, 0xFF),
-                2,
-                )
+                if barcodeData != found:
+                    csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeData))
+                    csv.flush()
+                    found = barcodeData
+                    if(aditumQrVerifying=="ADITUMGATE"):
+                        r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+entryDoorId)  
+                        print("encontrado")
+                    #cv2.imshow('Aditum QR Reader', frameEntry)
+    if(exitDoorId!='0'):
+        frameExit = vsExit.read()
+        frameExit = imutils.resize(frameExit, width=400)
+        barcodesExit = pyzbar.decode(frameExit)
+        for barcode in barcodesExit:
+            (x, y, w, h) = barcode.rect
+            cv2.rectangle(frameExit, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
+            barcodeDataExit = barcode.data.decode('utf-8')
+            barcodeType = barcode.type
+            fullQrText = '{}'.format(barcodeDataExit)
+            print (fullQrText)
+            fullQrTextArray = fullQrText.split("=")
+            if len(fullQrTextArray)==2:
+                aditumData = fullQrTextArray[1]
+                aditumQrVerifying = fullQrTextArray[0]
+                cv2.putText(
+                    frameExit,
+                    aditumData,
+                    (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 0, 0xFF),
+                    2,
+                    )
 
-            # if the barcode text is currently not in our CSV file, write
-            # the timestamp + barcode to disk and update the set
+                # if the barcode text is currently not in our CSV file, write
+                # the timestamp + barcode to disk and update the set
 
-            if barcodeDataExit != found:
-                csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeDataExit))
-                csv.flush()
-                found = barcodeDataExit
-                if(aditumQrVerifying=="ADITUMGATE"):
-                  print('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData)
-                  r = requests.get('http://app.aditumcr.com/api/aditum-gate-verifier/'+aditumData+'/'+exitDoorId)  
-                  print("encontrado")
-                  #cv2.imshow('Aditum QR Reader', frameExit)
+                if barcodeDataExit != found:
+                    csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeDataExit))
+                    csv.flush()
+                    found = barcodeDataExit
+                    if(aditumQrVerifying=="ADITUMGATE"):
+                        r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+exitDoorId)  
+                        print("encontrado")
+                    #cv2.imshow('Aditum QR Reader', frameExit)
     key = cv2.waitKey(1) & 0xFF
     # if the `s` key is pressed, break from the loop
 
