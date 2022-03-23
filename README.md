@@ -47,7 +47,7 @@ sudo rm default
 ejecutamos sudo nano express-aditum-gate
 en ese archivo pegamos
 
-
+```
 server {
              listen 80;
         server_name _;
@@ -61,7 +61,7 @@ server {
                  proxy_cache_bypass $http_upgrade;
         }
 }
-
+```
 escribirlo a mano*****
 
 guardamos con ctrl x. , le damos enter 
