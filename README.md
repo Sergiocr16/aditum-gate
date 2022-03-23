@@ -6,12 +6,18 @@ ejecutamos sudo apt-get update
 instalamos en la terminal de raspberry sudo apt-get installl xrdp
 ejecutamos ifconfig en la terminal -> y buscamos wlan0 -> inet adress 
 descargamos remote desktop y en pc name ponemos ese ip y listo.
+sudo connectd_installer
+creamos un nuevo device en https://remoteiot.com/ user partners@aditumcr.com
+y corremos ese comando que nos dan
 
 2. Instalar node en raspberry
 ejecutamos hostname -I para obtener ip de la raspberry
 Conectamos mediante shh la macbook, ejecutando shh pi@ip de la raspberry 
-Instalamos nvm con el comando curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash
-seguido ejecutamos exec bash y luego nvm install 12, y luego nvm use 12
+Instalamos nvm con el comando 
+```curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash```
+seguido ejecutamos 
+```exec bash``` y luego 
+```nvm install 12```, y luego ```nvm use 12```
 Instalamos express 
 npm install express --save
 Instalamos python sudo apt install python3 idle3
