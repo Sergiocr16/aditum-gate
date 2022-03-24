@@ -23,12 +23,12 @@ ap.add_argument('-o', '--output', type=str, default='barcodes.csv',
                 help='path to output CSV file containing barcodes')
 args = vars(ap.parse_args())
 
-vsEntry = VideoStream(src=0).start()  #Uncomment this if you are using Webcam
-entryDoorId = '1'
+#CHANGE TO THE ID OF THE GATE_DOOR IN DB ADITUM
+entryDoorId = '0'
 exitDoorId = '0'
-
+#
 if(exitDoorId!='0'):
-    vsExit = VideoStream(src=2).start()
+    vsExit = VideoStream(src=0).start()
  
 if(entryDoorId!='0'):
     vsExit = VideoStream(src=2).start()
@@ -71,7 +71,7 @@ while True:
                     csv.flush()
                     found = barcodeData
                     if(aditumQrVerifying=="ADITUMGATE"):
-                        r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+entryDoorId)  
+                        r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/'+aditumData+'/'+entryDoorId)  
                         print("encontrado")
                     #cv2.imshow('Aditum QR Reader', frameEntry)
     if(exitDoorId!='0'):
