@@ -89,7 +89,7 @@ y corremos ese comando que nos dan
 
 
 7. QR CODE
-
+pip install numpy --upgrade
 sudo apt-get install libhdf5-dev -y 
 sudo apt-get install libhdf5-serial-dev –y
  sudo apt-get install libatlas-base-dev –y
