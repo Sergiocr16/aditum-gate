@@ -68,7 +68,7 @@ app.get('/',function(req,res) {
 
 gates.forEach(gate => {
   gpiop
-  .setup(gate.pin, gpiop.DIR_OUT)
+  .setup(gate.pin, gpiop.DIR_HIGH)
   .then(() => {
     console.log(`Pin ${gate.pin} apagado.`);
     return gpiop.write(gate.pin, true);
