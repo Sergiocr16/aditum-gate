@@ -45,7 +45,7 @@ while True:
             print("The entry cam got disconected");
             camInfo = 'de Entrada en '+placeName;
             r = requests.get('https://app.aditumcr.com/api/aditum-gate-cam-disconected/'+camInfo) 
-            subprocess.call("sudo reboot",shell=True);
+            # subprocess.call("sudo reboot",shell=True);
         else:    
             frameEntry = imutils.resize(frameEntry, width=400)
             barcodesEntry = pyzbar.decode(frameEntry)
@@ -88,7 +88,7 @@ while True:
             print("The exit cam got disconected");
             camInfo = 'de Salida en '+placeName;
             r = requests.get('https://app.aditumcr.com/api/aditum-gate-cam-disconected/'+camInfo) 
-            subprocess.call("sudo reboot",shell=True);
+            # subprocess.call("sudo reboot",shell=True);
         else:
             frameExit = imutils.resize(frameExit, width=400)
             barcodesExit = pyzbar.decode(frameExit)
