@@ -126,17 +126,18 @@ server {
 ```
 Guardar el archivo presionando Ctrl + X, luego Y para confirmar y presionando Enter.
 
-12. Ejecutar el siguiente comando para verificar que la configuración de Nginx sea correcta:
+12. Eliminar el archivo de configuración predeterminado de Nginx en sites enabled ejecutando el siguiente comando:
  ```
-sudo nginx -t
-```
-13. Dirigirse a la carpeta /etc/nginx/sites-enabled/ y eliminar el archivo de configuración predeterminado de Nginx:
- ```
+ cd /etc/nginx/sites-enabled/
 sudo rm default
 ```
-14. Crear un enlace simbólico al archivo de configuración creado anteriormente ejecutando el siguiente comando:
+13. Crear un enlace simbólico al archivo de configuración creado anteriormente ejecutando el siguiente comando:
  ```
 sudo ln -s /etc/nginx/sites-available/express-aditum-gate /etc/nginx/sites-enabled/express-aditum-gate
+```
+14. Ejecutar el siguiente comando para verificar que la configuración de Nginx sea correcta:
+ ```
+sudo nginx -t
 ```
 15. Reiniciar el servidor Nginx ejecutando el siguiente comando:
  ```
