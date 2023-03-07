@@ -1,3 +1,36 @@
+Instalación de Raspberry Pi
+
+Para instalar Raspbian en una tarjeta micro SD, siga las instrucciones proporcionadas en el sitio web oficial de Raspberry Pi.
+
+Acceso remoto a Raspberry Pi
+
+Para acceder remotamente a Raspberry Pi, siga los siguientes pasos:
+
+Ejecute los siguientes comandos en la terminal de Raspberry Pi:
+sql
+Copy code
+sudo apt-get update
+sudo apt-get install xrdp
+Ejecute ifconfig en la terminal y busque wlan0 -> inet address.
+Descargue Remote Desktop y en el campo PC Name, ingrese la dirección IP obtenida en el paso anterior.
+Para crear un nuevo dispositivo, diríjase a https://remoteiot.com/ y cree una cuenta utilizando partners@aditumcr.com. Luego, siga las instrucciones proporcionadas en el sitio web.
+Instalación de Node.js en Raspberry Pi
+
+Para instalar Node.js en Raspberry Pi, siga los siguientes pasos:
+
+Ejecute el comando hostname -I para obtener la dirección IP de Raspberry Pi.
+Conéctese a la Raspberry Pi mediante SSH en su MacBook ejecutando ssh pi@<dirección IP de Raspberry Pi>.
+Instale nvm ejecutando el comando curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash, seguido de exec bash y nvm install 12.
+Luego, ejecute nvm use 12.
+Instale Express con el comando npm install express --save.
+Instale Python ejecutando sudo apt install python3 idle3.
+Instale Git con el comando sudo apt install git.
+Clone el repositorio ejecutando git clone https://github.com/Sergiocr16/aditum-gate.
+Diríjase al directorio del repositorio y ejecute npm install.
+Para que el servidor se ejecute siempre, ejecute npm -g install pm2, seguido de pm2 start --name aditum-gate index.js y pm2 startup systemd.
+Copie el comando que se muestra en la terminal y péguelo en la terminal.
+Luego, ejecute pm2 save.
+
 # aditum-gate
 Se instala raspberrian en micro sd
 
