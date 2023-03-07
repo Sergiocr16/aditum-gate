@@ -60,6 +60,88 @@ sudo apt install python3 idle3
 
 ## Descarga del repositorio del proyecto y configuración del servidor Node.js
 
+1. Instalar Visual Studio Code y el plugin de SSH Remote.
+2. Conectar a la Raspberry Pi a través de SSH usando la dirección IP y contraseña correspondientes.
+3. Una vez dentro de la Raspberry Pi, dirigirse a la carpeta /home/pi y ejecutar el siguiente comando para instalar Git:
+```
+sudo apt install git
+```
+4. Clonar el repositorio del código ejecutando el siguiente comando:
+ ```
+git clone https://github.com/Sergiocr16/aditum-gate
+```
+5. Acceder a la carpeta del proyecto clonado y ejecutar el siguiente comando para instalar las dependencias:
+ ```
+cd aditum-gate
+npm install
+
+```
+6. Instalar PM2 globalmente mediante el siguiente comando:
+ ```
+npm -g install pm2
+```
+7. Ejecutar el siguiente comando para que el servidor se ejecute en PM2:
+ ```
+pm2 start --name aditum-gate index.js
+```
+8. Ejecutar el siguiente comando para configurar PM2 para que inicie el servidor automáticamente al iniciar la Raspberry Pi:
+ ```
+pm2 startup systemd
+```
+Este comando mostrará un comando similar a este:
+ ```
+sudo env PATH=$PATH:/home/pi/.nvm/versions/node/v12.22.6/bin /home/pi/.nvm/versions/node/v12.22.6/lib/node_modules/pm2/bin/pm2 startup systemd -u pi --hp /home/pi
+```
+Copiar el comando y pegarlo en el terminal, y luego ejecutar el siguiente comando para guardar la configuración de inicio de PM2:
+ ```
+pm2 save
+```
+9. Instalar Nginx mediante el siguiente comando:
+ ```
+sudo apt install nginx
+```
+10. Eliminar el archivo de configuración predeterminado de Nginx ejecutando el siguiente comando:
+ ```
+cd /etc/nginx/sites-available/
+sudo rm default
+```
+11. Crear un nuevo archivo de configuración para el servidor ejecutando el siguiente comando:
+ ```
+sudo nano express-aditum-gate
+```
+Dentro del archivo, escribir el siguiente código a mano
+ ```
+server {
+  listen 80;
+  server_name _;
+  location / {
+    proxy_pass http://localhost:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_cache_bypass $http_upgrade;
+  }
+}
+```
+Guardar el archivo presionando Ctrl + X, luego Y para confirmar y presionando Enter.
+
+12. Ejecutar el siguiente comando para verificar que la configuración de Nginx sea correcta:
+ ```
+sudo nginx -t
+```
+13. Dirigirse a la carpeta /etc/nginx/sites-enabled/ y eliminar el archivo de configuración predeterminado de Nginx:
+ ```
+sudo rm default
+```
+14. Crear un enlace simbólico al archivo de configuración creado anteriormente ejecutando el siguiente comando:
+ ```
+sudo ln -s /etc/nginx/sites-available/express-aditum-gate /etc/nginx/sites-enabled/express-aditum-gate
+```
+15. Reiniciar el servidor Nginx ejecutando el siguiente comando:
+ ```
+sudo systemctl restart nginx
+```
 # aditum-gate
 Se instala raspberrian en micro sd
 
