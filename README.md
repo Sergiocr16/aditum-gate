@@ -142,6 +142,44 @@ sudo ln -s /etc/nginx/sites-available/express-aditum-gate /etc/nginx/sites-enabl
  ```
 sudo systemctl restart nginx
 ```
+
+## Configuración del firewall
+Para agregar un firewall, ejecute los siguientes comandos en el terminal:
+```
+sudo apt install ufw
+sudo ufw allow ssh
+sudo ufw allow 'Nginx HTTP'
+sudo ufw enable
+```
+### Port forwarding
+Para instalar el port forwarding, ejecute el siguiente comando en el terminal:
+```
+sudo apt install connectd
+```
+Después, cree un nuevo dispositivo en https://remoteiot.com/ y copie el comando que se le brinda.
+## Instalación de QR CODE
+Para instalar QR CODE, ejecute los siguientes comandos en el terminal:
+```
+pip install numpy --upgrade
+sudo apt-get install libhdf5-dev -y
+sudo apt-get install libhdf5-serial-dev –y
+sudo apt-get install libatlas-base-dev –y
+sudo apt-get install libjasper-dev -y
+sudo apt-get install libqtgui4 –y
+sudo apt-get install libqt4-test –y
+pip3 install opencv-contrib-python==4.1.0.25
+pip3 install pyzbar
+pip3 install imutils
+pip3 install argparse
+modprobe bcm283
+
+```
+
+
+
+
+
+
 # aditum-gate
 Se instala raspberrian en micro sd
 
