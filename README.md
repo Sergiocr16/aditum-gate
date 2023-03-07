@@ -1,80 +1,64 @@
-aditum-gate
+# aditum-gate
 
-Este es un proyecto que permite el control de acceso a través de una interfaz web. Para su implementación, se requiere instalar Raspberry Pi con Raspbian OS y configurar el acceso remoto y Node.js.
+aditum-gate es un proyecto que permite el control de acceso a través de una interfaz web. Para su implementación, se requiere instalar Raspberry Pi con Raspbian OS y configurar el acceso remoto y Node.js.
 
-Instalación del acceso remoto
+## Instalación del acceso remoto
 
-Actualizar la lista de paquetes:
-sql
-Copy code
+1. Descargue Raspbian OS e instálelo en una tarjeta micro SD.
+2. Actualice la lista de paquetes en la terminal de Raspberry Pi ejecutando el siguiente comando:
+```
 sudo apt-get update
-Instalar XRDP para habilitar el escritorio remoto:
-csharp
-Copy code
+```
+3. Instale XRDP para habilitar el escritorio remoto mediante el siguiente comando:
+```
 sudo apt-get install xrdp
-Ejecutar el comando ifconfig en la terminal de Raspberry y buscar la dirección IP asociada a la interfaz inalámbrica (wlan0) en el campo inet address.
-Descargar un cliente de Escritorio Remoto en tu PC y usar la dirección IP obtenida en el paso anterior como "PC Name" para conectarse al escritorio remoto.
-Ejecutar el siguiente comando para crear un nuevo dispositivo en https://remoteiot.com/:
-Copy code
+```
+4. Ejecute el comando ifconfig en la terminal de Raspberry Pi y busque la dirección IP asociada a la interfaz inalámbrica (wlan0) en el campo inet address.
+
+5. Descargue un cliente de Escritorio Remoto en su PC y use la dirección IP obtenida en el paso anterior como "PC Name" para conectarse al escritorio remoto.
+
+6. Cree un nuevo dispositivo en https://remoteiot.com/ ejecutando el siguiente comando en la terminal de Raspberry Pi:
+```
 sudo connectd_installer
-Luego, ingresar con el correo "partners@aditumcr.com" para obtener un token.
-Instalación de Node.js
+```
+7. Ingrese con el correo "partners@aditumcr.com" para obtener un token.
 
-Obtener la dirección IP de Raspberry ejecutando el siguiente comando en la terminal:
-css
-Copy code
+
+## Instalación de Node.js
+1. Obtenga la dirección IP de Raspberry Pi ejecutando el siguiente comando en la terminal:
+```
 hostname -I
-Conectar a Raspberry a través de SSH desde tu Macbook usando el siguiente comando:
-kotlin
-Copy code
-ssh pi@<IP de Raspberry>
-Instalar NVM (Node Version Manager) mediante el siguiente comando:
-bash
-Copy code
+```
+2. Conéctese a Raspberry Pi a través de SSH desde su Macbook usando el siguiente comando:
+```
+ssh pi@<IP de Raspberry Pi>
+```
+3. Instale NVM (Node Version Manager) mediante el siguiente comando:
+```
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash
-Ejecutar el siguiente comando para habilitar NVM en la sesión actual:
-python
-Copy code
+```
+4. Ejecute el siguiente comando para habilitar NVM en la sesión actual:
+```
 exec bash
-Instalar la versión 12 de Node.js mediante el siguiente comando:
-Copy code
+```
+5. Instale la versión 12 de Node.js mediante el siguiente comando:
+```
 nvm install 12
-Usar la versión 12 de Node.js instalada mediante el siguiente comando:
-perl
-Copy code
+```
+6. Use la versión 12 de Node.js instalada mediante el siguiente comando:
+```
 nvm use 12
-Instalar Express mediante el siguiente comando:
-css
-Copy code
+```
+7. Instale Express mediante el siguiente comando:
+```
 npm install express --save
-Instalar Python 3 mediante el siguiente comando:
-Copy code
+```
+8. Instale Python 3 mediante el siguiente comando:
+```
 sudo apt install python3 idle3
-Descargar el repositorio del proyecto mediante el siguiente comando:
-bash
-Copy code
-git clone https://github.com/Sergiocr16/aditum-gate
-Acceder a la carpeta del proyecto descargado mediante el siguiente comando:
-bash
-Copy code
-cd aditum-gate
-Instalar las dependencias del proyecto mediante el siguiente comando:
-Copy code
-npm install
-Ejecución del servidor Node.js
+```
 
-Instalar PM2 (gestor de procesos Node.js) mediante el siguiente comando:
-Copy code
-npm -g install pm2
-Ejecutar el siguiente comando para iniciar el servidor Node.js con PM2:
-sql
-Copy code
-pm2 start --name aditum-gate index.js
-Ejecutar el siguiente comando para habilitar el inicio automático de PM2 y el servidor Node.js al iniciar Raspberry:
-Copy code
-pm2 startup systemd
-Copiar y pegar el comando que se muestra en la terminal después de ejecutar el comando anterior.
-Ejecutar el siguiente comando para guardar la configuración actual de PM2:
+## Descarga del repositorio del proyecto y configuración del servidor Node.js
 
 # aditum-gate
 Se instala raspberrian en micro sd
