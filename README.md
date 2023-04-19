@@ -168,7 +168,7 @@ sudo apt-get install libatlas-base-dev –y
 sudo apt-get install libjasper-dev -y
 sudo apt-get install libqtgui4 –y
 sudo apt-get install libqt4-test –y
-pip3 install opencv-contrib-python==4.1.0.25
+pip3 install opencv-contrib-python==4.4.0.46
 pip3 install pyzbar
 pip3 install imutils
 pip3 install argparse
