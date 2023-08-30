@@ -26,13 +26,14 @@ args = vars(ap.parse_args())
 #CHANGE TO THE ID OF THE GATE_DOOR IN DB ADITUM
 entryDoorId = '0'
 exitDoorId = '0'
-placeName = 'Test'
+placeName = 'PLACE'
+showCameraFeed = False
 #
 if(exitDoorId!='0'):
     vsExit = VideoStream(src=0).start()
  
 if(entryDoorId!='0'):
-    vsEntry = VideoStream(src=0).start()  
+    vsEntry = VideoStream(src=2).start()  
 #vs = VideoStream(usePiCamera=True).start()  # For Pi Camera
 
 csv = open(args['output'], 'w')
@@ -44,12 +45,14 @@ while True:
         if frameEntry is None: 
             print("The entry cam got disconected");
             camInfo = 'de Entrada en '+placeName;
+            time.sleep(100);
             r = requests.get('https://app.aditumcr.com/api/aditum-gate-cam-disconected/'+camInfo) 
-            # subprocess.call("sudo reboot",shell=True);
+            subprocess.call("sudo reboot",shell=True);
         else:    
             frameEntry = imutils.resize(frameEntry, width=400)
             barcodesEntry = pyzbar.decode(frameEntry)
-            #cv2.imshow('Aditum QR Reader', frameEntry)
+            if showCameraFeed:
+             cv2.imshow('Aditum QR Entry', frameEntry)
             for barcode in barcodesEntry:
                 (x, y, w, h) = barcode.rect
                 cv2.rectangle(frameEntry, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
@@ -75,23 +78,29 @@ while True:
                     # the timestamp + barcode to disk and update the set
                     #cv2.imshow('Aditum QR Reader', frameEntry)
                     if barcodeData != found:
-                        csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeData))
-                        csv.flush()
-                        found = barcodeData
                         if(aditumQrVerifying=="ADITUMGATE"):
-                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/'+aditumData+'/'+entryDoorId)  
-                            print("encontrado")
+                            if "EXIT" in fullQrText:
+                                print("es de salida")
+                            else:
+                              r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/'+aditumData+'/'+entryDoorId)  
+                              print("encontrado")
+                              csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeData))
+                              csv.flush()
+                              found = barcodeData
                     #cv2.imshow('Aditum QR Reader', frameEntry)
     if(exitDoorId!='0'):
         frameExit = vsExit.read()
         if frameExit is None: 
             print("The exit cam got disconected");
             camInfo = 'de Salida en '+placeName;
+            time.sleep(100);
             r = requests.get('https://app.aditumcr.com/api/aditum-gate-cam-disconected/'+camInfo) 
-            # subprocess.call("sudo reboot",shell=True);
+            subprocess.call("sudo reboot",shell=True);
         else:
             frameExit = imutils.resize(frameExit, width=400)
             barcodesExit = pyzbar.decode(frameExit)
+            if showCameraFeed:
+             cv2.imshow('Aditum QR EXIT', frameExit)
             for barcode in barcodesExit:
                 (x, y, w, h) = barcode.rect
                 cv2.rectangle(frameExit, (x, y), (x + w, y + h), (0, 0, 0xFF), 2)
@@ -117,12 +126,15 @@ while True:
                     # the timestamp + barcode to disk and update the set
 
                     if barcodeDataExit != found:
-                        csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeDataExit))
-                        csv.flush()
-                        found = barcodeDataExit
                         if(aditumQrVerifying=="ADITUMGATE"):
-                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+exitDoorId)  
-                            print("encontrado")
+                            if "EXIT" in fullQrText:
+                              r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+exitDoorId)  
+                              print("encontrado")
+                              csv.write('{},{}\n'.format(datetime.datetime.now(),barcodeDataExit))
+                              csv.flush()
+                              found = barcodeDataExit 
+                            else:
+                                print("es de entrada")
                     #cv2.imshow('Aditum QR Reader', frameExit)
     key = cv2.waitKey(1) & 0xFF
     # if the `s` key is pressed, break from the loop
@@ -131,5 +143,6 @@ while True:
         break
 csv.close()
 cv2.destroyAllWindows()
+
 
 
