@@ -51,6 +51,8 @@ nvm use 12
 ```
 7. Instale Express mediante el siguiente comando:
 ```
+sudo apt-get install nodejs npm
+
 npm install express --save
 ```
 8. Instale Python 3 mediante el siguiente comando:
@@ -78,7 +80,7 @@ npm install
 ```
 6. Instalar PM2 globalmente mediante el siguiente comando:
  ```
-npm -g install pm2
+sudo npm -g install pm2
 ```
 7. Ejecutar el siguiente comando para que el servidor se ejecute en PM2:
  ```
@@ -162,12 +164,12 @@ Después, cree un nuevo dispositivo en https://remoteiot.com/ y copie el comando
 Para instalar QR CODE, ejecute los siguientes comandos en el terminal:
 ```
 pip install numpy --upgrade
-sudo apt-get install libhdf5-dev -y
-sudo apt-get install libhdf5-serial-dev –y
-sudo apt-get install libatlas-base-dev –y
-sudo apt-get install libjasper-dev -y
-sudo apt-get install libqtgui4 –y
-sudo apt-get install libqt4-test –y
+sudo apt-get install libhdf5-dev 
+sudo apt-get install libhdf5-serial-dev 
+sudo apt-get install libatlas-base-dev 
+sudo apt-get install libjasper-dev 
+sudo apt-get install libqtgui4 
+sudo apt-get install libqt4-test 
 pip3 install opencv-contrib-python==4.4.0.46
 pip3 install pyzbar
 pip3 install imutils
