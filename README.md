@@ -163,7 +163,7 @@ Después, cree un nuevo dispositivo en https://remoteiot.com/ y copie el comando
 ## Instalación de QR CODE
 Para instalar QR CODE, ejecute los siguientes comandos en el terminal:
 ```
-pip install numpy --upgrade
+pip install numpy==1.25.0
 sudo apt-get install libhdf5-dev 
 sudo apt-get install libhdf5-serial-dev 
 sudo apt-get install libatlas-base-dev 
