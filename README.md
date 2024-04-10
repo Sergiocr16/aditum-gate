@@ -164,13 +164,19 @@ Después, cree un nuevo dispositivo en https://remoteiot.com/ y copie el comando
 ## Instalación de QR CODE
 Para instalar QR CODE, ejecute los siguientes comandos en el terminal:
 ```
-pip install numpy==1.25.0
+sudo apt install python3-venv
+python3 -m venv myenv
+source myenv/bin/activate
+
+
 sudo apt-get install libhdf5-dev 
 sudo apt-get install libhdf5-serial-dev 
 sudo apt-get install libatlas-base-dev 
 sudo apt-get install libjasper-dev 
 sudo apt-get install libqtgui4 
-sudo apt-get install libqt4-test 
+sudo apt-get install libqt4-test
+sudo rm /usr/lib/python3.*/EXTERNALLY-MANAGED
+pip install numpy==1.25.0
 pip3 install opencv-contrib-python==4.4.0.46
 pip3 install pyzbar
 pip3 install imutils
