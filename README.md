@@ -52,6 +52,8 @@ nvm use 12
 ```
 sudo apt-get install nodejs npm
 
+sudo npm install -g npm@7.5.2
+
 npm install express --save
 ```
 8. Instale Python 3 mediante el siguiente comando:
