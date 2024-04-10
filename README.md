@@ -18,11 +18,10 @@ sudo apt-get install xrdp
 5. Descargue un cliente de Escritorio Remoto en su PC y use la dirección IP obtenida en el paso anterior como "PC Name" para conectarse al escritorio remoto.
 
 6. Cree un nuevo dispositivo en https://remoteiot.com/ ejecutando el siguiente comando en la terminal de Raspberry Pi:
-```
-sudo connectd_installer
-```
-7. Ingrese con el correo "partners@aditumcr.com" para obtener un token.
 
+7. Ingrese con el correo "partners@aditumcr.com" para obtener un token.
+8. sudo raspi-config
+Select the 'Advanced options' menu, then 'Wayland', then choose 'X11' and reboot. You can then re-enable VNC and you will have RealVNC working as on previous release of Raspberry Pi OS.
 
 ## Instalación de Node.js
 1. Obtenga la dirección IP de Raspberry Pi ejecutando el siguiente comando en la terminal:
