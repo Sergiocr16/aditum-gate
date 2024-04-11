@@ -34,25 +34,27 @@ ssh pi@<IP de Raspberry Pi>
 ```
 3. Instale NVM (Node Version Manager) mediante el siguiente comando:
 ```
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash
+# installs NVM (Node Version Manager)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+# download and install Node.js
+nvm install 20
+
+# verifies the right Node.js version is in the environment
+node -v # should print `v20.12.2`
+
+# verifies the right NPM version is in the environment
+npm -v # should print `10.5.0`
 ```
 4. Ejecute el siguiente comando para habilitar NVM en la sesión actual:
 ```
 exec bash
 ```
-5. Instale la versión 12 de Node.js mediante el siguiente comando:
-```
-nvm install 12
-```
-6. Use la versión 12 de Node.js instalada mediante el siguiente comando:
-```
-nvm use 12
 ```
 7. Instale Express mediante el siguiente comando:
 ```
 sudo apt-get install nodejs npm
 
-sudo npm install -g npm@7.5.2
 
 npm install express --save
 ```
