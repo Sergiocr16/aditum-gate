@@ -30,11 +30,14 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 nvm install 20
 ```
 ```
+exec bash
+```
+```
 nvm use 20
 ```
 4. Ejecute el siguiente comando para habilitar NVM en la sesión actual:
 ```
-exec bash
+nvm alias default 20
 ```
 
 7. Instale Express mediante el siguiente comando:
