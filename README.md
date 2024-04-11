@@ -9,53 +9,36 @@ aditum-gate es un proyecto que permite el control de acceso a través de una int
 ```
 sudo apt-get update
 ```
-3. Instale XRDP para habilitar el escritorio remoto mediante el siguiente comando:
-```
-sudo apt-get install xrdp
-```
-4. Ejecute el comando ifconfig en la terminal de Raspberry Pi y busque la dirección IP asociada a la interfaz inalámbrica (wlan0) en el campo inet address.
-
-5. Descargue un cliente de Escritorio Remoto en su PC y use la dirección IP obtenida en el paso anterior como "PC Name" para conectarse al escritorio remoto.
 
 6. Cree un nuevo dispositivo en https://remoteiot.com/ ejecutando el siguiente comando en la terminal de Raspberry Pi:
 
 7. Ingrese con el correo "partners@aditumcr.com" para obtener un token.
-8. sudo raspi-config
+
+8. Configurar VNC
+```
+sudo raspi-config
+```
 Select the 'Advanced options' menu, then 'Wayland', then choose 'X11' and reboot. You can then re-enable VNC and you will have RealVNC working as on previous release of Raspberry Pi OS.
 
 ## Instalación de Node.js
-1. Obtenga la dirección IP de Raspberry Pi ejecutando el siguiente comando en la terminal:
-```
-hostname -I
-```
-2. Conéctese a Raspberry Pi a través de SSH desde su Macbook usando el siguiente comando:
-```
-ssh pi@<IP de Raspberry Pi>
-```
+
 3. Instale NVM (Node Version Manager) mediante el siguiente comando:
 ```
-# installs NVM (Node Version Manager)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-
-# download and install Node.js
+```
+```
 nvm install 20
-
-# verifies the right Node.js version is in the environment
-node -v # should print `v20.12.2`
-
-# verifies the right NPM version is in the environment
-npm -v # should print `10.5.0`
+```
+```
+nvm use 20
 ```
 4. Ejecute el siguiente comando para habilitar NVM en la sesión actual:
 ```
 exec bash
 ```
-```
+
 7. Instale Express mediante el siguiente comando:
 ```
-sudo apt-get install nodejs npm
-
-
 npm install express --save
 ```
 8. Instale Python 3 mediante el siguiente comando:
@@ -65,21 +48,19 @@ sudo apt install python3 idle3
 
 ## Descarga del repositorio del proyecto y configuración del servidor Node.js
 
-1. Instalar Visual Studio Code y el plugin de SSH Remote.
-2. Conectar a la Raspberry Pi a través de SSH usando la dirección IP y contraseña correspondientes.
-3. Una vez dentro de la Raspberry Pi, dirigirse a la carpeta /home/pi y ejecutar el siguiente comando para instalar Git:
 ```
 sudo apt install git
 ```
 4. Clonar el repositorio del código ejecutando el siguiente comando:
- ```
+```
 git clone https://github.com/Sergiocr16/aditum-gate
 ```
 5. Acceder a la carpeta del proyecto clonado y ejecutar el siguiente comando para instalar las dependencias:
  ```
 cd aditum-gate
+```
+```
 npm install
-
 ```
 6. Instalar PM2 globalmente mediante el siguiente comando:
  ```
@@ -108,6 +89,8 @@ sudo apt install nginx
 10. Eliminar el archivo de configuración predeterminado de Nginx ejecutando el siguiente comando:
  ```
 cd /etc/nginx/sites-available/
+ ```
+ ```
 sudo rm default
 ```
 11. Crear un nuevo archivo de configuración para el servidor ejecutando el siguiente comando:
@@ -134,6 +117,8 @@ Guardar el archivo presionando Ctrl + X, luego Y para confirmar y presionando En
 12. Eliminar el archivo de configuración predeterminado de Nginx en sites enabled ejecutando el siguiente comando:
  ```
  cd /etc/nginx/sites-enabled/
+ ```
+ ```
 sudo rm default
 ```
 13. Crear un enlace simbólico al archivo de configuración creado anteriormente ejecutando el siguiente comando:
@@ -149,42 +134,42 @@ sudo nginx -t
 sudo systemctl restart nginx
 ```
 
-## Configuración del firewall
-Para agregar un firewall, ejecute los siguientes comandos en el terminal:
-```
-sudo apt install ufw
-sudo ufw allow ssh
-sudo ufw allow 'Nginx HTTP'
-sudo ufw enable
-```
-### Port forwarding
-Para instalar el port forwarding, ejecute el siguiente comando en el terminal:
-```
-sudo apt install connectd
-```
-Después, cree un nuevo dispositivo en https://remoteiot.com/ y copie el comando que se le brinda.
-## Instalación de QR CODE
 Para instalar QR CODE, ejecute los siguientes comandos en el terminal:
 ```
-sudo apt install python3-venv
-python3 -m venv myenv
-source myenv/bin/activate
-
-
-sudo apt-get install libhdf5-dev 
-sudo apt-get install libhdf5-serial-dev 
-sudo apt-get install libatlas-base-dev 
-sudo apt-get install libjasper-dev 
-sudo apt-get install libqtgui4 
-sudo apt-get install libqt4-test
 sudo rm /usr/lib/python3.*/EXTERNALLY-MANAGED
+```
+```
+sudo apt-get install libhdf5-dev
+```
+```
+sudo apt-get install libhdf5-serial-dev 
+```
+```
+sudo apt-get install libatlas-base-dev
+```
+```
+sudo apt-get install libjasper-dev
+```
+```
+sudo apt-get install libqtgui4 
+```
+```
+sudo apt-get install libqt4-test
+```
+```
 pip install numpy==1.25.0
+```
+```
 pip3 install opencv-contrib-python==4.4.0.46
+```
+```
 pip3 install pyzbar
+```
+```
 pip3 install imutils
+```
+```
 pip3 install argparse
-modprobe bcm283
-
 ```
 
 LISTO.
