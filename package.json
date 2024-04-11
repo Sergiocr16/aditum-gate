@@ -11,9 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "epoll": "^4.0.1",
     "express": "^4.17.1",
-    "python-shell": "^3.0.1",
-    "rpi-gpio": "^2.1.7"
+    "python-shell": "^3.0.1"
   }
 }
