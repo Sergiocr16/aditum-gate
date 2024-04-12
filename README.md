@@ -35,6 +35,9 @@ exec bash
 ```
 nvm use 20
 ```
+```
+sudo apt-get install nodejs npm
+```
 4. Ejecute el siguiente comando para habilitar NVM en la sesión actual:
 ```
 nvm alias default 20
