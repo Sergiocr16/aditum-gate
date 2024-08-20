@@ -167,6 +167,8 @@ pip install numpy==1.25.0
 ```
 ```
 pip3 install opencv-contrib-python
+```
+```
 sudo apt install python3-opencv
 ```
 ```
