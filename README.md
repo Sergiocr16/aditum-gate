@@ -166,8 +166,8 @@ sudo apt-get install libqt4-test
 pip install numpy==1.25.0
 ```
 ```
-pip3 install opencv-contrib-python==4.4.0.46
-sudo apt install python3-opencv=4.4.0.4
+pip3 install opencv-contrib-python
+sudo apt install python3-opencv
 ```
 ```
 pip3 install pyzbar
