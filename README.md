@@ -181,6 +181,16 @@ pip3 install imutils
 pip3 install argparse
 ```
 
+16. Para controlar LUZ LED
+```
+sudo pip3 install rpi_ws281x
+```
+```
+sudo pip3 install adafruit-circuitpython-neopixel
+```
+```
+sudo python3 -m pip install --force-reinstall adafruit-blinka
+```
 LISTO.
 
 
