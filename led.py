@@ -27,8 +27,18 @@ def red_for_3_seconds():
     time.sleep(3)
     set_white()
 
+    # Function to turn off all LEDs
+def turn_off():
+    set_color((0, 0, 0))
+
+# Apaga las luces
+#turn_off()
+
 # Start with white color
 set_white()
+
+# Apaga las luces
+turn_off()
 
 # Example usage: Call these functions as needed
 # green_for_3_seconds()
