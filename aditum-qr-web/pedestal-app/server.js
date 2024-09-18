@@ -3,6 +3,8 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const WebSocket = require('ws');
 const { spawn, exec } = require('child_process');
+const http = require('http');
+
 
 const app = express();
 const PORT = 3000;
@@ -28,9 +30,58 @@ function runScreenWeb() {
     });
 }
 
+
+function checkServer(url, timeout = 5000, retries = 5) {
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+
+        const check = () => {
+            http.get(url, (res) => {
+                if (res.statusCode === 200) {
+                    console.log('Server is up and running!');
+                    resolve(true);
+                } else {
+                    console.log(`Server returned status ${res.statusCode}, retrying...`);
+                    retry();
+                }
+            }).on('error', (error) => {
+                console.log(`Error connecting to server: ${error.message}, retrying...`);
+                retry();
+            });
+        };
+
+        const retry = () => {
+            attempts++;
+            if (attempts < retries) {
+                setTimeout(check, timeout);
+            } else {
+                reject(new Error('Server not responding after multiple attempts'));
+            }
+        };
+
+        check();
+    });
+}
+
+
+async function main() {
+    try {
+        await checkServer('http://localhost:4200'); // Check if the Angular server is running
+        console.log('Angular server is ready. Executing your command...');
+        // Execute your desired command here
+        runScreenWeb();
+    } catch (error) {
+        console.error('Failed to connect to server:', error);
+    }
+}
+
+
+
+
+
 const server = app.listen(PORT, () => {
     console.log(`Servidor ejecutándose en el puerto ${PORT}`);
-    runScreenWeb();
+    main();
 });
 
 
