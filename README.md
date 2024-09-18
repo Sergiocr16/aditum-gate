@@ -68,13 +68,34 @@ cd aditum-gate
 ```
 npm install
 ```
+```
+cd aditum-qr-web
+```
+```
+npm install
+```
+```
+cd pedestal-app
+```
+```
+npm install
+```
 6. Instalar PM2 globalmente mediante el siguiente comando:
  ```
 sudo npm -g install pm2
 ```
 7. Ejecutar el siguiente comando para que el servidor se ejecute en PM2:
- ```
+Para aditum-gate
+```
 pm2 start --name aditum-gate index.js
+```
+Para aditum-screen-server
+```
+pm2 start --name aditum-screen-server server.js
+```
+Para aditum-screen-web
+```
+pm2 start --name aditum-screen-web server.js
 ```
 8. Ejecutar el siguiente comando para configurar PM2 para que inicie el servidor automáticamente al iniciar la Raspberry Pi:
  ```
