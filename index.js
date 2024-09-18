@@ -3,10 +3,28 @@ const { spawn, exec } = require('child_process');
 const { PythonShell } = require('python-shell');
 
 const qrCodeReader = true;
+const hasScreen = false;
 
 function runPy() {
     return new Promise((resolve, reject) => {
         exec('sudo python3 scanner.py', { cwd: './' }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                reject(error);
+                return;
+            }
+            if (stderr) {
+                console.error(`stderr: ${stderr}`);
+            }
+            console.log(`stdout: ${stdout}`);
+            resolve(stdout);
+        });
+    });
+}
+
+function runScreenWeb() {
+    return new Promise((resolve, reject) => {
+        exec('chromium-browser --start-fullscreen http://localhost:4200', { cwd: './' }, (error, stdout, stderr) => {
             if (error) {
                 console.error(`exec error: ${error}`);
                 reject(error);
@@ -55,6 +73,9 @@ app.listen(PORT, () => {
     
     if (qrCodeReader) {
         runMainQrCode();
+    }
+    if(hasScreen){
+        runScreenWeb();
     }
     runServerPy();
 });

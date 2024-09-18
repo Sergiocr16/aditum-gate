@@ -18,9 +18,9 @@ export class AppComponent implements OnInit {
   constructor(private webSocketService: WebSocketService) {}
 
   ngOnInit() {
+    window.location.reload();
     this.webSocketService.gateEntry$.subscribe((data: GateEntryDTO) => {
         console.log('GateEntryDTO received:', data);
-
         this.state = data.state ?? 1; // Establece el estado recibido o usa 1 por defecto
         this.name = data.name ?? '';
 
