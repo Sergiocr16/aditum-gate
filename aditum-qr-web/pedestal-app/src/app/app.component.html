@@ -1,3 +1,27 @@
-<div [ngStyle]="{'background-color': getBackgroundColor(state)}">
-  <h1>{{ message }}</h1>
+<div class="body" >
+   <ul class="circles" >
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+    <li></li>
+</ul>
+<div class="border-aditum" [ngStyle]="{'background-color': getBackgroundColor(state)}">
+<div class="logo">
+  <img src="{{clientLogoUrl}}" alt="" width="180">
+   <img src="logo.png" alt="" width="180" class="logo-aditum">
+</div>
+<div class="content">
+  <div>
+  <h1 style="font-size: 70px;" class="roboto-bold nautical-blue-font">PARA INGRESAR</h1>
+  <h2 style="font-size: 45px;margin-top: -30px;" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
+  </div>
+  <img src="welcome.jpeg" alt="" height="500">
+</div>
+</div>
 </div>

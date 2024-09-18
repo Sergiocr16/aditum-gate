@@ -38,18 +38,17 @@ const broadcastState = (data) => {
 
 app.post('/api/code-accepted', (req, res) => {
     const gateEntryDTO = req.body;
-    const waitState = { state: 3, ...gateEntryDTO };
-    broadcastState(waitState);
-        console.log('Sent state 3:', waitState);
-    setTimeout(() => {
+    // const waitState = { state: 3, ...gateEntryDTO };
+    // broadcastState(waitState);
+        // console.log('Sent state 3:', waitState);
+    // setTimeout(() => {
         const newState = { state: 2, ...gateEntryDTO }; 
         broadcastState(newState);
         res.json({ message: 'Código aceptado', state: newState });
-
         setTimeout(() => {
             broadcastState({ state: 1 });
         }, 4000);
-    }, 3000); // Retraso simulado de 3 segundos
+    // }, 3000); // Retraso simulado de 3 segundos
 });
 
 app.post('/api/code-denied', (req, res) => {

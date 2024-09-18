@@ -12,7 +12,8 @@ import { CommonModule } from '@angular/common';
 export class AppComponent implements OnInit {
   state: number = 1; // Estado inicial por defecto
   name: string = '';
-  message: string = 'Por favor coloque el código QR'; // Mensaje por defecto
+  message: string = 'Por favor coloque el código QR'; 
+  clientLogoUrl: string = 'https://res.cloudinary.com/aditum/image/upload/v1501920877/fzncrputkdgm8iasuc3t.jpg';// Mensaje por defecto
 
   constructor(private webSocketService: WebSocketService) {}
 
@@ -50,7 +51,7 @@ export class AppComponent implements OnInit {
   // Método para definir el color de fondo según el estado
   getBackgroundColor(state: number): string {
     switch (state) {
-      case 1: return 'lightgray';
+      case 1: return 'white';
       case 2: return 'green';
       case 3: return 'yellow';
       case 4: return 'red';
