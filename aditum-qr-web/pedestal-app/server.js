@@ -12,7 +12,6 @@ const PORT = 3000;
 app.use(bodyParser.json());
 app.use(cors());
 
-let isServerUp = false;
 let url = "http://localhost:4200";
 
 // Define a function to check the server status
@@ -39,7 +38,7 @@ checkServerStatus();
 
 function runScreenWeb() {
     return new Promise((resolve, reject) => {
-        exec('chromium-browser --start-fullscreen http://localhost:4200', { cwd: './' }, (error, stdout, stderr) => {
+        exec('chromium-browser --start-fullscreen --disable-session-crashed-bubble --incognito http://localhost:4200', { cwd: './' }, (error, stdout, stderr) => {
             if (error) {
                 console.error(`exec error: ${error}`);
                 reject(error);
