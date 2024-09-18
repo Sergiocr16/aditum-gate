@@ -172,13 +172,13 @@ pip3 install opencv-contrib-python
 sudo apt install python3-opencv
 ```
 ```
-pip3 install pyzbar
+sudo pip3 install pyzbar
 ```
 ```
-pip3 install imutils
+sudo pip3 install imutils
 ```
 ```
-pip3 install argparse
+sudo pip3 install argparse
 ```
 
 16. Para controlar LUZ LED
