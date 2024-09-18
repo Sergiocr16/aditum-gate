@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const WebSocket = require('ws');
+const { spawn, exec } = require('child_process');
 
 const app = express();
 const PORT = 3000;
@@ -9,9 +10,31 @@ const PORT = 3000;
 app.use(bodyParser.json());
 app.use(cors());
 
+
+function runScreenWeb() {
+    return new Promise((resolve, reject) => {
+        exec('chromium-browser --start-fullscreen http://localhost:4200', { cwd: './' }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                reject(error);
+                return;
+            }
+            if (stderr) {
+                console.error(`stderr: ${stderr}`);
+            }
+            console.log(`stdout: ${stdout}`);
+            resolve(stdout);
+        });
+    });
+}
+
 const server = app.listen(PORT, () => {
     console.log(`Servidor ejecutándose en el puerto ${PORT}`);
+    runScreenWeb();
 });
+
+
+
 
 const wss = new WebSocket.Server({ server });
 
