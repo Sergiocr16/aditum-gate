@@ -1,6 +1,5 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-
 import requests
 import json
 from imutils.video import VideoStream
@@ -20,9 +19,11 @@ args = vars(ap.parse_args())
 
 # Variables
 doorType = "entry"  # Set this to "exit" or "entry"
-doorId = '1'  # Assign the correct ID based on the type of door
+doorId = '0'  # Assign the correct ID based on the type of door
 placeName = 'PLACE'
-showCameraFeed = False
+showCameraFeed = True
+frame_counter = 0
+process_every_n_frames = 30
 
 # Initialize the camera
 vs = VideoStream(src=0).start()
@@ -41,13 +42,15 @@ def send_to_nodejs(endpoint, data=None):
 
 while True:
     # Read frame from camera
+    frame_counter += 1
     frame = vs.read()
+    if frame_counter % process_every_n_frames != 0:
+        continue
     if frame is None:
-        print(f"The {doorType} cam got disconnected")
-        camInfo = f'{doorType.capitalize()} in {placeName}'
-        time.sleep(100)
-        requests.get(f'https://app.aditumcr.com/api/aditum-gate-cam-disconected/{camInfo}')
-        subprocess.call("sudo reboot", shell=True)
+        print("Intentando reconectar la cámara...")
+        vs.stop()
+        time.sleep(5)  # Espera un tiempo antes de intentar reconectar
+        vs = VideoStream(src=0).start()
     else:
         frame = imutils.resize(frame, width=400)
         barcodes = pyzbar.decode(frame)
