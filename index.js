@@ -22,23 +22,6 @@ function runPy() {
     });
 }
 
-function runScreenWeb() {
-    return new Promise((resolve, reject) => {
-        exec('chromium-browser --start-fullscreen http://localhost:4200', { cwd: './' }, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`exec error: ${error}`);
-                reject(error);
-                return;
-            }
-            if (stderr) {
-                console.error(`stderr: ${stderr}`);
-            }
-            console.log(`stdout: ${stdout}`);
-            resolve(stdout);
-        });
-    });
-}
-
 function runMainQrCode() {
     return new Promise(async function (resolve, reject) {
         let r = await runPy()
@@ -74,9 +57,7 @@ app.listen(PORT, () => {
     if (qrCodeReader) {
         runMainQrCode();
     }
-    if(hasScreen){
-        runScreenWeb();
-    }
+
     runServerPy();
 });
 
