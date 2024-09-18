@@ -95,7 +95,7 @@ pm2 start --name aditum-screen-server server.js
 ```
 Para aditum-screen-web
 ```
-pm2 start --name aditum-screen-web server.js
+pm2 start npm --name aditum-screen-web -- start
 ```
 8. Ejecutar el siguiente comando para configurar PM2 para que inicie el servidor automáticamente al iniciar la Raspberry Pi:
  ```
