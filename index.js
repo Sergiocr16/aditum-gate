@@ -1,26 +1,24 @@
 const app = require("express")();
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const { PythonShell } = require('python-shell');
 
 const qrCodeReader = true;
 
 function runPy() {
-    return new Promise(async function (resolve, reject) {
-        let options = {
-            mode: 'text',
-            pythonOptions: ['-u'],
-            scriptPath: './', // Path to your script
-        };
-
-        await PythonShell.run('scanner.py', options, function (err, results) {
-            if (err) throw err;
-            console.log('results: ');
-            for (let i of results) {
-                console.log(i, "---->", typeof i)
+    return new Promise((resolve, reject) => {
+        exec('sudo python3 scanner.py', { cwd: './' }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                reject(error);
+                return;
             }
-            resolve(results[1])
+            if (stderr) {
+                console.error(`stderr: ${stderr}`);
+            }
+            console.log(`stdout: ${stdout}`);
+            resolve(stdout);
         });
-    })
+    });
 }
 
 function runMainQrCode() {
