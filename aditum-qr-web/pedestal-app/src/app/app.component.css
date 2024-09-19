@@ -150,12 +150,12 @@ h1,h2{
 }
 
 .border-aditum {
-  border: 5px solid #deb66e;
-  height: 1014px;
-  width: 590px;
-  border-radius: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: center;
+    border: 5px solid #deb66e;
+    height: 1145px;
+    width: 845px;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
 }
