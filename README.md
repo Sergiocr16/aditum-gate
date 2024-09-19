@@ -201,6 +201,9 @@ sudo pip3 install imutils
 ```
 sudo pip3 install argparse
 ```
+```
+sudo apt-get install uhubctl
+```
 
 16. Para controlar LUZ LED
 ```
