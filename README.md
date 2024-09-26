@@ -215,6 +215,14 @@ sudo pip3 install adafruit-circuitpython-neopixel
 ```
 sudo python3 -m pip install --force-reinstall adafruit-blinka
 ```
+
+17. Nunca apagar la pantalla
+```
+sudo apt-get install xscreensaver
+```
+Una vez instalado, vaya al "Menú" del escritorio de Rpi (esquina superior izquierda)
+Vaya a preferencias --> salvapantallas.
+Verá un menú principal del protector de pantalla. En el menú desplegable de modo, seleccione "deshabilitar protector de pantalla" y luego cierre la ventana.
 LISTO.
 
 
