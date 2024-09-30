@@ -52,9 +52,9 @@ args = vars(ap.parse_args())
 doorType = "entry"  # Set this to "exit" or "entry"
 doorId = '0'  # Assign the correct ID based on the type of door
 placeName = 'PLACE'
-showCameraFeed = True
+showCameraFeed = False
 frame_counter = 0
-process_every_n_frames = 30
+process_every_n_frames = 1
 
 # Initialize the camera
 vs = VideoStream(src=0).start()
@@ -71,6 +71,17 @@ def send_to_nodejs(endpoint, data=None):
     response = requests.post(url, json=data)
     return response.json()
 
+def restart_camera():
+    try:
+        # Reinicia el bus USB para reconectar la cámara
+        subprocess.call("sudo uhubctl -l 1-1 -a off", shell=True)
+        time.sleep(2)
+        subprocess.call("sudo uhubctl -l 1-1 -a on", shell=True)
+        time.sleep(4)
+        print("Cámara reiniciada.")
+    except Exception as e:
+        print(f"Error reiniciando la cámara: {str(e)}")
+
 while True:
     # Read frame from camera
     frame_counter += 1
@@ -80,8 +91,10 @@ while True:
     if frame is None:
         print("Intentando reconectar la cámara...")
         vs.stop()
-        time.sleep(5)  # Espera un tiempo antes de intentar reconectar
+        time.sleep(1)  # Espera un tiempo antes de intentar reconectar
+        restart_camera();
         vs = VideoStream(src=0).start()
+       
     else:
         frame = imutils.resize(frame, width=400)
         barcodes = pyzbar.decode(frame)

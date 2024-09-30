@@ -1,27 +1,63 @@
-<div class="body" >
-   <ul class="circles" >
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-    <li></li>
-</ul>
-<div class="border-aditum" [ngStyle]="{'background-color': getBackgroundColor(state)}">
-<div class="logo">
-   <img src="{{clientLogoUrl}}" alt="" width="260" height="200">
-   <img src="logo.png" alt="" width="200" height="150" class="logo-aditum">
-</div>
-<div class="content">
-  <div>
-  <h1 style="font-size: 70px;" class="roboto-bold nautical-blue-font">PARA INGRESAR</h1>
-  <h2 style="font-size: 45px;" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
-  </div>
-  <img src="welcome.jpeg" alt="" height="500" width="350" style="margin-bottom: 20px;">
-</div>
-</div>
-</div>
+<div class="body">
+   <ul class="circles">
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+     <li></li>
+   </ul>
+   <div class="border-aditum">
+     <div class="logo">
+       <img src="{{clientLogoUrl}}" alt="" width="260" height="200">
+       <img src="logo.png" alt="" width="200" height="150" class="logo-aditum">
+     </div>
+     <div>
+       <div class="content">
+         <div style="min-height: 320px;">
+            <div *ngIf="state==1 || state==6" class="animate__animated animate__fadeInLeft">
+           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font">PARA INGRESAR</h1>
+           <h2 style="font-size: 50px;padding:10px" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
+            </div>
+            <div *ngIf="state==2" class="animate__animated animate__bounceIn">
+               <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font">¡HOLA, {{name}}!</h1>
+               <h2 style="font-size: 50px;padding:10px" class="roboto-regular nautical-blue-font">Bienvenido, ingrese por favor.</h2>
+            </div>
+            <div *ngIf="state==4" class="animate__animated animate__bounceIn">
+              <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font">¡Código denegado!</h1>
+              <h2 style="font-size: 50px;padding:10px" class="roboto-regular nautical-blue-font">El código es inválido o ya no está vigente.</h2>
+           </div>
+         </div>
+         <div style="min-height: 550px">
+         <div *ngIf="state==6" class="animate__animated animate__bounceInUp"> 
+            <div class="center">
+               <div class="square" style="position: relative;display: flex;align-items: center;justify-content: center;">
+                  <img src="qr-code.jpeg" alt="" height="400" width="500">
+                 <div class="scan" style="position: absolute;top:0">
+                 </div>
+               </div>
+             </div>
+         </div>
+         <div *ngIf="state==2" class="animate__animated animate__zoomInDown"> 
+            <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+               <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
+               <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+           </svg>
+          </div>
+        <div *ngIf="state==4" class="animate__animated animate__bounceIn"> 
+          <svg class="xmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+            <path class="xmark__x" fill="none" d="M37 37 L17 17 M37 17 L17 37"/>
+        </svg>        
+         </div>
+         <div *ngIf="state==1"class="animate__animated animate__fadeInRight" > 
+          <img src="welcome.jpeg" alt="" height="500" width="350" style="margin-bottom: 20px;">
+         </div>
+        </div>
+       </div>
+     </div>
+   </div>
+ </div>

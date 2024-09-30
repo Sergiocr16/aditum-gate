@@ -47,7 +47,22 @@ app.post('/api/code-accepted', (req, res) => {
         res.json({ message: 'Código aceptado', state: newState });
         setTimeout(() => {
             broadcastState({ state: 1 });
-        }, 4000);
+        }, 5000);
+    // }, 3000); // Retraso simulado de 3 segundos
+});
+
+app.post('/api/loading', (req, res) => {
+    const gateEntryDTO = req.body;
+    // const waitState = { state: 3, ...gateEntryDTO };
+    // broadcastState(waitState);
+        // console.log('Sent state 3:', waitState);
+    // setTimeout(() => {
+        const newState = { state: 6, ...gateEntryDTO }; 
+        broadcastState(newState);
+        res.json({ message: 'Cargando', state: newState });
+        // setTimeout(() => {
+        //     broadcastState({ state: 1 });
+        // }, 4000);
     // }, 3000); // Retraso simulado de 3 segundos
 });
 
@@ -58,7 +73,7 @@ app.post('/api/code-denied', (req, res) => {
     res.json({ message: 'Código no leído', state: newState });
     setTimeout(() => {
         broadcastState({ state: 1 }); // Regresa al estado 1 después de 2 segundos
-    }, 2000);
+    }, 4000);
 });
 
 app.post('/api/wait-for-response', (req, res) => {
