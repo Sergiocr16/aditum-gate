@@ -3,14 +3,14 @@
 body {
     margin: 0;
     padding: 0;
-    width: 845px;
-    height: 1145px;
+    width: 600px;
+    height: 950px;
     display: flex;
     transform: rotate(270deg);
     background: black;
     position: absolute;
     top: -136px;
-    left: 148px;
+    left: 180px;
     overflow: hidden;
 }
 

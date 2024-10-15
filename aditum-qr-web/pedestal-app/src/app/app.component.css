@@ -142,24 +142,22 @@ h1,h2{
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
 }
 
 .border-aditum {
     border: 5px solid #deb66e;
-    height: 1145px;
-    width: 845px;
+    height: 1013px;
+    background: white;
+    width: 590px;
     border-radius: 20px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     align-items: center;
-    background-color: white;
 }
 
 
-i
-{
+i{
   position: absolute;
   top: 50%;
   left: 50%;
@@ -168,8 +166,8 @@ i
 
 .square
 {
-  width: 600px;
-  height: 500px;
+  width: 400px;
+  height: 400px;
   background: transparent;
   border: 5px solid #deb76e;
   border-radius: 20px;
@@ -200,14 +198,14 @@ i
 }
 
 .checkmark {
-    width: 500px;
-    height: 400px;
+    width: 430px;
+    height: 430px;
+    margin-top:-40px;
     border-radius: 50%;
     display: block;
     stroke-width: 5;
     stroke: #fff;
     stroke-miterlimit: 10;
-    margin: 10% auto;
     box-shadow: inset 0px 0px 0px #7ac142;
     animation: fill .4s ease-in-out .4s forwards, scale .3s ease-in-out .9s both;
 }
@@ -241,14 +239,14 @@ i
 }
 
 .xmark {
-    width: 500px;
-    height: 400px;
+    width: 430px;
+    height: 430px;
+    margin-top:-10px;
     border-radius: 50%;
     display: block;
     stroke-width: 5;
     stroke: white;
     stroke-miterlimit: 10;
-    margin: 10% auto;
     box-shadow: inset 0px 0px 0px rgb(170, 11, 11);
     animation: x-fill .1s ease-in-out .1s forwards, scale .1s ease-in-out .9s both;
     background: rgb(170, 11, 11); /* Set background color to red */
@@ -283,3 +281,21 @@ i
         box-shadow: inset 0px 0px 0px 400px rgb(170, 11, 11);
     }
 }
+
+
+/* HTML: <div class="loader"></div> */
+.loader {
+    width: 250px;
+    --b: 28px; 
+    aspect-ratio: 1;
+    border-radius: 50%;
+    padding: 1px;
+    background: conic-gradient(#0000 10%,#f96e03) content-box;
+    -webkit-mask:
+      repeating-conic-gradient(#0000 0deg,#000 1deg 20deg,#0000 21deg 36deg),
+      radial-gradient(farthest-side,#0000 calc(100% - var(--b) - 1px),#000 calc(100% - var(--b)));
+    -webkit-mask-composite: destination-in;
+            mask-composite: intersect;
+    animation:l4 1s infinite steps(10);
+  }
+  @keyframes l4 {to{transform: rotate(1turn)}}

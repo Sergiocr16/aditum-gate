@@ -13,30 +13,36 @@
    </ul>
    <div class="border-aditum">
      <div class="logo">
-       <img src="{{clientLogoUrl}}" alt="" width="260" height="200">
-       <img src="logo.png" alt="" width="200" height="150" class="logo-aditum">
+       <img src="{{clientLogoUrl}}" alt="" width="200" height="200">
+       <img src="logo.png" alt="" width="180" height="180" class="logo-aditum">
      </div>
      <div>
        <div class="content">
-         <div style="min-height: 320px;">
+         <div style="min-height: 300px;">
             <div *ngIf="state==1 || state==6" class="animate__animated animate__fadeInLeft">
-           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font">PARA INGRESAR</h1>
-           <h2 style="font-size: 50px;padding:10px" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
+           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='ENTRY'">PARA INGRESAR</h1>
+           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='EXIT'">PARA SALIR</h1>
+           <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
             </div>
             <div *ngIf="state==2" class="animate__animated animate__bounceIn">
-               <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font">¡HOLA, {{name}}!</h1>
-               <h2 style="font-size: 50px;padding:10px" class="roboto-regular nautical-blue-font">Bienvenido, ingrese por favor.</h2>
+               <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">¡<span *ngIf="doorType=='ENTRY'">Hola</span><span *ngIf="doorType=='EXIT'">Adiós</span>, {{name}}!</h1>
+               <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font" *ngIf="doorType=='ENTRY'">Bienvenido, ingrese por favor.</h2>
+               <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font" *ngIf="doorType=='EXIT'">Puede salir, maneja con cuidado.</h2>
             </div>
             <div *ngIf="state==4" class="animate__animated animate__bounceIn">
-              <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font">¡Código denegado!</h1>
-              <h2 style="font-size: 50px;padding:10px" class="roboto-regular nautical-blue-font">El código es inválido o ya no está vigente.</h2>
+              <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">¡Código denegado!</h1>
+              <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">El código es inválido o ya no está vigente.</h2>
            </div>
+           <div *ngIf="state==3" class="animate__animated animate__bounceIn">
+            <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">Por favor espere</h1>
+            <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">El oficial está en proceso de autorizarlo.</h2>
+         </div>
          </div>
          <div style="min-height: 550px">
          <div *ngIf="state==6" class="animate__animated animate__bounceInUp"> 
             <div class="center">
                <div class="square" style="position: relative;display: flex;align-items: center;justify-content: center;">
-                  <img src="qr-code.jpeg" alt="" height="400" width="500">
+                  <img src="qr-code.jpeg" alt="" height="350">
                  <div class="scan" style="position: absolute;top:0">
                  </div>
                </div>
@@ -54,7 +60,10 @@
         </svg>        
          </div>
          <div *ngIf="state==1"class="animate__animated animate__fadeInRight" > 
-          <img src="welcome.jpeg" alt="" height="500" width="350" style="margin-bottom: 20px;">
+          <img src="welcome.jpeg" alt="" height="490"  style="margin-top: -40px;">
+         </div>
+         <div *ngIf="state==3"class="animate__animated animate__flipInY" > 
+          <div class="loader"></div>
          </div>
         </div>
        </div>

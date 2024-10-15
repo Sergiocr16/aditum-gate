@@ -12,6 +12,7 @@ import { CommonModule } from '@angular/common';
 export class AppComponent implements OnInit {
   state: number = 1; // Estado inicial por defecto
   name: string = '';
+  doorType: string = 'EXIT'; // ENTRY = entrada, EXIT = salida
   clientLogoUrl: string = 'https://res.cloudinary.com/aditum/image/upload/v1501920877/fzncrputkdgm8iasuc3t.jpg';// Mensaje por defecto
 
   constructor(private webSocketService: WebSocketService) {}
