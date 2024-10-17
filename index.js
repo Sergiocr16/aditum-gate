@@ -30,23 +30,20 @@ function runMainQrCode() {
 }
 
 async function runServerPy() {
-    let r = await new Promise(function (resolve, reject) {
-        let options = {
-            mode: 'text',
-            pythonOptions: ['-u'],
-            scriptPath: './', // Path to your script
-        };
-
-        PythonShell.run('serverGPIO.py', options, function (err, results) {
-            if (err) throw err;
-            console.log('results: ');
-            for (let i of results) {
-                console.log(i, "---->", typeof i)
+    return new Promise((resolve, reject) => {
+        exec('sudo python3 serverGPIO.py', { cwd: './' }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                reject(error);
+                return;
             }
-            resolve(results[1])
+            if (stderr) {
+                console.error(`stderr: ${stderr}`);
+            }
+            console.log(`stdout: ${stdout}`);
+            resolve(stdout);
         });
     });
-    console.log(JSON.parse(JSON.stringify(r.toString())), "Done...!@");
 }
 
 const PORT = 7777;

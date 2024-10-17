@@ -10,8 +10,9 @@ body {
     background: black;
     position: absolute;
     top: -136px;
-    left: 180px;
+    left: 175px;
     overflow: hidden;
+    cursor: none;
 }
 
 .roboto-thin {
