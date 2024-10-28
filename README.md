@@ -228,14 +228,15 @@ Verá un menú principal del protector de pantalla. En el menú desplegable de m
 LISTO.
 
 ## Configuración
-En aditum-gate/serverGPIO.py si es un raspberry que controla un pedestal entonces:
+
+####En aditum-gate/serverGPIO.py si es un raspberry que controla un pedestal entonces:
 'isScreen = True;'
 Si es un raspberry que controla los relays entonces
 'isScreen = False;'
 
 
-En aditum-gate/scanner.py
-# Variables
+####En aditum-gate/scanner.py
+Variables
 doorType = "entry"  # Set this to "exit" or "entry"
 doorId = '0'  # Assign the correct ID based on the type of door
 placeName = 'Test'
