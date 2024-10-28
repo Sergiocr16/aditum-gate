@@ -112,7 +112,7 @@ while True:
                             r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+doorId)
                             time.sleep(5)
                             found = barcodeData
-                        elif doorType == "entry":
+                        elif "EXIT" not in fullQrText and doorType == "entry":
                             loading()
                             print("Processing entry...")
                             r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/'+aditumData+'/'+doorId)
