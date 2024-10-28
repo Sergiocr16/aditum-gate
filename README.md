@@ -229,17 +229,16 @@ LISTO.
 
 ## Configuración
 
-####En aditum-gate/serverGPIO.py si es un raspberry que controla un pedestal entonces:
-'isScreen = True;'
+En aditum-gate/serverGPIO.py si es un raspberry que controla un pedestal entonces:
+ 'isScreen = True;'
 Si es un raspberry que controla los relays entonces
-'isScreen = False;'
+ 'isScreen = False;'
 
 
-####En aditum-gate/scanner.py
-Variables
-doorType = "entry"  # Set this to "exit" or "entry"
-doorId = '0'  # Assign the correct ID based on the type of door
-placeName = 'Test'
+En aditum-gate/scanner.py
+ doorType = "entry"  # Set this to "exit" or "entry"
+ doorId = '0'  # Assign the correct ID based on the type of door
+ placeName = 'Test'
 
 En aditum-qr-web/pedestal-app/src/app/app.component.ts
 Definir en la pantalla de pedestal si es de entrada o de salida y el logo del cliente
