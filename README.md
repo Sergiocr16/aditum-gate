@@ -216,7 +216,7 @@ sudo pip3 install adafruit-circuitpython-neopixel
 sudo python3 -m pip install --force-reinstall adafruit-blinka
 ```
 
-Los puertos de la led se conectan en tierra y el 4to de la derecha para el controlador, luego el 5v de la led va al toma junto con otro tierra que va al otro extremo del toma.
+Los puertos de la led se conectan en tierra y el 6to de la derecha para el controlador, luego el 5v de la led va al toma junto con otro tierra que va al otro extremo del toma.
 
 17. Nunca apagar la pantalla
 ```
