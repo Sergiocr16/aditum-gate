@@ -12,6 +12,7 @@ import cv2
 import subprocess
 
 
+
 # Argument parser for output file
 ap = argparse.ArgumentParser()
 ap.add_argument('-o', '--output', type=str, default='barcodes.csv',
@@ -21,14 +22,14 @@ args = vars(ap.parse_args())
 # Variables
 doorType = "entry"  # Set this to "exit" or "entry"
 doorId = '0'  # Assign the correct ID based on the type of door
-placeName = 'PLACE'
+placeName = 'Test'
 showCameraFeed = False
 frame_counter = 0
 process_every_n_frames = 1
 
 # Initialize the camera
 vs = VideoStream(src=0).start()
-csv = open(args['output'], 'w')
+#csv = open(args['output'], 'w')
 found = ""
 
 def send_request(endpoint, data):
@@ -40,6 +41,17 @@ def send_to_nodejs(endpoint, data=None):
     url = f'http://localhost:3000/{endpoint}'
     response = requests.post(url, json=data)
     return response.json()
+    
+def loading():
+    url = f'http://localhost:3000/api/loading'
+    response = requests.post(url,json={"name":"loading"})
+    return response
+    
+def denied():
+    #url = f'http://localhost:3000/api/code-denied'
+    #response = requests.post(url,json={"name":"denied"})
+    #time.sleep(3)
+    return "a"
 
 def restart_camera():
     try:
@@ -95,30 +107,20 @@ while True:
                 if barcodeData != found:
                     if aditumQrVerifying == "ADITUMGATE":
                         if "EXIT" in fullQrText and doorType == "exit":
+                            loading()
                             print("Processing exit...")
-                            r = requests.get(f'https://app.aditumcr.com/api/aditum-gate-verifier-exit/{aditumData}/{doorId}')
-                            csv.write('{},{}\n'.format(datetime.datetime.now(), barcodeData))
-                            csv.flush()
+                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+doorId)
+                            time.sleep(5)
                             found = barcodeData
                         elif doorType == "entry":
+                            loading()
                             print("Processing entry...")
-                            validation_response = send_request(f'aditum-gate-verifier-entry/{aditumData}/{doorId}', {})
-                            if validation_response.get('isAutorized') == 'true':
-                                print("Autorizado")
-                                nodejs_response = send_to_nodejs('api/code-accepted', {
-                                    'name': validation_response.get('name'),
-                                    'isAutorized': validation_response.get('isAutorized'),
-                                    'isAutomatic': validation_response.get('isAutomatic')
-                                })
-                                print("Estado enviado a Node.js:", nodejs_response)
-                                csv.write('{},{}\n'.format(datetime.datetime.now(), barcodeData))
-                                csv.flush()
-                                found = barcodeData
-                            else:
-                                print("No autorizado")
-                                denial_response = send_to_nodejs('api/code-denied')
-                                print("Estado de denegación enviado a Node.js:", denial_response)
-
+                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/'+aditumData+'/'+doorId)
+                            time.sleep(5)
+                            found = barcodeData
+                        else:
+                            print("No autorizado")
+                            denied()
     # Exit the loop if 's' is pressed
     key = cv2.waitKey(1) & 0xFF
     if key == ord('s'):

@@ -31,18 +31,31 @@ function runMainQrCode() {
 
 async function runServerPy() {
     return new Promise((resolve, reject) => {
+
         exec('sudo python3 serverGPIO.py', { cwd: './' }, (error, stdout, stderr) => {
+
             if (error) {
+
                 console.error(`exec error: ${error}`);
+
                 reject(error);
+
                 return;
+
             }
+
             if (stderr) {
+
                 console.error(`stderr: ${stderr}`);
+
             }
+
             console.log(`stdout: ${stdout}`);
+
             resolve(stdout);
+
         });
+
     });
 }
 

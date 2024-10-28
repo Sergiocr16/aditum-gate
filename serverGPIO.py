@@ -10,7 +10,7 @@ import board
 import neopixel
 import threading
 
-isScreen = True
+isScreen = True;
 blinking = False
 # Initialize the NeoPixel strip
 # GPIO Data Pin: D18, Number of LEDs: 55, Brightness: 1
