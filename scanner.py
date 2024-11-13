@@ -22,8 +22,9 @@ args = vars(ap.parse_args())
 # Variables
 doorType = "entry"  # Set this to "exit" or "entry"
 doorId = '0'  # Assign the correct ID based on the type of door
-placeName = 'Test'
+placeName = 'NAME'
 showCameraFeed = False
+hasScreen = False
 frame_counter = 0
 process_every_n_frames = 1
 
@@ -38,14 +39,16 @@ def send_request(endpoint, data):
     return response.json()
 
 def send_to_nodejs(endpoint, data=None):
-    url = f'http://localhost:3000/{endpoint}'
-    response = requests.post(url, json=data)
-    return response.json()
+    if hasScreen:
+        url = f'http://localhost:3000/{endpoint}'
+        response = requests.post(url, json=data)
+        return response.json()
     
 def loading():
-    url = f'http://localhost:3000/api/loading'
-    response = requests.post(url,json={"name":"loading"})
-    return response
+    if hasScreen:
+        url = f'http://localhost:3000/api/loading'
+        response = requests.post(url,json={"name":"loading"})
+        return response
     
 def denied():
     #url = f'http://localhost:3000/api/code-denied'
@@ -106,16 +109,23 @@ while True:
                 )
                 if barcodeData != found:
                     if aditumQrVerifying == "ADITUMGATE":
-                        if "EXIT" in fullQrText and doorType == "exit":
-                            loading()
-                            print("Processing exit...")
-                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/'+aditumData+'/'+doorId)
-                            time.sleep(5)
-                            found = barcodeData
-                        elif "EXIT" not in fullQrText and doorType == "entry":
+                        if doorType == "exit":
+                            if "EXIT" in fullQrText:
+                                loading()
+                                print("Processing exit...")
+                                r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + '/' + doorId)
+                                time.sleep(5)
+                                found = barcodeData
+                            else:
+                                loading()
+                                print("Processing exit (no EXIT in QR)...")
+                                r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + '/' + doorId)
+                                time.sleep(5)
+                                found = barcodeData
+                        elif doorType == "entry":
                             loading()
                             print("Processing entry...")
-                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/'+aditumData+'/'+doorId)
+                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-entry/' + aditumData + '/' + doorId)
                             time.sleep(5)
                             found = barcodeData
                         else:
