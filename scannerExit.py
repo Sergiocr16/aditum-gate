@@ -14,7 +14,7 @@ ap.add_argument('-o', '--output', type=str, default='barcodes.csv',
 args = vars(ap.parse_args())
 
 # Variables
-doorType = "entry"  # Set this to "exit" or "entry"
+doorType = "exit"  # Set this to "exit" or "entry"
 doorId = '250'  # Assign the correct ID based on the type of door
 placeName = 'Entrada Name'
 showCameraFeed = True
@@ -23,7 +23,7 @@ process_every_n_frames = 1
 last_barcode_text = "Esperando QR..."  # Variable para almacenar el último texto leído
 
 # Initialize the camera
-vs = cv2.VideoCapture(0, cv2.CAP_V4L2)
+vs = cv2.VideoCapture(2, cv2.CAP_V4L2)
 
 vs.set(cv2.CAP_PROP_FPS, 60)  # Configurar FPS de la cámara
 vs.set(cv2.CAP_PROP_FRAME_WIDTH, 480)  # Ancho de video

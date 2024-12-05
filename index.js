@@ -1,13 +1,15 @@
 const app = require("express")();
-const { spawn, exec } = require('child_process');
-const { PythonShell } = require('python-shell');
+const { exec } = require('child_process');
 
 const qrCodeReader = true;
 const hasScreen = false;
 
-function runPy() {
+// Simulación de variable para verificar si hay dos cámaras
+const hasTwoCameras = true; // Cambia a `false` si solo hay una cámara
+
+function runPy(script) {
     return new Promise((resolve, reject) => {
-        exec('sudo python3 scanner.py', { cwd: './' }, (error, stdout, stderr) => {
+        exec(`sudo python3 ${script}`, { cwd: './' }, (error, stdout, stderr) => {
             if (error) {
                 console.error(`exec error: ${error}`);
                 reject(error);
@@ -16,7 +18,7 @@ function runPy() {
             if (stderr) {
                 console.error(`stderr: ${stderr}`);
             }
-            console.log(`stdout: ${stdout}`);
+            console.log(`stdout (${script}): ${stdout}`);
             resolve(stdout);
         });
     });
@@ -24,56 +26,55 @@ function runPy() {
 
 function runMainQrCode() {
     return new Promise(async function (resolve, reject) {
-        let r = await runPy()
-        console.log(JSON.parse(JSON.stringify(r.toString())), "Done...!@")
-    })
+        try {
+            if (hasTwoCameras) {
+                // Ejecutar ambos scripts si hay dos cámaras
+                await runPy('scanner.py');
+                await runPy('scannerExit.py');
+            } else {
+                // Ejecutar solo scanner.py si no hay dos cámaras
+                await runPy('scanner.py');
+            }
+            resolve("Scripts ejecutados correctamente.");
+        } catch (error) {
+            reject(error);
+        }
+    });
 }
 
 async function runServerPy() {
     return new Promise((resolve, reject) => {
-
         exec('sudo python3 serverGPIO.py', { cwd: './' }, (error, stdout, stderr) => {
-
             if (error) {
-
                 console.error(`exec error: ${error}`);
-
                 reject(error);
-
                 return;
-
             }
-
             if (stderr) {
-
                 console.error(`stderr: ${stderr}`);
-
             }
-
-            console.log(`stdout: ${stdout}`);
-
+            console.log(`stdout (serverGPIO.py): ${stdout}`);
             resolve(stdout);
-
         });
-
     });
 }
 
 const PORT = 7777;
 
 app.listen(PORT, () => {
-    console.log(`its alive on https://localhost:${PORT}`);
+    console.log(`Server is running on https://localhost:${PORT}`);
     
     if (qrCodeReader) {
-        runMainQrCode();
+        runMainQrCode()
+            .then((message) => console.log(message))
+            .catch((error) => console.error("Error ejecutando scripts:", error));
     }
 
-    runServerPy();
+    runServerPy()
+        .then((message) => console.log("Servidor GPIO ejecutado:", message))
+        .catch((error) => console.error("Error ejecutando serverGPIO.py:", error));
 });
 
 app.get('/', function (req, res) {
-    var dataToSend;
-    // spawn new child process to call the python script
-    const python = spawn('python', [__dirname + '/python_code.py']);
     res.sendFile(__dirname + '/index.html');
 });
