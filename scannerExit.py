@@ -18,6 +18,7 @@ doorType = "exit"  # Set this to "exit" or "entry"
 doorId = '250'  # Assign the correct ID based on the type of door
 placeName = 'Entrada Name'
 showCameraFeed = True
+hasScreen = False  # Set this to True if there is a screen
 frame_counter = 0
 process_every_n_frames = 1
 last_barcode_text = "Esperando QR..."  # Variable para almacenar el último texto leído
@@ -38,17 +39,19 @@ def send_request(endpoint, data):
     return response.json()
 
 def send_to_nodejs(endpoint, data=None):
-    url = f'http://localhost:3000/{endpoint}'
-    response = requests.post(url, json=data)
-    return response.json()
+    if hasScreen:  # Evitar enviar solicitudes si no hay pantalla
+        url = f'http://localhost:3000/{endpoint}'
+        response = requests.post(url, json=data)
+        return response.json()
 
 def loading():
-    url = f'http://localhost:3000/api/loading'
-    response = requests.post(url, json={"name": "loading"})
-    return response
+    if hasScreen:  # Evitar enviar solicitudes si no hay pantalla
+        url = f'http://localhost:3000/api/loading'
+        response = requests.post(url, json={"name": "loading"})
+        return response
 
 def denied():
-    return "a"
+    return "Acceso denegado"
 
 def restart_camera():
     try:
