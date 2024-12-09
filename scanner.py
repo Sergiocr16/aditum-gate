@@ -14,9 +14,9 @@ ap.add_argument('-o', '--output', type=str, default='barcodes.csv',
 args = vars(ap.parse_args())
 
 # Variables
-doorType = "entry"  # Set this to "exit" or "entry"
-doorId = '250'  # Assign the correct ID based on the type of door
-placeName = 'Entrada Name'
+doorType = "exit"  # Set this to "exit" or "entry"
+doorId = '0'  # Assign the correct ID based on the type of door
+placeName = 'Name'
 showCameraFeed = True
 hasScreen = False  # Set this to True if there is a screen
 frame_counter = 0
@@ -124,17 +124,24 @@ while True:
             )
             if barcodeData != found:
                 if aditumQrVerifying == "ADITUMGATE":
-                    if "EXIT" in barcodeData and doorType == "exit":
-                        loading()
-                        print("Processing exit...")
-                        r = requests.get('https://caseta.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + '/' + doorId)
-                        time.sleep(1)
-                        found = barcodeData
-                    elif "EXIT" not in barcodeData and doorType == "entry":
+                    if doorType == "exit":
+                        if "EXIT" in barcodeData:
+                            loading()
+                            print("Processing exit...")
+                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + '/' + doorId)
+                            time.sleep(3)
+                            found = barcodeData
+                        else:
+                            loading()
+                            print("Processing exit (no EXIT in QR)...")
+                            r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + 'ENTRY/' + doorId)
+                            time.sleep(3)
+                            found = barcodeData
+                    elif doorType == "entry":
                         loading()
                         print("Processing entry...")
                         r = requests.get('https://caseta.aditumcr.com/api/aditum-gate-verifier-entry/' + aditumData + '/' + doorId)
-                        time.sleep(1)
+                        time.sleep(3)
                         found = barcodeData
                     else:
                         print("No autorizado")
@@ -148,3 +155,4 @@ while True:
 # Liberar recursos
 vs.release()
 cv2.destroyAllWindows()
+
