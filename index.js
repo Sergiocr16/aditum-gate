@@ -28,9 +28,12 @@ function runMainQrCode() {
     return new Promise(async function (resolve, reject) {
         try {
             if (hasTwoCameras) {
-                // Ejecutar ambos scripts si hay dos cámaras
-                await runPy('scanner.py');
-                await runPy('scannerExit.py');
+                   // Ejecutar ambos scripts en paralelo
+              const [result1, result2] = await Promise.all([
+                runPy('scanner.py'),
+                runPy('scannerExit.py')
+              ]);
+            console.log("Resultados:", result1, result2);
             } else {
                 // Ejecutar solo scanner.py si no hay dos cámaras
                 await runPy('scanner.py');
