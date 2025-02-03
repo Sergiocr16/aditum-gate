@@ -205,7 +205,8 @@ En este caso es un @ , cada vez que lea el @ ejecutará la lectura
 ![IMG_4928](https://github.com/user-attachments/assets/e39e7731-7b37-42bd-b7aa-887dd9d907b7)
 
 -Codigo Hex Para el sufijo @ es 99 40
- 2 veces 9
+
+2 veces 9
  ![IMG_4929](https://github.com/user-attachments/assets/ba37595a-54c0-4031-a5c4-8e32dabd8385)
  40
  ![IMG_4930](https://github.com/user-attachments/assets/6ae4057e-897f-42cb-89c7-17ede227af7d)
