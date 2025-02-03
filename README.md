@@ -60,6 +60,8 @@ sudo apt install git
 4. Clonar el repositorio del código ejecutando el siguiente comando:
 ```
 git clone https://github.com/Sergiocr16/aditum-gate
+git checkout qr-readers
+git pull origin
 ```
 5. Acceder a la carpeta del proyecto clonado y ejecutar el siguiente comando para instalar las dependencias:
  ```
@@ -139,47 +141,79 @@ sudo nginx -t
  ```
 sudo systemctl restart nginx
 ```
+16. Librerias para que los lectores QR funcionen correctamente
+ ```
+sudo pip3 install evdev
+```
+18. Para controlar LUZ LED
+```
+sudo pip3 install rpi_ws281x
+```
+```
+sudo pip3 install adafruit-circuitpython-neopixel
+```
+```
+sudo python3 -m pip install --force-reinstall adafruit-blinka
+```
 
-Para instalar QR CODE, ejecute los siguientes comandos en el terminal:
+Los puertos de la led se conectan en tierra y el 6to de la derecha para el controlador, luego el 5v de la led va al toma junto con otro tierra que va al otro extremo del toma.
+
+19. Nunca apagar la pantalla
 ```
-sudo rm /usr/lib/python3.*/EXTERNALLY-MANAGED
+sudo apt-get install xscreensaver
 ```
+Una vez instalado, vaya al "Menú" del escritorio de Rpi (esquina superior izquierda)
+Vaya a preferencias --> salvapantallas.
+Verá un menú principal del protector de pantalla. En el menú desplegable de modo, seleccione "deshabilitar protector de pantalla" y luego cierre la ventana.
+LISTO.
+
+## Configuración
+
+En aditum-gate/serverGPIO.py si es un raspberry que controla un pedestal entonces:
 ```
-sudo apt-get install libhdf5-dev
+ 'isScreen = True;'
 ```
+Si es un raspberry que controla los relays entonces
+ 'isScreen = False;'
+
+
+En aditum-gate/scanner.py
 ```
-sudo apt-get install libhdf5-serial-dev 
+ doorType = "entry"  # Set this to "exit" or "entry"
+ doorId = '0'  # Assign the correct ID based on the type of door
+ placeName = 'Test'
+ ```
+
+En aditum-qr-web/pedestal-app/src/app/app.component.ts
+Definir en la pantalla de pedestal si es de entrada o de salida y el logo del cliente
 ```
+  doorType: string = 'EXIT'; // ENTRY = entrada, EXIT = salida
+  clientLogoUrl: string = 'https://res.cloudinary.com/aditum/image/upload/v1501920877/fzncrputkdgm8iasuc3t.jpg';// Mensaje por defecto
 ```
-sudo apt-get install libatlas-base-dev
-```
-```
-sudo apt-get install libjasper-dev
-```
-```
-sudo apt-get install libqtgui4 
-```
-```
-sudo apt-get install libqt4-test
-```
-```
-pip install numpy==1.25.0
-```
-```
-pip3 install opencv-contrib-python
-```
-```
-sudo apt install python3-opencv
-```
-```
-pip3 install pyzbar
-```
-```
-pip3 install imutils
-```
-```
-pip3 install argparse
-```
+
+## Configuración lectores QR
+
+Para configurar los lectores debe de por cada uno escanearse los siguientes códigos
+#Modo lectura continua
+![IMG_4926](https://github.com/user-attachments/assets/61b9e8fd-4ada-4b6d-94ec-8b3d92aeeed6)
+
+#Agregar sufijo personalizado
+En este caso es un @ , cada vez que lea el @ ejecutará la lectura 
+-Habilitar los sufijos personalizados
+![IMG_4927](https://github.com/user-attachments/assets/846fb310-255d-46f1-913e-e44ef3c76cba)
+- Establecer sufijo personalizado
+![IMG_4928](https://github.com/user-attachments/assets/e39e7731-7b37-42bd-b7aa-887dd9d907b7)
+
+-Codigo Hex Para el sufijo @ es 99 40
+ 2 veces 9
+ ![IMG_4929](https://github.com/user-attachments/assets/ba37595a-54c0-4031-a5c4-8e32dabd8385)
+ 40
+ ![IMG_4930](https://github.com/user-attachments/assets/6ae4057e-897f-42cb-89c7-17ede227af7d)
+ ![IMG_4931](https://github.com/user-attachments/assets/a7b5ea92-b9bd-4fd1-8ca4-71c6dd5a45a6)
+
+-Esperar 2 segundos cada vez que lea un código
+![IMG_4932](https://github.com/user-attachments/assets/261ec1de-e5f8-4ad1-8a21-a9657055d3a9)
+
 
 LISTO.
 
