@@ -24,15 +24,16 @@ def send_to_nodejs(endpoint, data=None):
         return response.json()
 
 def loading():
-   try:
-        print("LOADING")
-        url = f'http://localhost:3000/api/loading'
-        response = requests.post(url, json={"name": "loading"})
-        response.raise_for_status()
-        return response
-   except requests.exceptions.RequestException as e:
-        print("Error en la solicitud de loading:", str(e))
-        return None
+   if hasScreen:
+    try:
+            print("LOADING")
+            url = f'http://localhost:3000/api/loading'
+            response = requests.post(url, json={"name": "loading"})
+            response.raise_for_status()
+            return response
+    except requests.exceptions.RequestException as e:
+            print("Error en la solicitud de loading:", str(e))
+            return None
 
 def denied():
     return "Acceso denegado"
