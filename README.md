@@ -198,9 +198,10 @@ Para configurar los lectores debe de por cada uno escanearse los siguientes cód
 
 
 Verificar el puerto del lector
-
+ ```
+sudo apt install evtest -y
 sudo evtest
-
+ ```
 
 LISTO.
 
