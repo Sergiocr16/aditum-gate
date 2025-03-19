@@ -216,6 +216,11 @@ En este caso es un @ , cada vez que lea el @ ejecutará la lectura
 ![IMG_4932](https://github.com/user-attachments/assets/261ec1de-e5f8-4ad1-8a21-a9657055d3a9)
 
 
+Verificar el puerto del lector
+
+sudo evtest
+
+
 LISTO.
 
 
