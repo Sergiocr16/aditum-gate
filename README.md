@@ -194,26 +194,7 @@ Definir en la pantalla de pedestal si es de entrada o de salida y el logo del cl
 ## Configuración lectores QR
 
 Para configurar los lectores debe de por cada uno escanearse los siguientes códigos
-#Modo lectura continua
-![IMG_4926](https://github.com/user-attachments/assets/61b9e8fd-4ada-4b6d-94ec-8b3d92aeeed6)
-
-#Agregar sufijo personalizado
-En este caso es un @ , cada vez que lea el @ ejecutará la lectura 
--Habilitar los sufijos personalizados
-![IMG_4927](https://github.com/user-attachments/assets/846fb310-255d-46f1-913e-e44ef3c76cba)
-- Establecer sufijo personalizado
-![IMG_4928](https://github.com/user-attachments/assets/e39e7731-7b37-42bd-b7aa-887dd9d907b7)
-
--Codigo Hex Para el sufijo @ es 99 40
-
-2 veces 9
- ![IMG_4929](https://github.com/user-attachments/assets/ba37595a-54c0-4031-a5c4-8e32dabd8385)
- 40
- ![IMG_4930](https://github.com/user-attachments/assets/6ae4057e-897f-42cb-89c7-17ede227af7d)
- ![IMG_4931](https://github.com/user-attachments/assets/a7b5ea92-b9bd-4fd1-8ca4-71c6dd5a45a6)
-
--Esperar 2 segundos cada vez que lea un código
-![IMG_4932](https://github.com/user-attachments/assets/261ec1de-e5f8-4ad1-8a21-a9657055d3a9)
+[FS-200-2D-AO-SC-1007-XB-7120.pdf](https://github.com/user-attachments/files/19348415/FS-200-2D-AO-SC-1007-XB-7120.pdf)
 
 
 Verificar el puerto del lector
