@@ -9,6 +9,7 @@ import requests
 import board
 import neopixel
 import threading
+import subprocess
 
 isScreen = True;
 blinking = False
@@ -108,6 +109,15 @@ def send_to_nodejs(endpoint, data=None):
 @app.route('/gateStatus')
 def gate_status():
     return jsonify(gates)
+
+@app.route('/restart', methods=['GET'])
+def restart():
+    try:
+        subprocess.Popen(['sudo', 'reboot'])
+        return jsonify({"status": "restarting"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/gateStatus/<int:id>')
 def gate_status_id(id):
