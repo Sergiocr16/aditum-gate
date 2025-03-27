@@ -5,6 +5,7 @@ from flask import Flask, jsonify
 import RPi.GPIO as GPIO
 import time
 import os
+import subprocess
 
 app = Flask(__name__)
 
@@ -33,6 +34,15 @@ STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static'))
 @app.route('/',defaults={'file': 'index.html'})
 def index():
     return app.send_directory(STATIC_DIR,'index.html')
+
+@app.route('/restart', methods=['GET'])
+def restart():
+    try:
+        subprocess.Popen(['sudo', 'reboot'])
+        return jsonify({"status": "restarting"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/gateStatus')
 def gate_status():
