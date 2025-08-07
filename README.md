@@ -202,7 +202,10 @@ Verificar el puerto del lector
 sudo apt install evtest -y
 sudo evtest
  ```
-
+o usando 
+ ```
+grep -E "Handlers|Name" /proc/bus/input/devices
+ ```
 LISTO.
 
 
