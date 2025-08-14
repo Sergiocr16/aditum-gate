@@ -20,6 +20,18 @@ sudo raspi-config
 ```
 Select the 'Advanced options' menu, then 'Wayland', then choose 'X11' and reboot. You can then re-enable VNC and you will have RealVNC working as on previous release of Raspberry Pi OS.
 
+#### Instalacion de raspi-connect
+```
+sudo apt install rpi-connect
+```
+```
+rpi-connect on
+```
+```
+rpi-connect signin
+```
+
+
 ## Instalación de Node.js
 
 3. Instale NVM (Node Version Manager) mediante el siguiente comando:
