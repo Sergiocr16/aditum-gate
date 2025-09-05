@@ -7,8 +7,39 @@ import time
 doorType = "exit"  # Set this to "exit" or "entry"
 doorId = '0'  # Assign the correct ID based on the type of door
 placeName = 'Name'
-hasScreen = True
+hasScreen = False
 found = ""
+DEVICE_NAME = "Newtologic  4010E"  #TMC HIDKeyBoard # <- Nombre (o parte) del dispositivo a buscar
+
+# Función para obtener /dev/input/eventX por nombre (sin evtest)
+def find_device_path_by_name(device_name: str):
+    wanted = (device_name or "").lower()
+    try:
+        with open("/proc/bus/input/devices", "r") as f:
+            lines = f.readlines()
+    except Exception as e:
+        print(f"Error al leer /proc/bus/input/devices: {e}")
+        return None
+
+    current_name = None
+    current_handlers = None
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith("N: Name="):
+            current_name = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("H: Handlers="):
+            current_handlers = line.split("=", 1)[1].strip()
+        elif line == "":
+            if current_name and current_handlers:
+                candidate = (current_name or "").lower()
+                if wanted and wanted in candidate:
+                    for token in current_handlers.split():
+                        if token.startswith("event"):
+                            return f"/dev/input/{token}"
+            current_name = None
+            current_handlers = None
+    return None
 
 # Funciones
 def send_request(endpoint, data):
@@ -34,8 +65,19 @@ def loading():
             print("Error en la solicitud de loading:", str(e))
             return None
 
-def denied():
-    return "Acceso denegado"
+def denied(data=None):
+    print("Acceso denegado")
+    if not hasScreen:
+        return None
+    payload = data or {}
+    payload.setdefault("doorType", doorType)
+    payload.setdefault("doorId", doorId)
+    payload.setdefault("placeName", placeName)
+    try:
+        return send_to_nodejs("api/code-denied", payload)
+    except requests.exceptions.RequestException as e:
+        print("Error al enviar code-denied a Node:", str(e))
+        return None
 
 def read_events(device_path):
     dev = evdev.InputDevice(device_path)
@@ -83,7 +125,9 @@ def read_events(device_path):
                     return current_text
 
 def keylogger(device_path='/dev/input/event0'):
-    return read_events(device_path)
+    # Resolver automáticamente el device_path por nombre; si no se encuentra, usar el parámetro por defecto
+    resolved = find_device_path_by_name(DEVICE_NAME) or device_path
+    return read_events(resolved)
 
 def procesar_texto(texto):
     texto = texto.strip()
@@ -107,6 +151,12 @@ def procesar_texto(texto):
                 denied()
         else:
             print("Código QR inválido")
+            denied()
+    else:
+        # Si no trae "=", y NO incluye ADITUMGATE, negar acceso
+        if "ADITUMGATE" not in texto:
+            print("Código QR inválido")
+            denied()
 
 # Bucle principal
 while True:
