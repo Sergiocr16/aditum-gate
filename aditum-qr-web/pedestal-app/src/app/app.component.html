@@ -20,9 +20,9 @@
        <div class="content">
          <div style="min-height: 300px;">
             <div *ngIf="state==1 || state==6" class="animate__animated animate__fadeInLeft">
-           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='ENTRY'">PARA INGRESAR</h1>
+           <h1 style="font-size: 75px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='ENTRY'">PARA INGRESAR</h1>
            <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='EXIT'">PARA SALIR</h1>
-           <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
+           <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">Muestre el qr del celular en el lector</h2>
             </div>
             <div *ngIf="state==2" class="animate__animated animate__bounceIn">
                <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">¡<span *ngIf="doorType=='ENTRY'">Hola</span><span *ngIf="doorType=='EXIT'">Adiós</span>, {{name}}!</h1>
@@ -39,7 +39,7 @@
          </div>
          </div>
          <div style="min-height: 550px">
-         <div *ngIf="state==6" class="animate__animated animate__bounceInUp"> 
+         <div *ngIf="state==6" class="animate__animated animate__bounceInUp">
             <div class="center">
                <div class="square" style="position: relative;display: flex;align-items: center;justify-content: center;">
                   <img src="qr-code.jpeg" alt="" height="350">
@@ -48,21 +48,21 @@
                </div>
              </div>
          </div>
-         <div *ngIf="state==2" class="animate__animated animate__zoomInDown"> 
+         <div *ngIf="state==2" class="animate__animated animate__zoomInDown">
             <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
                <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
                <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
            </svg>
           </div>
-        <div *ngIf="state==4" class="animate__animated animate__bounceIn"> 
+        <div *ngIf="state==4" class="animate__animated animate__bounceIn">
           <svg class="xmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
             <path class="xmark__x" fill="none" d="M37 37 L17 17 M37 17 L17 37"/>
-        </svg>        
+        </svg>
          </div>
-         <div *ngIf="state==1"class="animate__animated animate__fadeInRight" > 
+         <div *ngIf="state==1"class="animate__animated animate__fadeInRight" >
           <img src="welcome.jpeg" alt="" height="490"  style="margin-top: -40px;">
          </div>
-         <div *ngIf="state==3"class="animate__animated animate__flipInY" > 
+         <div *ngIf="state==3"class="animate__animated animate__flipInY" >
           <div class="loader"></div>
          </div>
         </div>
