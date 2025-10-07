@@ -218,6 +218,10 @@ o usando
  ```
 grep -E "Handlers|Name" /proc/bus/input/devices
  ```
+Instalar rpi-connect
+ ```
+rpi-connect signin
+ ```
 LISTO.
 
 
