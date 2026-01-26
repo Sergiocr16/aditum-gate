@@ -9,8 +9,11 @@ import requests
 import board
 import neopixel
 import threading
+from config_manager import get_config
 
-isScreen = True;
+# Initialize configuration
+config = get_config()
+isScreen = config['hardware']['isScreen']
 blinking = False
 # Initialize the NeoPixel strip
 # GPIO Data Pin: D18, Number of LEDs: 55, Brightness: 1

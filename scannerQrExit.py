@@ -2,36 +2,42 @@ import evdev
 from evdev import ecodes, categorize
 import requests
 import time
+from config_manager import get_config
 
-# Variables
-doorType = "exit"  # Set this to "exit" or "entry"
-doorId = '0'  # Assign the correct ID based on the type of door
-placeName = 'Name'
-hasScreen = True
+# Initialize configuration
+config = get_config()
+doorType = config['door']['doorType']
+doorId = config['door']['doorId']
+placeName = config['door']['placeName']
+hasScreen = config['hardware']['hasScreen']
 
 found = ""
 
 # Funciones
 def send_request(endpoint, data):
-    url = f'https://app.aditumcr.com/api/{endpoint}'
+    config = get_config()
+    base_url = config['api']['baseUrl']
+    url = f'{base_url}/{endpoint}'
     response = requests.post(url, json=data)
     return response.json()
 
 def send_to_nodejs(endpoint, data=None):
-    if hasScreen:  # Evitar enviar solicitudes si no hay pantalla
+    config = get_config()
+    if config['hardware']['hasScreen']:  # Evitar enviar solicitudes si no hay pantalla
         url = f'http://localhost:3000/{endpoint}'
         response = requests.post(url, json=data)
         return response.json()
 
 def loading():
-   if hasScreen:
-    try:
+    config = get_config()
+    if config['hardware']['hasScreen']:
+        try:
             print("LOADING")
             url = f'http://localhost:3000/api/loading'
             response = requests.post(url, json={"name": "loading"})
             response.raise_for_status()
             return response
-    except requests.exceptions.RequestException as e:
+        except requests.exceptions.RequestException as e:
             print("Error en la solicitud de loading:", str(e))
             return None
 
@@ -116,29 +122,34 @@ def procesar_texto(texto):
 
         # Si el código empieza con "ADITUMGATE", se verifica
         if aditumQrVerifying == "ADITUMGATE":
-            if doorType == "exit":
+            config = get_config()
+            door_type = config['door']['doorType']
+            door_id = config['door']['doorId']
+            base_url = config['api']['baseUrl']
+            
+            if door_type == "exit":
                 if "EXIT" in fullQrTextArray:
                     loading()
                     print("Processing exit...")
-                    r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + '/' + doorId)
+                    r = requests.get(f'{base_url}/aditum-gate-verifier-exit/{aditumData}/{door_id}')
                     time.sleep(3)
                     found = fullQrTextArray
                 else:
                     loading()
                     print("Processing exit (no EXIT in QR)...")
-                    r = requests.get('https://app.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + 'ENTRY/' + doorId)
+                    r = requests.get(f'{base_url}/aditum-gate-verifier-exit/{aditumData}ENTRY/{door_id}')
                     time.sleep(3)
                     found = fullQrTextArray
-            elif doorType == "entry":
+            elif door_type == "entry":
                 try:
                     loading()
                     print("Processing entry F...")
-                    print("URL:", f'https://app.aditumcr.com/api/aditum-gate-verifier-entry/{aditumData}/{doorId}')
-                    r = requests.get(f'https://app.aditumcr.com/api/aditum-gate-verifier-entry/{aditumData}/{doorId}')
+                    print("URL:", f'{base_url}/aditum-gate-verifier-entry/{aditumData}/{door_id}')
+                    r = requests.get(f'{base_url}/aditum-gate-verifier-entry/{aditumData}/{door_id}')
                     print("Response Status Code:", r.status_code)
                     print("Response Content:", r.text)
                 except requests.exceptions.RequestException as e:
-                    print("Error en la solicitud:", str)
+                    print("Error en la solicitud:", str(e))
             else:
                 print("No autorizado")
                 denied()

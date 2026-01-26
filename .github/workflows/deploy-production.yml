@@ -1,0 +1,53 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch: # Permite ejecutar manualmente
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.PROD_DEPLOY_PATH || '/home/pi/aditum-gate' }}
+            
+            echo "🔄 Pulling latest code from production branch..."
+            git fetch origin
+            git checkout production
+            git pull origin production
+            
+            echo "📦 Installing/updating dependencies..."
+            npm install
+            
+            echo "📦 Installing Python dependencies..."
+            pip3 install evdev requests --quiet || true
+            
+            echo "🔄 Restarting PM2 services..."
+            pm2 restart aditum-gate || pm2 start --name aditum-gate index.js
+            pm2 save
+            
+            echo "✅ Deployment to production completed successfully!"
+            
+      - name: Deployment Status
+        run: |
+          echo "🚀 Code has been deployed to production environment"
+          echo "Branch: production"
+          echo "Time: $(date)"

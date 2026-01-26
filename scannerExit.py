@@ -6,6 +6,7 @@ import argparse
 import time
 import cv2
 import subprocess
+from config_manager import get_config
 
 # Argument parser for output file
 ap = argparse.ArgumentParser()
@@ -13,12 +14,13 @@ ap.add_argument('-o', '--output', type=str, default='barcodes.csv',
                 help='path to output CSV file containing barcodes')
 args = vars(ap.parse_args())
 
-# Variables
-doorType = "exit"  # Set this to "exit" or "entry"
-doorId = '250'  # Assign the correct ID based on the type of door
-placeName = 'Entrada Name'
-showCameraFeed = True
-hasScreen = False  # Set this to True if there is a screen
+# Initialize configuration
+config = get_config()
+doorType = config['door']['doorType']
+doorId = config['door']['doorId']
+placeName = config['door']['placeName']
+showCameraFeed = config['display']['showCameraFeed']
+hasScreen = config['hardware']['hasScreen']
 frame_counter = 0
 process_every_n_frames = 1
 last_barcode_text = "Esperando QR..."  # Variable para almacenar el último texto leído
@@ -34,18 +36,22 @@ found = ""
 
 # Funciones
 def send_request(endpoint, data):
-    url = f'https://caseta.aditumcr.com/api/{endpoint}'
+    config = get_config()
+    base_url = config['api']['baseUrl']
+    url = f'{base_url}/{endpoint}'
     response = requests.post(url, json=data)
     return response.json()
 
 def send_to_nodejs(endpoint, data=None):
-    if hasScreen:  # Evitar enviar solicitudes si no hay pantalla
+    config = get_config()
+    if config['hardware']['hasScreen']:  # Evitar enviar solicitudes si no hay pantalla
         url = f'http://localhost:3000/{endpoint}'
         response = requests.post(url, json=data)
         return response.json()
 
 def loading():
-    if hasScreen:  # Evitar enviar solicitudes si no hay pantalla
+    config = get_config()
+    if config['hardware']['hasScreen']:  # Evitar enviar solicitudes si no hay pantalla
         url = f'http://localhost:3000/api/loading'
         response = requests.post(url, json={"name": "loading"})
         return response
@@ -124,16 +130,21 @@ while True:
             )
             if barcodeData != found:
                 if aditumQrVerifying == "ADITUMGATE":
-                    if "EXIT" in barcodeData and doorType == "exit":
+                    config = get_config()
+                    door_type = config['door']['doorType']
+                    door_id = config['door']['doorId']
+                    base_url = config['api']['baseUrl']
+                    
+                    if "EXIT" in barcodeData and door_type == "exit":
                         loading()
                         print("Processing exit...")
-                        r = requests.get('https://caseta.aditumcr.com/api/aditum-gate-verifier-exit/' + aditumData + '/' + doorId)
+                        r = requests.get(f'{base_url}/aditum-gate-verifier-exit/{aditumData}/{door_id}')
                         time.sleep(1)
                         found = barcodeData
-                    elif "EXIT" not in barcodeData and doorType == "entry":
+                    elif "EXIT" not in barcodeData and door_type == "entry":
                         loading()
                         print("Processing entry...")
-                        r = requests.get('https://caseta.aditumcr.com/api/aditum-gate-verifier-entry/' + aditumData + '/' + doorId)
+                        r = requests.get(f'{base_url}/aditum-gate-verifier-entry/{aditumData}/{door_id}')
                         time.sleep(1)
                         found = barcodeData
                     else:

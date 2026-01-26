@@ -4,8 +4,12 @@ const cors = require('cors');
 const WebSocket = require('ws');
 const http = require('http');
 const { spawn, exec } = require('child_process');
+const path = require('path');
+const configManager = require(path.join(__dirname, '..', 'config-manager'));
 
-const app = express();
+// Initialize configuration
+configManager.initConfig();
+
 const PORT = 3000;
 
 app.use(bodyParser.json());
@@ -79,6 +83,12 @@ const broadcastState = (data) => {
         }
     });
 };
+
+// Endpoint to serve configuration to Angular app
+app.get('/api/config', (req, res) => {
+    const currentConfig = configManager.getConfig();
+    res.json(currentConfig);
+});
 
 app.post('/api/code-accepted', (req, res) => {
     const gateEntryDTO = req.body;

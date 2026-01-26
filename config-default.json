@@ -1,0 +1,30 @@
+{
+  "device": {
+    "deviceId": "DEVICE-001",
+    "deviceName": "Default Device",
+    "scannerType": "qr",
+    "scannerScript": "scannerQr.py"
+  },
+  "hardware": {
+    "hasScreen": true,
+    "hasTwoCameras": true,
+    "isScreen": true,
+    "deviceName": "Newtologic  4010E"
+  },
+  "door": {
+    "doorType": "entry",
+    "doorId": "0",
+    "placeName": "Name"
+  },
+  "display": {
+    "clientLogoUrl": "https://res.cloudinary.com/aditum/image/upload/v1501920877/fzncrputkdgm8iasuc3t.jpg",
+    "showCameraFeed": true
+  },
+  "api": {
+    "baseUrl": "https://app.aditumcr.com/api"
+  },
+  "polling": {
+    "intervalSeconds": 30,
+    "enabled": true
+  }
+}

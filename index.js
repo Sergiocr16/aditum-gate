@@ -1,11 +1,14 @@
 const app = require("express")();
 const { exec } = require('child_process');
+const configManager = require('./config-manager');
 
-const qrCodeReader = true;
-const hasScreen = false;
+// Initialize configuration
+configManager.initConfig();
+const config = configManager.getConfig();
 
-// Simulación de variable para verificar si hay dos cámaras
-const hasTwoCameras = true; // Cambia a `false` si solo hay una cámara
+const qrCodeReader = config.device.scannerType === 'qr';
+const hasScreen = config.hardware.hasScreen;
+const hasTwoCameras = config.hardware.hasTwoCameras;
 
 function runPy(script) {
     return new Promise((resolve, reject) => {
@@ -27,16 +30,19 @@ function runPy(script) {
 function runMainQrCode() {
     return new Promise(async function (resolve, reject) {
         try {
-            if (hasTwoCameras) {
-                   // Ejecutar ambos scripts en paralelo
-              const [result1, result2] = await Promise.all([
-                runPy('scannerQr.py'),
-                runPy('scannerQrExit.py')
-              ]);
-            console.log("Resultados:", result1, result2);
+            const currentConfig = configManager.getConfig();
+            const scannerScript = currentConfig.device.scannerScript;
+            
+            if (currentConfig.hardware.hasTwoCameras) {
+                // Ejecutar ambos scripts en paralelo
+                const [result1, result2] = await Promise.all([
+                    runPy('scannerQr.py'),
+                    runPy('scannerQrExit.py')
+                ]);
+                console.log("Resultados:", result1, result2);
             } else {
-                // Ejecutar solo scanner.py si no hay dos cámaras
-                await runPy('scannerQr.py');
+                // Ejecutar solo el script configurado si no hay dos cámaras
+                await runPy(scannerScript);
             }
             resolve("Scripts ejecutados correctamente.");
         } catch (error) {

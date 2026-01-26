@@ -1,0 +1,53 @@
+name: Deploy to Development
+
+on:
+  push:
+    branches:
+      - development
+  workflow_dispatch: # Permite ejecutar manualmente
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Deploy to Development Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USERNAME }}
+          key: ${{ secrets.DEV_SSH_KEY }}
+          port: ${{ secrets.DEV_SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.DEV_DEPLOY_PATH || '/home/pi/aditum-gate' }}
+            
+            echo "🔄 Pulling latest code from development branch..."
+            git fetch origin
+            git checkout development
+            git pull origin development
+            
+            echo "📦 Installing/updating dependencies..."
+            npm install
+            
+            echo "📦 Installing Python dependencies..."
+            pip3 install evdev requests --quiet || true
+            
+            echo "🔄 Restarting PM2 services..."
+            pm2 restart aditum-gate || pm2 start --name aditum-gate index.js
+            pm2 save
+            
+            echo "✅ Deployment to development completed successfully!"
+            
+      - name: Deployment Status
+        run: |
+          echo "🚀 Code has been deployed to development environment"
+          echo "Branch: development"
+          echo "Time: $(date)"

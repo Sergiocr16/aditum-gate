@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
-import { WebSocketService, GateEntryDTO } from './websocket.service'; 
+import { WebSocketService, GateEntryDTO } from './websocket.service';
+import { ConfigService } from './config.service';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -15,9 +16,20 @@ export class AppComponent implements OnInit {
   doorType: string = 'EXIT'; // ENTRY = entrada, EXIT = salida
   clientLogoUrl: string = 'https://res.cloudinary.com/aditum/image/upload/v1501920877/fzncrputkdgm8iasuc3t.jpg';// Mensaje por defecto
 
-  constructor(private webSocketService: WebSocketService) {}
+  constructor(
+    private webSocketService: WebSocketService,
+    private configService: ConfigService
+  ) {}
 
   ngOnInit() {
+    // Load configuration
+    this.configService.config$.subscribe(config => {
+      if (config) {
+        this.doorType = config.door.doorType.toUpperCase();
+        this.clientLogoUrl = config.display.clientLogoUrl;
+      }
+    });
+
     this.webSocketService.gateEntry$.subscribe((data: GateEntryDTO) => {
         console.log('GateEntryDTO received:', data);
         this.state = data.state ?? 1; // Establece el estado recibido o usa 1 por defecto

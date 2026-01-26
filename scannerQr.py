@@ -2,14 +2,16 @@ import evdev
 from evdev import ecodes, categorize
 import requests
 import time
+from config_manager import get_config
 
-# Variables
-doorType = "entry"  # Set this to "exit" or "entry"
-doorId = '0'  # Assign the correct ID based on the type of door
-placeName = 'Name'
-hasScreen = True
+# Initialize configuration
+config = get_config()
+doorType = config['door']['doorType']
+doorId = config['door']['doorId']
+placeName = config['door']['placeName']
+hasScreen = config['hardware']['hasScreen']
 found = ""
-DEVICE_NAME = "Newtologic  4010E"  # <- Nombre (o parte) del dispositivo a buscar
+DEVICE_NAME = config['hardware']['deviceName']
 
 # Función para obtener /dev/input/eventX por nombre (sin evtest)
 def find_device_path_by_name(device_name: str):
@@ -43,18 +45,22 @@ def find_device_path_by_name(device_name: str):
 
 # Funciones
 def send_request(endpoint, data):
-    url = f'https://app.aditumcr.com/api/{endpoint}'
+    config = get_config()
+    base_url = config['api']['baseUrl']
+    url = f'{base_url}/{endpoint}'
     response = requests.post(url, json=data)
     return response.json()
 
 def send_to_nodejs(endpoint, data=None):
-    if hasScreen:
+    config = get_config()
+    if config['hardware']['hasScreen']:
         url = f'http://localhost:3000/{endpoint}'
         response = requests.post(url, json=data)
         return response.json()
 
 def loading():
-    if hasScreen:
+    config = get_config()
+    if config['hardware']['hasScreen']:
         try:
             print("LOADING")
             url = f'http://localhost:3000/api/loading'
@@ -67,12 +73,13 @@ def loading():
 
 def denied(data=None):
     print("Acceso denegado")
-    if not hasScreen:
+    config = get_config()
+    if not config['hardware']['hasScreen']:
         return None
     payload = data or {}
-    payload.setdefault("doorType", doorType)
-    payload.setdefault("doorId", doorId)
-    payload.setdefault("placeName", placeName)
+    payload.setdefault("doorType", config['door']['doorType'])
+    payload.setdefault("doorId", config['door']['doorId'])
+    payload.setdefault("placeName", config['door']['placeName'])
     try:
         return send_to_nodejs("api/code-denied", payload)
     except requests.exceptions.RequestException as e:
@@ -138,13 +145,18 @@ def procesar_texto(texto):
 
         if aditumQrVerifying == "ADITUMGATE":
             loading()
-            if doorType == "exit":
+            config = get_config()
+            door_type = config['door']['doorType']
+            door_id = config['door']['doorId']
+            base_url = config['api']['baseUrl']
+            
+            if door_type == "exit":
                 print("Procesando salida...")
-                r = requests.get(f'https://app.aditumcr.com/api/aditum-gate-verifier-exit/{aditumData}/{doorId}')
+                r = requests.get(f'{base_url}/aditum-gate-verifier-exit/{aditumData}/{door_id}')
                 print(f"Código de estado: {r.status_code}\nRespuesta: {r.text}")
-            elif doorType == "entry":
+            elif door_type == "entry":
                 print("Procesando entrada...")
-                r = requests.get(f'https://app.aditumcr.com/api/aditum-gate-verifier-entry/{aditumData}/{doorId}')
+                r = requests.get(f'{base_url}/aditum-gate-verifier-entry/{aditumData}/{door_id}')
                 print(f"Código de estado: {r.status_code}\nRespuesta: {r.text}")
             else:
                 print("No autorizado")
