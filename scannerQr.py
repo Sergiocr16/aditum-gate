@@ -4,7 +4,6 @@ import requests
 import time
 
 # Variables
-doorType = "entry"  # Set this to "exit" or "entry"
 doorId = '0'  # Assign the correct ID based on the type of door
 placeName = 'Name'
 hasScreen = True
@@ -43,7 +42,7 @@ def find_device_path_by_name(device_name: str):
 
 # Funciones
 def send_request(endpoint, data):
-    url = f'https://app.aditumcr.com/api/{endpoint}'
+    url = f'https://caseta.aditumcr.com/api/{endpoint}'
     response = requests.post(url, json=data)
     return response.json()
 
@@ -70,7 +69,7 @@ def denied(data=None):
     if not hasScreen:
         return None
     payload = data or {}
-    payload.setdefault("doorType", doorType)
+    payload.setdefault("doorType", "entry")
     payload.setdefault("doorId", doorId)
     payload.setdefault("placeName", placeName)
     try:
@@ -138,22 +137,18 @@ def procesar_texto(texto):
 
         if aditumQrVerifying == "ADITUMGATE":
             loading()
-            if doorType == "exit":
+            if "exit" in aditumData.lower():
                 print("Procesando salida...")
-                r = requests.get(f'https://app.aditumcr.com/api/aditum-gate-verifier-exit/{aditumData}/{doorId}')
-                print(f"Código de estado: {r.status_code}\nRespuesta: {r.text}")
-            elif doorType == "entry":
-                print("Procesando entrada...")
-                r = requests.get(f'https://app.aditumcr.com/api/aditum-gate-verifier-entry/{aditumData}/{doorId}')
+                r = requests.get(f'https://caseta.aditumcr.com/api/aditum-gate-verifier-exit/{aditumData}/{doorId}')
                 print(f"Código de estado: {r.status_code}\nRespuesta: {r.text}")
             else:
-                print("No autorizado")
-                denied()
+                print("Procesando entrada...")
+                r = requests.get(f'https://caseta.aditumcr.com/api/aditum-gate-verifier-entry/{aditumData}/{doorId}')
+                print(f"Código de estado: {r.status_code}\nRespuesta: {r.text}")
         else:
             print("Código QR inválido")
             denied()
     else:
-        # Si no trae "=", y NO incluye ADITUMGATE, negar acceso
         if "ADITUMGATE" not in texto:
             print("Código QR inválido")
             denied()
