@@ -218,6 +218,7 @@ En este caso es un @ , cada vez que lea el @ ejecutará la lectura
 
 LISTO.
 
+[MJ-8200-User-Manual.pdf](https://github.com/user-attachments/files/26721035/MJ-8200-User-Manual.pdf)
 
 
 
