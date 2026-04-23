@@ -6,54 +6,14 @@ import RPi.GPIO as GPIO
 import time
 import os
 import requests
-import board
-import neopixel
 import threading
 from requests.auth import HTTPDigestAuth
 
-isScreen = True
-blinking = False
-
-def set_color(color):
-    pixels.fill(color)
-    pixels.show()
-
-def set_white():
-    set_color((255, 255, 255))
-
-def green_for_3_seconds():
-    set_color((0, 255, 0))
-    time.sleep(4)
-    set_white()
-
-def blink_yellow_forever():
-    yellow = (255, 255, 0)
-    global blinking
-    while blinking:
-        set_color(yellow)
-        time.sleep(1)
-        turn_off()
-        time.sleep(1)
-
-def start_blinking_yellow():
-    global blinking
-    blinking = True
-    threading.Thread(target=blink_yellow_forever).start()
-
-def stop_blinking_yellow():
-    global blinking
-    blinking = False
-
-def red_for_3_seconds():
-    set_color((255, 0, 0))
-    time.sleep(4)
-    set_white()
-
-def turn_off():
-    set_color((0, 0, 0))
-
 app = Flask(__name__)
 
+# ============================================================
+# Configuracion de compuertas (GPIO)
+# ============================================================
 gates = [
     {"id": 1, "status": 0, "pin": 7},
     {"id": 2, "status": 0, "pin": 11},
@@ -67,14 +27,11 @@ gates = [
     {"id": 10, "status": 0, "pin": 35},
 ]
 
-if isScreen:
-    pixels = neopixel.NeoPixel(board.D18, 55, brightness=1, auto_write=False)
-    set_white()
-else:
-    GPIO.setmode(GPIO.BOARD)
-    for gate in gates:
-        GPIO.setup(gate["pin"], GPIO.OUT)
-        GPIO.output(gate["pin"], GPIO.HIGH)
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False)
+for gate in gates:
+    GPIO.setup(gate["pin"], GPIO.OUT)
+    GPIO.output(gate["pin"], GPIO.HIGH)  # Inicialmente apagado
 
 # ============================================================
 # Hikvision ISAPI - Registro dinamico de tarjetas QR
@@ -225,17 +182,21 @@ def nightly_cleanup():
 threading.Thread(target=nightly_cleanup, daemon=True).start()
 
 # ============================================================
+# Comunicacion con Node.js
+# ============================================================
+def send_to_nodejs(endpoint, data=None):
+    url = f'http://localhost:3000/{endpoint}'
+    response = requests.post(url, json=data)
+    return response.json()
 
+# ============================================================
+# Rutas Flask
+# ============================================================
 STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static'))
 
 @app.route('/', defaults={'file': 'index.html'})
 def index():
     return app.send_directory(STATIC_DIR, 'index.html')
-
-def send_to_nodejs(endpoint, data=None):
-    url = f'http://localhost:3000/{endpoint}'
-    response = requests.post(url, json=data)
-    return response.json()
 
 @app.route('/gateStatus')
 def gate_status():
@@ -251,9 +212,16 @@ def gate_status_id(id):
 def open_gate(id):
     gate = gates[id - 1]
     gate["status"] = 1
-    GPIO.setup(gate["pin"], GPIO.OUT)
     GPIO.output(gate["pin"], GPIO.LOW)
     time.sleep(1)
+    GPIO.output(gate["pin"], GPIO.HIGH)
+    gate["status"] = 0
+    return jsonify({"id": gate["id"], "status": gate["status"]})
+
+@app.route('/closeGate/<int:id>')
+def close_gate(id):
+    gate = gates[id - 1]
+    gate["status"] = 0
     GPIO.output(gate["pin"], GPIO.HIGH)
     return jsonify({"id": gate["id"], "status": gate["status"]})
 
@@ -269,12 +237,6 @@ def code_accepted(name):
         'isAutorized': validation_response.get('isAutorized'),
         'isAutomatic': validation_response.get('isAutomatic')
     })
-    if blinking:
-        stop_blinking_yellow()
-        time.sleep(0.5)
-        green_for_3_seconds()
-    else:
-        green_for_3_seconds()
     return jsonify({
         'message': 'Access granted',
         'nodejs_response': nodejs_response
@@ -292,7 +254,6 @@ def wait_for_response(name):
         'isAutorized': validation_response.get('isAutorized'),
         'isAutomatic': validation_response.get('isAutomatic')
     })
-    start_blinking_yellow()
     return jsonify({
         'message': 'Waiting for response',
         'nodejs_response': nodejs_response
@@ -310,23 +271,10 @@ def code_denied(name):
         'isAutorized': validation_response.get('isAutorized'),
         'isAutomatic': validation_response.get('isAutomatic')
     })
-    if blinking:
-        stop_blinking_yellow()
-        time.sleep(0.5)
-        red_for_3_seconds()
-    else:
-        red_for_3_seconds()
     return jsonify({
         'message': 'Access denied',
         'nodejs_response': nodejs_response
     })
-
-@app.route('/closeGate/<int:id>')
-def close_gate(id):
-    gate = gates[id - 1]
-    gate["status"] = 0
-    GPIO.output(gate["pin"], GPIO.HIGH)
-    return jsonify({"id": gate["id"], "status": gate["status"]})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
