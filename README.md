@@ -281,7 +281,10 @@ crontab -e
 Pegar esta línea al final del crontab:
 
 ```bash
-*/10 * * * * /usr/local/bin/pm2 restart aditum-gate >> /home/pi/restart-services.log 2>&1 && sudo /bin/systemctl restart nginx >> /home/pi/restart-services.log 2>&1
+*/10 * * * * /usr/local/bin/pm2 restart aditum-gate >> /home/pi/restart-services.log 2>&1
+*/10 * * * * /usr/local/bin/pm2 restart aditum-screen-web >> /home/pi/restart-services.log 2>&1
+*/10 * * * * /usr/local/bin/pm2 restart aditum-screen-server >> /home/pi/restart-services.log 2>&1
+*/10 * * * * sudo /bin/systemctl restart nginx >> /home/pi/restart-services.log 2>&1
 ```
 
 Esta línea reinicia:
