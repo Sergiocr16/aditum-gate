@@ -253,79 +253,88 @@ Definir en la pantalla de pedestal si es de entrada o de salida y el logo del cl
 
 
 # Instalación del reinicio automático cada 10 minutos
+## 1. Permitir reinicio de Nginx sin pedir contraseña
 
-Configura una Raspberry Pi (usuario `pi`) para reiniciar `pm2 aditum-gate` y
-`nginx` automáticamente cada 10 minutos.
-
-## 1. Crear el archivo `install.sh`
-
-En la Raspberry Pi, abre la terminal y ejecuta:
+Ejecutar este comando una sola vez:
 
 ```bash
-nano /home/pi/install.sh
-```
-
-## 2. Pegar este contenido en el archivo
-
-```bash
-#!/bin/bash
-sudo tee /home/pi/restart-services.sh > /dev/null <<'EOF'
-#!/bin/bash
-LOG=/home/pi/restart-services.log
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] restarting services" >> "$LOG"
-/usr/local/bin/pm2 restart aditum-gate >> "$LOG" 2>&1
-sudo /bin/systemctl restart nginx >> "$LOG" 2>&1
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] done" >> "$LOG"
-EOF
-sudo chown pi:pi /home/pi/restart-services.sh
-sudo chmod 755 /home/pi/restart-services.sh
-echo 'pi ALL=(root) NOPASSWD: /bin/systemctl restart nginx' | sudo tee /etc/sudoers.d/nginx-restart > /dev/null
+echo 'pi ALL=(root) NOPASSWD: /bin/systemctl restart nginx' | sudo tee /etc/sudoers.d/nginx-restart
 sudo chmod 440 /etc/sudoers.d/nginx-restart
-( crontab -l 2>/dev/null | grep -Fv '/home/pi/restart-services.sh'; echo '*/10 * * * * /home/pi/restart-services.sh' ) | crontab -
-echo "=== Listo. Cron actual: ==="; crontab -l
 ```
 
-Guarda con `Ctrl+O`, `Enter`, y sal con `Ctrl+X`.
+Esto permite que el usuario `pi` pueda reiniciar `nginx` desde el cron sin que pida contraseña.
 
-## 3. Ejecutar el instalador
+---
+
+## 2. Abrir el crontab
+
+Ejecutar:
 
 ```bash
-bash /home/pi/install.sh
+crontab -e
 ```
 
-Si pide password, ingrésalo. Al terminar verás:
+---
 
+## 3. Agregar la tarea al final del archivo
+
+Pegar esta línea al final del crontab:
+
+```bash
+*/10 * * * * /usr/local/bin/pm2 restart aditum-gate >> /home/pi/restart-services.log 2>&1 && sudo /bin/systemctl restart nginx >> /home/pi/restart-services.log 2>&1
 ```
-=== Listo. Cron actual: ===
-*/10 * * * * /home/pi/restart-services.sh
+
+Esta línea reinicia:
+
+- `aditum-gate` con PM2
+- `nginx` con systemctl
+
+Cada 10 minutos.
+
+---
+
+## 4. Revisar que el cron quedó guardado
+
+Ejecutar:
+
+```bash
+crontab -l
 ```
 
-## 4. Verificar que está funcionando
+Deberías ver una línea como esta:
 
-Espera hasta el próximo múltiplo de 10 minutos (ej. `14:20`, `14:30`…) y revisa
-el log:
+```bash
+*/10 * * * * /usr/local/bin/pm2 restart aditum-gate >> /home/pi/restart-services.log 2>&1 && sudo /bin/systemctl restart nginx >> /home/pi/restart-services.log 2>&1
+```
+
+---
+
+## 5. Probar manualmente el comando
+
+Antes de esperar al cron, se puede probar manualmente con:
+
+```bash
+/usr/local/bin/pm2 restart aditum-gate >> /home/pi/restart-services.log 2>&1 && sudo /bin/systemctl restart nginx >> /home/pi/restart-services.log 2>&1
+```
+
+---
+
+## 6. Ver el log
+
+Para revisar si se ejecutó correctamente:
 
 ```bash
 tail -f /home/pi/restart-services.log
 ```
 
-Deberías ver entradas como:
+---
 
-```
-[2026-06-05 18:30:01] restarting services
-[PM2] [aditum-gate](0) ✓
-[2026-06-05 18:30:03] done
-```
+## Nota importante
 
-Sal del `tail` con `Ctrl+C`.
-
-## Desinstalar
+Si `pm2` no funciona desde cron, revisar la ruta exacta con:
 
 ```bash
-crontab -l | grep -Fv '/home/pi/restart-services.sh' | crontab -
-sudo rm -f /etc/sudoers.d/nginx-restart /home/pi/restart-services.sh
+which pm2
 ```
 
-
-
-
+Y reemplazar `/usr/local/bin/pm2` por la ruta que devuelva ese comando.
