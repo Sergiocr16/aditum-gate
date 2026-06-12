@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "configRevision": 1,
+  "deviceId": "GATE-CR-0001",
+  "placeName": "Condominio Ejemplo",
+  "api": {
+    "baseUrl": "https://caseta.aditumcr.com/api",
+    "verifierStyle": "secure"
+  },
+  "scannerType": "hid",
+  "scanners": [
+    { "role": "entry", "doorId": "118", "deviceName": "Newtologic  4010E" },
+    { "role": "exit", "doorId": "119", "deviceName": "Newtologic  4010E" }
+  ],
+  "screen": {
+    "hasScreen": true,
+    "doorType": "ENTRY",
+    "clientLogoUrl": "https://res.cloudinary.com/aditum/image/upload/v1501920877/fzncrputkdgm8iasuc3t.jpg"
+  },
+  "gpio": {
+    "enabled": true,
+    "mode": "BOARD",
+    "gates": [
+      { "id": 1, "pin": 7 },
+      { "id": 2, "pin": 11 }
+    ],
+    "pulseSeconds": 1,
+    "neopixel": { "enabled": false },
+    "watchdog": { "enabled": true, "host": "1.1.1.1", "intervalSec": 240 }
+  },
+  "hikvision": { "enabled": false },
+  "polling": { "intervalSeconds": 60, "enabled": false }
+}

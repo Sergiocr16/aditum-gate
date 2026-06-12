@@ -1,0 +1,11 @@
+[Unit]
+Description=Aditum Gate self-update cada 15 minutos
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+# Evita que cientos de Pis hagan fetch al mismo tiempo
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

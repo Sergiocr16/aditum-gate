@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sintaxis Python
+        run: python -m compileall device scripts/validate_configs.py
+
+      - name: Validar configuraciones contra el schema
+        run: |
+          pip install jsonschema
+          python scripts/validate_configs.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sintaxis Node
+        run: |
+          node --check web/server.js
+          node --check ecosystem.config.js
+
+      - name: Sintaxis bash
+        run: |
+          bash -n scripts/bootstrap.sh
+          bash -n scripts/self-update.sh
+
+  screen-build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build de la pantalla
+        run: npm ci && npm run build
+        working-directory: web/pedestal-app
+
+      - name: El dist/ commiteado debe estar al dia
+        run: |
+          git add -A web/pedestal-app/dist
+          git diff --cached --quiet -- web/pedestal-app/dist || {
+            echo '::error::El build commiteado de la pantalla esta desactualizado. Correr: cd web/pedestal-app && npm ci && npm run build (Node 20) y commitear dist/ en el mismo commit.'
+            git diff --cached --stat -- web/pedestal-app/dist
+            exit 1
+          }

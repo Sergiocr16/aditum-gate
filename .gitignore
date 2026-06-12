@@ -1,3 +1,23 @@
-node_modules
-aditum-qr-web/node_modules/
-pedestal-app/node_modules/
+# Dependencias
+node_modules/
+
+# Entorno Python del dispositivo (lo crea bootstrap.sh / self-update.sh)
+.venv/
+
+# Cache de Angular (el build dist/ SI se versiona: las Pis no compilan)
+web/pedestal-app/.angular/
+
+# Identidad y estado local del dispositivo (provisionados por Pi, nunca al repo)
+device-id.txt
+device-token.txt
+config-runtime.json
+hikvision-cards.json
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store

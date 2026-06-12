@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Aditum Gate device configuration",
+  "type": "object",
+  "required": ["schemaVersion", "configRevision", "api", "scannerType", "scanners", "screen", "gpio"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "configRevision": { "type": "integer", "minimum": 0 },
+    "deviceId": { "type": "string" },
+    "placeName": { "type": "string" },
+    "api": {
+      "type": "object",
+      "required": ["baseUrl", "verifierStyle"],
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": { "type": "string", "pattern": "^https?://" },
+        "verifierStyle": { "enum": ["secure", "legacy"] }
+      }
+    },
+    "scannerType": { "enum": ["hid", "opencv", "hikvision", "none"] },
+    "scanners": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["role", "doorId"],
+        "additionalProperties": false,
+        "properties": {
+          "role": { "enum": ["entry", "exit"] },
+          "doorId": { "type": "string" },
+          "deviceName": { "type": "string", "description": "Nombre (o parte) del lector HID en /proc/bus/input/devices" },
+          "cameraIndex": { "type": "integer", "minimum": 0, "description": "Indice de /dev/video* para scanners OpenCV" },
+          "showCameraFeed": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "screen": {
+      "type": "object",
+      "required": ["hasScreen"],
+      "additionalProperties": false,
+      "properties": {
+        "hasScreen": { "type": "boolean" },
+        "doorType": { "enum": ["ENTRY", "EXIT"] },
+        "clientLogoUrl": { "type": "string" }
+      }
+    },
+    "gpio": {
+      "type": "object",
+      "required": ["enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "enum": ["BOARD", "BCM"], "default": "BOARD" },
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "pin"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "integer", "minimum": 1 },
+              "pin": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "pulseSeconds": { "type": "number", "minimum": 0.1, "default": 1 },
+        "neopixel": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "pin": { "type": "string", "default": "D18" },
+            "count": { "type": "integer", "default": 55 }
+          }
+        },
+        "watchdog": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "host": { "type": "string", "default": "1.1.1.1" },
+            "intervalSec": { "type": "integer", "minimum": 30, "default": 240 }
+          }
+        }
+      }
+    },
+    "hikvision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "nightlyCleanupHour": { "type": "integer", "minimum": 0, "maximum": 23, "default": 2 }
+      }
+    },
+    "polling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intervalSeconds": { "type": "integer", "minimum": 10, "default": 60 },
+        "enabled": { "type": "boolean", "default": false }
+      }
+    }
+  }
+}

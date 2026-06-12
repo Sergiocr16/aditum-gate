@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aditum Gate — Configuración</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --line:#d8dce3; --txt:#1f2733; --mut:#5b6675;
+          --pri:#0d5fae; --ok:#177245; --err:#b3261e; --warn:#9a6700; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:13px; margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--mut); margin-bottom:4px; }
+  input[type=password], textarea {
+    width:100%; border:1px solid var(--line); border-radius:8px; padding:10px;
+    font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; background:#fbfcfd; color:var(--txt);
+  }
+  textarea { min-height:420px; resize:vertical; white-space:pre; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  button { border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:600;
+           cursor:pointer; background:var(--pri); color:#fff; }
+  button.sec { background:#e7ebf0; color:var(--txt); }
+  button:disabled { opacity:.5; cursor:default; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .chip { font-size:12px; padding:3px 10px; border-radius:999px; background:#e9eef4; color:var(--mut); }
+  .chip.ok { background:#e2f3e8; color:var(--ok); }
+  .chip.bad { background:#fae3e1; color:var(--err); }
+  .chip.warn { background:#fdf3d7; color:var(--warn); }
+  #msg { margin-top:12px; font-size:14px; white-space:pre-wrap; }
+  #msg.ok { color:var(--ok); } #msg.err { color:var(--err); } #msg.warn { color:var(--warn); }
+  .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Aditum Gate — Configuración del dispositivo</h1>
+  <p class="sub">Editor local. Los cambios se validan contra el schema y, si aplican,
+  el servicio se reinicia solo (~10&nbsp;s sin conexión).</p>
+
+  <div class="card">
+    <label for="token">Token del dispositivo
+      (en este Pi: <code>cat ~/aditum-gate/device-token.txt</code>; vacío si aún no está provisionado)</label>
+    <div class="row">
+      <input type="password" id="token" style="flex:1" placeholder="token...">
+      <button class="sec" id="btnLoad">Cargar</button>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="card">
+    <label for="cfg">config.json</label>
+    <textarea id="cfg" spellcheck="false" placeholder="Presioná Cargar para traer la configuración vigente"></textarea>
+    <div class="hint">Al guardar, <code>configRevision</code> se incrementa automáticamente.</div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnSave" disabled>Guardar y aplicar</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const tokenInput = $('token'), cfgArea = $('cfg'), msg = $('msg'), chips = $('chips');
+  let loadedRevision = null;
+
+  tokenInput.value = localStorage.getItem('aditum-device-token') || '';
+
+  function headers() {
+    const h = { 'Content-Type': 'application/json' };
+    const t = tokenInput.value.trim();
+    if (t) h['X-Device-Token'] = t;
+    return h;
+  }
+
+  function show(kind, text) { msg.className = kind; msg.textContent = text; }
+
+  function chip(text, kind) {
+    const s = document.createElement('span');
+    s.className = 'chip' + (kind ? ' ' + kind : '');
+    s.textContent = text;
+    chips.appendChild(s);
+  }
+
+  async function load() {
+    localStorage.setItem('aditum-device-token', tokenInput.value.trim());
+    show('', 'Cargando...');
+    chips.innerHTML = '';
+    try {
+      const [stResp, cfgResp] = await Promise.all([
+        fetch('/status', { headers: headers() }),
+        fetch('/config', { headers: headers() }),
+      ]);
+      if (stResp.status === 401 || cfgResp.status === 401) {
+        show('err', 'Token inválido o faltante (401).'); return;
+      }
+      const st = await stResp.json();
+      const cfg = await cfgResp.json();
+      loadedRevision = cfg.config.configRevision || 0;
+      cfgArea.value = JSON.stringify(cfg.config, null, 2);
+      $('btnSave').disabled = false;
+
+      chip(st.deviceId || 'sin device-id', st.deviceId ? '' : 'warn');
+      chip(st.placeName || '—');
+      chip('revisión ' + st.configRevision);
+      chip('scanner: ' + st.scannerType);
+      chip(st.provisioned ? 'token OK' : 'SIN TOKEN', st.provisioned ? 'ok' : 'bad');
+      chip('fuente: ' + (cfg.source || 'default'),
+           cfg.source === 'config-runtime.json' ? '' : 'warn');
+      show('ok', 'Configuración cargada.');
+    } catch (e) {
+      show('err', 'No se pudo cargar: ' + e.message);
+    }
+  }
+
+  async function waitForRestart() {
+    show('warn', 'Aplicado. El servicio se está reiniciando...');
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const r = await fetch('/', { cache: 'no-store' });
+        if (r.ok) { await load(); show('ok', 'Reinicio completo. Configuración aplicada.'); return; }
+      } catch (e) { /* aun reiniciando */ }
+    }
+    show('warn', 'El servicio no volvió en 60 s; revisar "sudo pm2 logs" en el Pi.');
+  }
+
+  async function save() {
+    let parsed;
+    try {
+      parsed = JSON.parse(cfgArea.value);
+    } catch (e) {
+      show('err', 'El JSON no es válido: ' + e.message); return;
+    }
+    // El backend es dueño de la revision en el flujo remoto; localmente la
+    // incrementamos sobre la cargada para pasar el control de idempotencia.
+    if (!parsed.configRevision || parsed.configRevision <= loadedRevision) {
+      parsed.configRevision = (loadedRevision || 0) + 1;
+    }
+    cfgArea.value = JSON.stringify(parsed, null, 2);
+    show('', 'Guardando...');
+    try {
+      const resp = await fetch('/config', {
+        method: 'PUT', headers: headers(), body: JSON.stringify(parsed),
+      });
+      const body = await resp.json();
+      if (!resp.ok) {
+        const details = body.details ? '\n- ' + body.details.join('\n- ') : '';
+        show('err', 'Rechazada (' + resp.status + '): ' + body.error + details +
+             (body.currentRevision !== undefined ? '\nRevisión vigente: ' + body.currentRevision + ' — recargá.' : ''));
+        return;
+      }
+      if (body.willRestart) { loadedRevision = body.revision; await waitForRestart(); }
+      else if (body.applied) { loadedRevision = body.revision; show('ok', 'Aplicada sin reinicio (revisión ' + body.revision + ').'); }
+      else { show('ok', 'Sin cambios (revisión ' + body.revision + ').'); }
+    } catch (e) {
+      show('err', 'Error guardando: ' + e.message);
+    }
+  }
+
+  $('btnLoad').addEventListener('click', load);
+  $('btnSave').addEventListener('click', save);
+})();
+</script>
+</body>
+</html>

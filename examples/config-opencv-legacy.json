@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "configRevision": 1,
+  "deviceId": "GATE-CR-0003",
+  "placeName": "Condominio OpenCV",
+  "api": {
+    "baseUrl": "https://app.aditumcr.com/api",
+    "verifierStyle": "legacy"
+  },
+  "scannerType": "opencv",
+  "scanners": [
+    { "role": "entry", "doorId": "249", "cameraIndex": 2, "showCameraFeed": false },
+    { "role": "exit", "doorId": "250", "cameraIndex": 0, "showCameraFeed": false }
+  ],
+  "screen": { "hasScreen": false },
+  "gpio": {
+    "enabled": true,
+    "mode": "BOARD",
+    "gates": [
+      { "id": 1, "pin": 7 },
+      { "id": 2, "pin": 11 }
+    ],
+    "pulseSeconds": 1,
+    "neopixel": { "enabled": false },
+    "watchdog": { "enabled": true, "host": "1.1.1.1", "intervalSec": 240 }
+  },
+  "hikvision": { "enabled": false },
+  "polling": { "intervalSeconds": 60, "enabled": false }
+}

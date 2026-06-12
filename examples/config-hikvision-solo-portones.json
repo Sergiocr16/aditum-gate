@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "configRevision": 1,
+  "deviceId": "GATE-CR-0002",
+  "placeName": "Condominio Hikvision",
+  "api": {
+    "baseUrl": "https://caseta.aditumcr.com/api",
+    "verifierStyle": "secure"
+  },
+  "scannerType": "hikvision",
+  "scanners": [],
+  "screen": { "hasScreen": false },
+  "gpio": {
+    "enabled": true,
+    "mode": "BOARD",
+    "gates": [
+      { "id": 1, "pin": 7 }
+    ],
+    "pulseSeconds": 1,
+    "neopixel": { "enabled": false },
+    "watchdog": { "enabled": true, "host": "1.1.1.1", "intervalSec": 240 }
+  },
+  "hikvision": { "enabled": true, "nightlyCleanupHour": 2 },
+  "polling": { "intervalSeconds": 60, "enabled": false }
+}

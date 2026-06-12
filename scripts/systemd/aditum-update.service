@@ -1,0 +1,13 @@
+[Unit]
+Description=Aditum Gate self-update (git pull + pm2 restart)
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Pin de branch por Pi (ADITUM_BRANCH=...) sin tocar la unit
+EnvironmentFile=-/etc/default/aditum-gate
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=/home/pi/aditum-gate
+ExecStart=/bin/bash /home/pi/aditum-gate/scripts/self-update.sh
+StandardOutput=append:/var/log/aditum-update.log
+StandardError=append:/var/log/aditum-update.log

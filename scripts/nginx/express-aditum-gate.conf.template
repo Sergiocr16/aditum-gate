@@ -1,0 +1,15 @@
+# Site nginx de aditum-gate (generado por scripts/bootstrap.sh — no editar
+# a mano: se reescribe en cada bootstrap).
+# __UPSTREAM_PORT__ = 3000 (pantalla pedestal) | 8080 (API del dispositivo)
+server {
+  listen 80;
+  server_name _;
+  location / {
+    proxy_pass http://localhost:__UPSTREAM_PORT__;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_cache_bypass $http_upgrade;
+  }
+}
