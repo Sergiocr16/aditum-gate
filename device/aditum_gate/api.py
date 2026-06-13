@@ -8,9 +8,13 @@ import logging
 import os
 import tempfile
 import threading
+import time
+
+from datetime import timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from . import admin_auth
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .settings import DEVICE_TOKEN_FILE
@@ -42,6 +46,18 @@ def _write_token_file(token):
 
 def create_app(settings, gates, hikvision_service, screen):
     app = Flask(__name__)
+
+    # Sesion del login admin (cookie firmada HttpOnly). El secreto se persiste
+    # fuera del repo; sin HTTPS en el Pi, la cookie no es Secure pero si HttpOnly.
+    app.secret_key = admin_auth.get_secret_key()
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=False,
+        PERMANENT_SESSION_LIFETIME=timedelta(seconds=admin_auth.SESSION_LIFETIME_SECONDS),
+    )
+    admin_auth.load_credentials()  # siembra el default si falta
+
     init_auth(app, settings)
 
     # ------------------------------------------------------------
@@ -54,10 +70,61 @@ def create_app(settings, gates, hikvision_service, screen):
     @app.route("/admin")
     def admin_page():
         # Editor local de configuracion (http://localhost:8080/admin).
-        # El HTML es publico; los datos (GET/PUT /config) exigen token.
+        # El HTML es publico pero su contenido se tapa con el login; los datos
+        # (GET/PUT /config, etc.) exigen sesion admin o token de dispositivo.
         return send_from_directory(
             os.path.join(os.path.dirname(__file__), "static"), "admin.html"
         )
+
+    # ------------------------------------------------------------
+    # Login de administrador del editor local (sesion por cookie)
+    # ------------------------------------------------------------
+    @app.route("/admin/session")
+    def admin_session():
+        user = admin_auth.current_admin()
+        return jsonify({"authenticated": bool(user), "username": user})
+
+    @app.route("/admin/login", methods=["POST"])
+    def admin_login():
+        data = request.get_json(silent=True) or {}
+        username = data.get("username", "")
+        password = data.get("password", "")
+        time.sleep(0.3)  # freno suave anti fuerza bruta
+        if not admin_auth.verify_credentials(username, password):
+            log.warning("Login admin fallido para usuario '%s'", username)
+            return jsonify({"error": "credenciales invalidas"}), 401
+        admin_auth.login_session(username)
+        log.info("Login admin OK: %s", username)
+        return jsonify({"ok": True, "username": username})
+
+    @app.route("/admin/logout", methods=["POST"])
+    def admin_logout():
+        admin_auth.logout_session()
+        return jsonify({"ok": True})
+
+    @app.route("/admin/password", methods=["POST"])
+    def admin_password():
+        # Cambiar la contraseña (exige sesion admin vigente; lo garantiza el
+        # before_request al no estar /admin/password en PUBLIC_PATHS).
+        if not admin_auth.is_admin_logged_in():
+            return jsonify({"error": "unauthorized"}), 401
+        data = request.get_json(silent=True) or {}
+        username = (data.get("username") or admin_auth.current_admin() or "").strip()
+        current = data.get("currentPassword", "")
+        new = data.get("newPassword", "")
+        if not admin_auth.verify_credentials(admin_auth.current_admin(), current):
+            return jsonify({"error": "contraseña actual incorrecta"}), 403
+        if (not isinstance(new, str)
+                or not admin_auth.PASSWORD_MIN_LEN <= len(new) <= admin_auth.PASSWORD_MAX_LEN):
+            return jsonify({
+                "error": "contraseña invalida",
+                "details": [f"{admin_auth.PASSWORD_MIN_LEN}-{admin_auth.PASSWORD_MAX_LEN} caracteres"],
+            }), 400
+        if not username:
+            return jsonify({"error": "usuario requerido"}), 400
+        admin_auth.set_credentials(username, new)
+        admin_auth.login_session(username)  # refresca la sesion con el usuario nuevo
+        return jsonify({"ok": True, "username": username})
 
     # ------------------------------------------------------------
     # Estado y configuracion (administracion desde Aditum)

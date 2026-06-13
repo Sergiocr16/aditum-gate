@@ -10,30 +10,49 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
          font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .wrap { max-width:920px; margin:0 auto; padding:24px 16px 64px; }
+  .wrap { max-width:920px; margin:0 auto; padding:24px 16px 96px; }
   h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:0 0 14px; color:var(--pri); }
   .sub { color:var(--mut); font-size:13px; margin:0 0 20px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
           padding:16px; margin-bottom:16px; }
   label { display:block; font-size:13px; color:var(--mut); margin-bottom:4px; }
-  input[type=password], textarea {
-    width:100%; border:1px solid var(--line); border-radius:8px; padding:10px;
-    font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; background:#fbfcfd; color:var(--txt);
+  input[type=password], input[type=text], input[type=number], select, textarea {
+    width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 10px;
+    font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; background:#fbfcfd; color:var(--txt);
   }
-  textarea { min-height:420px; resize:vertical; white-space:pre; }
+  textarea { font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; min-height:360px; resize:vertical; white-space:pre; }
+  .field { margin-bottom:14px; }
+  .field:last-child { margin-bottom:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .check { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--txt); margin-bottom:0; cursor:pointer; }
+  .check input { width:auto; }
+  .cond { margin-top:14px; padding-top:14px; border-top:1px dashed var(--line); }
+  .list-item { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;
+               border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; background:#fbfcfd; }
+  .list-item .field { margin-bottom:0; }
+  .list-item .grow { flex:1 1 130px; }
   button { border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:600;
            cursor:pointer; background:var(--pri); color:#fff; }
   button.sec { background:#e7ebf0; color:var(--txt); }
+  button.sm { padding:7px 12px; font-size:13px; }
+  button.danger { background:#fae3e1; color:var(--err); }
   button:disabled { opacity:.5; cursor:default; }
   .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
   .chip { font-size:12px; padding:3px 10px; border-radius:999px; background:#e9eef4; color:var(--mut); }
   .chip.ok { background:#e2f3e8; color:var(--ok); }
   .chip.bad { background:#fae3e1; color:var(--err); }
   .chip.warn { background:#fdf3d7; color:var(--warn); }
-  #msg { margin-top:12px; font-size:14px; white-space:pre-wrap; }
+  #msg { margin-top:6px; font-size:14px; white-space:pre-wrap; }
   #msg.ok { color:var(--ok); } #msg.err { color:var(--err); } #msg.warn { color:var(--warn); }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+  details > summary { cursor:pointer; font-weight:600; color:var(--pri); }
+  .savebar { position:sticky; bottom:0; background:var(--card); border:1px solid var(--line);
+             border-radius:10px; padding:14px 16px; margin-top:16px;
+             box-shadow:0 -2px 12px rgba(0,0,0,.06); }
+  .muted { color:var(--mut); }
+  .disabled-block { opacity:.55; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -42,44 +61,280 @@
   <p class="sub">Editor local. Los cambios se validan contra el schema y, si aplican,
   el servicio se reinicia solo (~10&nbsp;s sin conexión).</p>
 
-  <div class="card">
-    <label for="token">Token del dispositivo
-      (en este Pi: <code>cat ~/aditum-gate/device-token.txt</code>; vacío si aún no está provisionado)</label>
-    <div class="row">
-      <input type="password" id="token" style="flex:1" placeholder="token...">
-      <button class="sec" id="btnLoad">Cargar</button>
+  <!-- Login -->
+  <div class="card" id="loginCard" hidden>
+    <h2>Ingresar</h2>
+    <p class="hint" style="margin-top:0">Editor local protegido. Iniciá sesión para ver y cambiar la configuración.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="loginUser">Usuario</label>
+        <input type="text" id="loginUser" autocomplete="username" autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="loginPass">Contraseña</label>
+        <input type="password" id="loginPass" autocomplete="current-password">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px"><button id="btnLogin">Ingresar</button></div>
+    <div id="loginMsg" class="hint"></div>
+  </div>
+
+  <!-- Sesión (autenticado) -->
+  <div class="card" id="statusCard" hidden>
+    <div class="row" style="justify-content:space-between; align-items:flex-start">
+      <span class="muted" id="sessionUser"></span>
+      <div class="row">
+        <button class="sec sm" id="btnLoad">Recargar</button>
+        <button class="sec sm" id="btnLogout">Cerrar sesión</button>
+      </div>
     </div>
     <div class="chips" id="chips"></div>
   </div>
 
-  <div class="card">
-    <label for="cfg">config.json</label>
-    <textarea id="cfg" spellcheck="false" placeholder="Presioná Cargar para traer la configuración vigente"></textarea>
-    <div class="hint">Al guardar, <code>configRevision</code> se incrementa automáticamente.</div>
-    <div class="row" style="margin-top:12px">
-      <button id="btnSave" disabled>Guardar y aplicar</button>
+  <!-- Provisionar token (solo si no provisionado) -->
+  <div class="card" id="provisionCard" hidden>
+    <h2>Provisionar token</h2>
+    <p class="hint" style="margin-top:0">Este equipo aún no tiene token: la API está abierta.
+      Asigná uno (16–256 caracteres, sin espacios) para protegerla.</p>
+    <div class="row">
+      <input type="text" id="provToken" style="flex:1" placeholder="nuevo token...">
+      <button id="btnProvision" class="sm">Guardar token</button>
     </div>
-    <div id="msg"></div>
+    <div id="provMsg" class="hint"></div>
+  </div>
+
+  <!-- Formulario -->
+  <div id="form" hidden>
+
+    <div class="card">
+      <h2>Identidad</h2>
+      <div class="grid">
+        <div class="field">
+          <label for="f_deviceId">deviceId</label>
+          <input type="text" id="f_deviceId" placeholder="GATE-CR-00xx">
+          <div class="hint"><code>device-id.txt</code> del equipo manda; si difiere, se rechaza (409). Vacío = config genérica.</div>
+        </div>
+        <div class="field">
+          <label for="f_placeName">placeName</label>
+          <input type="text" id="f_placeName" placeholder="Nombre del condominio">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>API</h2>
+      <div class="grid">
+        <div class="field">
+          <label for="f_baseUrl">baseUrl</label>
+          <select id="f_baseUrl">
+            <option value="https://app.aditumcr.com/api">app.aditumcr.com</option>
+            <option value="https://caseta.aditumcr.com/api">caseta.aditumcr.com</option>
+            <option value="__custom__">Personalizada…</option>
+          </select>
+        </div>
+        <div class="field cond" id="baseUrlCustomCond" hidden style="border:0;padding-top:0;margin-top:0">
+          <label for="f_baseUrlCustom">URL personalizada</label>
+          <input type="text" id="f_baseUrlCustom" placeholder="https://...">
+        </div>
+        <div class="field">
+          <label for="f_verifierStyle">verifierStyle</label>
+          <select id="f_verifierStyle">
+            <option value="secure">secure (prefijo ADTG)</option>
+            <option value="legacy">legacy (prefijo ADITUMGATE=)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Escáner</h2>
+      <div class="field" style="max-width:320px">
+        <label for="f_scannerType">scannerType</label>
+        <select id="f_scannerType">
+          <option value="hid">hid — lectores pistola</option>
+          <option value="opencv">opencv — cámaras USB (legacy)</option>
+          <option value="hikvision">hikvision — terminales</option>
+          <option value="none">none — solo portones</option>
+        </select>
+      </div>
+      <div class="cond" id="scannersCond">
+        <label>Lectores <span class="muted">(máx 2)</span></label>
+        <div id="scannersList"></div>
+        <button class="sec sm" id="btnAddScanner" type="button">+ Agregar lector</button>
+      </div>
+      <p class="hint" id="scannersNoneHint" hidden>Esta variante no usa lectores configurables aquí.</p>
+    </div>
+
+    <div class="card">
+      <h2>Pantalla</h2>
+      <label class="check"><input type="checkbox" id="f_hasScreen"> Tiene pantalla pedestal</label>
+      <div class="cond" id="screenCond">
+        <div class="grid">
+          <div class="field">
+            <label for="f_doorType">doorType</label>
+            <select id="f_doorType">
+              <option value="ENTRY">ENTRY</option>
+              <option value="EXIT">EXIT</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f_logo">clientLogoUrl</label>
+            <input type="text" id="f_logo" placeholder="https://...">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Portones / GPIO</h2>
+      <label class="check"><input type="checkbox" id="f_gpioEnabled"> GPIO habilitado</label>
+      <div class="grid" style="margin-top:14px">
+        <div class="field">
+          <label for="f_gpioMode">mode</label>
+          <select id="f_gpioMode">
+            <option value="BOARD">BOARD</option>
+            <option value="BCM">BCM</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f_pulse">pulseSeconds</label>
+          <input type="number" id="f_pulse" min="0.1" step="0.1" value="1">
+        </div>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>Portones (id → pin)</label>
+        <div id="gatesList"></div>
+        <button class="sec sm" id="btnAddGate" type="button">+ Agregar portón</button>
+      </div>
+
+      <div class="cond">
+        <label class="check"><input type="checkbox" id="f_npEnabled"> NeoPixel</label>
+        <div class="cond" id="npCond" style="margin-top:12px">
+          <div class="grid">
+            <div class="field">
+              <label for="f_npPin">pin</label>
+              <input type="text" id="f_npPin" value="D18">
+            </div>
+            <div class="field">
+              <label for="f_npCount">count</label>
+              <input type="number" id="f_npCount" min="1" value="55">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cond">
+        <label class="check"><input type="checkbox" id="f_wdEnabled"> Watchdog de red (reinicia si pierde la red)</label>
+        <div class="cond" id="wdCond" style="margin-top:12px">
+          <div class="grid">
+            <div class="field">
+              <label for="f_wdHost">host</label>
+              <input type="text" id="f_wdHost" value="1.1.1.1">
+            </div>
+            <div class="field">
+              <label for="f_wdInterval">intervalSec</label>
+              <input type="number" id="f_wdInterval" min="30" value="240">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Hikvision</h2>
+      <label class="check"><input type="checkbox" id="f_hikEnabled"> Terminales Hikvision habilitados</label>
+      <div class="field" style="margin-top:14px; max-width:220px">
+        <label for="f_hikHour">nightlyCleanupHour <span class="muted">(0–23)</span></label>
+        <input type="number" id="f_hikHour" min="0" max="23" value="2">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Polling de configuración</h2>
+      <label class="check"><input type="checkbox" id="f_pollEnabled"> Poller pull de respaldo (normalmente apagado: la config llega por push)</label>
+      <div class="cond" id="pollCond" style="margin-top:12px; max-width:220px">
+        <div class="field">
+          <label for="f_pollInterval">intervalSeconds <span class="muted">(≥10)</span></label>
+          <input type="number" id="f_pollInterval" min="10" value="60">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <details id="advanced">
+        <summary>Avanzado: JSON crudo</summary>
+        <p class="hint" style="margin-top:10px">Reflejo del documento completo. Para que tus cambios acá cuenten,
+          presioná <b>“Aplicar JSON al formulario”</b> antes de guardar (al guardar se toma lo del formulario).</p>
+        <textarea id="cfg" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="sec sm" id="btnJsonToForm" type="button">Aplicar JSON al formulario</button>
+          <button class="sec sm" id="btnFormToJson" type="button">Actualizar JSON desde el formulario</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <details id="pwdDetails">
+        <summary>Cambiar usuario / contraseña</summary>
+        <p class="hint" style="margin-top:10px">Cambia las credenciales del login de este editor (no afecta el token del dispositivo).</p>
+        <div class="grid">
+          <div class="field">
+            <label for="pwd_user">Usuario</label>
+            <input type="text" id="pwd_user" autocapitalize="none" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="pwd_current">Contraseña actual</label>
+            <input type="password" id="pwd_current" autocomplete="current-password">
+          </div>
+          <div class="field">
+            <label for="pwd_new">Contraseña nueva</label>
+            <input type="password" id="pwd_new" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="sec sm" id="btnChangePwd" type="button">Actualizar credenciales</button></div>
+        <div id="pwdMsg" class="hint"></div>
+      </details>
+    </div>
+
+    <div class="savebar">
+      <div class="row">
+        <button id="btnSave">Guardar y aplicar</button>
+        <span class="hint" id="revLine"></span>
+      </div>
+      <div id="msg"></div>
+    </div>
+
   </div>
 </div>
 
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const tokenInput = $('token'), cfgArea = $('cfg'), msg = $('msg'), chips = $('chips');
-  let loadedRevision = null;
+  const msg = $('msg'), chips = $('chips'), cfgArea = $('cfg');
 
-  tokenInput.value = localStorage.getItem('aditum-device-token') || '';
+  let state = null;             // documento canónico (clon de lo cargado)
+  let loadedRevision = null;    // baseline de idempotencia
+  let deviceIdFromStatus = '';  // device-id.txt efectivo del equipo
+  let scannersState = [];       // estado de la lista de lectores
+  let gatesState = [];          // estado de la lista de portones
 
-  function headers() {
-    const h = { 'Content-Type': 'application/json' };
-    const t = tokenInput.value.trim();
-    if (t) h['X-Device-Token'] = t;
-    return h;
-  }
+  const BASE_URLS = ['https://app.aditumcr.com/api', 'https://caseta.aditumcr.com/api'];
+  // Lectores HID conocidos (los que usábamos antes). El match es por substring
+  // contra /proc/bus/input/devices, así que el valor exacto importa.
+  const READER_NAMES = ['Newtologic  4010E', 'MJ-8200'];
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  const clone = (o) => (window.structuredClone ? structuredClone(o) : JSON.parse(JSON.stringify(o)));
+  const pretty = (o) => JSON.stringify(o, null, 2);
+  const txt = (el) => el.value.trim();
+  const toInt = (v, def) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : def; };
+  const toFloat = (v, def) => { const n = parseFloat(v); return Number.isFinite(n) ? n : def; };
+
+  // La autenticación va por cookie de sesión (login admin), enviada
+  // automáticamente al ser mismo origen. No hay credenciales en el cliente.
+  function headers() { return { 'Content-Type': 'application/json' }; }
+  const fetchOpts = (extra) => Object.assign({ credentials: 'same-origin' }, extra || {});
   function show(kind, text) { msg.className = kind; msg.textContent = text; }
-
   function chip(text, kind) {
     const s = document.createElement('span');
     s.className = 'chip' + (kind ? ' ' + kind : '');
@@ -87,8 +342,8 @@
     chips.appendChild(s);
   }
 
+  // ---------- Carga ----------
   async function load() {
-    localStorage.setItem('aditum-device-token', tokenInput.value.trim());
     show('', 'Cargando...');
     chips.innerHTML = '';
     try {
@@ -97,13 +352,19 @@
         fetch('/config', { headers: headers() }),
       ]);
       if (stResp.status === 401 || cfgResp.status === 401) {
-        show('err', 'Token inválido o faltante (401).'); return;
+        showLogin('La sesión expiró. Ingresá de nuevo.'); return;
       }
       const st = await stResp.json();
       const cfg = await cfgResp.json();
-      loadedRevision = cfg.config.configRevision || 0;
-      cfgArea.value = JSON.stringify(cfg.config, null, 2);
-      $('btnSave').disabled = false;
+
+      deviceIdFromStatus = st.deviceId || '';
+      loadedRevision = (cfg.config && cfg.config.configRevision) || 0;
+      state = clone(cfg.config || {});
+
+      populateForm(state);
+      cfgArea.value = pretty(state);
+      $('form').hidden = false;
+      $('provisionCard').hidden = !!st.provisioned;
 
       chip(st.deviceId || 'sin device-id', st.deviceId ? '' : 'warn');
       chip(st.placeName || '—');
@@ -112,16 +373,288 @@
       chip(st.provisioned ? 'token OK' : 'SIN TOKEN', st.provisioned ? 'ok' : 'bad');
       chip('fuente: ' + (cfg.source || 'default'),
            cfg.source === 'config-runtime.json' ? '' : 'warn');
+      $('revLine').textContent = 'revisión actual: ' + (state.configRevision || 0) +
+                                 ' · schemaVersion ' + (state.schemaVersion || 1);
       show('ok', 'Configuración cargada.');
     } catch (e) {
       show('err', 'No se pudo cargar: ' + e.message);
     }
   }
 
+  // ---------- Poblar formulario ----------
+  function setVal(id, v) { $(id).value = (v === undefined || v === null) ? '' : v; }
+  function setChk(id, v) { $(id).checked = !!v; }
+
+  function populateForm(cfg) {
+    const api = cfg.api || {}, screen = cfg.screen || {}, gpio = cfg.gpio || {},
+          np = gpio.neopixel || {}, wd = gpio.watchdog || {},
+          hik = cfg.hikvision || {}, poll = cfg.polling || {};
+
+    // Identidad
+    setVal('f_deviceId', cfg.deviceId || deviceIdFromStatus || '');
+    setVal('f_placeName', cfg.placeName || '');
+
+    // API
+    const base = api.baseUrl || BASE_URLS[0];
+    if (BASE_URLS.includes(base)) { $('f_baseUrl').value = base; setVal('f_baseUrlCustom', ''); }
+    else { $('f_baseUrl').value = '__custom__'; setVal('f_baseUrlCustom', base); }
+    $('f_verifierStyle').value = api.verifierStyle || 'secure';
+
+    // Escáner
+    $('f_scannerType').value = cfg.scannerType || 'none';
+    scannersState = clone(cfg.scanners || []);
+    renderScanners();
+
+    // Pantalla
+    setChk('f_hasScreen', screen.hasScreen);
+    $('f_doorType').value = screen.doorType || 'ENTRY';
+    setVal('f_logo', screen.clientLogoUrl || '');
+
+    // GPIO
+    setChk('f_gpioEnabled', gpio.enabled !== undefined ? gpio.enabled : true);
+    $('f_gpioMode').value = gpio.mode || 'BOARD';
+    setVal('f_pulse', gpio.pulseSeconds !== undefined ? gpio.pulseSeconds : 1);
+    gatesState = clone(gpio.gates || []);
+    renderGates();
+    setChk('f_npEnabled', np.enabled);
+    setVal('f_npPin', np.pin || 'D18');
+    setVal('f_npCount', np.count !== undefined ? np.count : 55);
+    setChk('f_wdEnabled', wd.enabled);
+    setVal('f_wdHost', wd.host || '1.1.1.1');
+    setVal('f_wdInterval', wd.intervalSec !== undefined ? wd.intervalSec : 240);
+
+    // Hikvision
+    setChk('f_hikEnabled', hik.enabled);
+    setVal('f_hikHour', hik.nightlyCleanupHour !== undefined ? hik.nightlyCleanupHour : 2);
+
+    // Polling
+    setChk('f_pollEnabled', poll.enabled);
+    setVal('f_pollInterval', poll.intervalSeconds !== undefined ? poll.intervalSeconds : 60);
+
+    applyConditionalVisibility();
+  }
+
+  // ---------- Lectores (lista dinámica) ----------
+  function scannerUsesList() {
+    const t = $('f_scannerType').value;
+    return t === 'hid' || t === 'opencv';
+  }
+
+  function renderScanners() {
+    const list = $('scannersList');
+    const type = $('f_scannerType').value;
+    list.innerHTML = '';
+    scannersState.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'list-item scanner-item';
+      let fields = '';
+      fields += '<div class="field"><label>role</label><select class="s-role">' +
+                '<option value="entry">entry</option><option value="exit">exit</option></select></div>';
+      fields += '<div class="field grow"><label>doorId</label><input type="text" class="s-door" placeholder="118"></div>';
+      if (type === 'hid') {
+        fields += '<div class="field grow"><label>deviceName</label><select class="s-devname-sel">' +
+                  READER_NAMES.map((n) => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('') +
+                  '<option value="__custom__">Otra…</option></select></div>';
+        fields += '<div class="field grow s-devname-customwrap" hidden><label>Nombre exacto (parte del <code>Name=</code> en /proc/bus/input/devices)</label>' +
+                  '<input type="text" class="s-devname-custom" placeholder="ej. Newtologic  4010E"></div>';
+      } else if (type === 'opencv') {
+        fields += '<div class="field"><label>cameraIndex</label><input type="number" class="s-cam" min="0" value="0" style="max-width:120px"></div>';
+        fields += '<div class="field"><label class="check"><input type="checkbox" class="s-feed"> showCameraFeed</label></div>';
+      }
+      fields += '<div class="field"><button type="button" class="sec sm danger s-del">Quitar</button></div>';
+      row.innerHTML = fields;
+      row.querySelector('.s-role').value = s.role || 'entry';
+      row.querySelector('.s-door').value = s.doorId || '';
+      if (type === 'hid') {
+        const sel = row.querySelector('.s-devname-sel');
+        const customWrap = row.querySelector('.s-devname-customwrap');
+        const customInp = row.querySelector('.s-devname-custom');
+        const dn = s.deviceName || '';
+        if (dn && !READER_NAMES.includes(dn)) { sel.value = '__custom__'; customInp.value = dn; customWrap.hidden = false; }
+        else { sel.value = dn || READER_NAMES[0]; customWrap.hidden = true; }
+        sel.addEventListener('change', () => { customWrap.hidden = sel.value !== '__custom__'; });
+      }
+      if (type === 'opencv') {
+        row.querySelector('.s-cam').value = (s.cameraIndex !== undefined ? s.cameraIndex : 0);
+        row.querySelector('.s-feed').checked = !!s.showCameraFeed;
+      }
+      row.querySelector('.s-del').addEventListener('click', () => { syncScannersFromDOM(); scannersState.splice(i, 1); renderScanners(); });
+      list.appendChild(row);
+    });
+    $('btnAddScanner').disabled = scannersState.length >= 2;
+  }
+
+  function syncScannersFromDOM() {
+    const type = $('f_scannerType').value;
+    const rows = document.querySelectorAll('#scannersList .scanner-item');
+    scannersState = [...rows].map((row) => {
+      const s = { role: row.querySelector('.s-role').value, doorId: row.querySelector('.s-door').value.trim() };
+      const sel = row.querySelector('.s-devname-sel');
+      const cam = row.querySelector('.s-cam');
+      const feed = row.querySelector('.s-feed');
+      if (type === 'hid' && sel) {
+        const v = sel.value === '__custom__' ? row.querySelector('.s-devname-custom').value.trim() : sel.value;
+        if (v) s.deviceName = v;
+      }
+      if (type === 'opencv') {
+        if (cam) s.cameraIndex = toInt(cam.value, 0);
+        if (feed) s.showCameraFeed = feed.checked;
+      }
+      return s;
+    });
+  }
+
+  function addScanner() {
+    if (!scannerUsesList()) return;
+    if (scannersState.length >= 2) return;
+    syncScannersFromDOM();
+    const role = scannersState.some((s) => s.role === 'entry') ? 'exit' : 'entry';
+    const item = { role, doorId: '' };
+    if ($('f_scannerType').value === 'opencv') { item.cameraIndex = 0; item.showCameraFeed = false; }
+    scannersState.push(item);
+    renderScanners();
+  }
+
+  // ---------- Portones (lista dinámica) ----------
+  function renderGates() {
+    const list = $('gatesList');
+    list.innerHTML = '';
+    gatesState.forEach((g, i) => {
+      const row = document.createElement('div');
+      row.className = 'list-item gate-item';
+      row.innerHTML =
+        '<div class="field"><label>id</label><input type="number" class="g-id" min="1" style="max-width:110px"></div>' +
+        '<div class="field"><label>pin</label><input type="number" class="g-pin" min="1" style="max-width:110px"></div>' +
+        '<div class="field"><button type="button" class="sec sm danger g-del">Quitar</button></div>';
+      row.querySelector('.g-id').value = (g.id !== undefined ? g.id : i + 1);
+      row.querySelector('.g-pin').value = (g.pin !== undefined ? g.pin : 1);
+      row.querySelector('.g-del').addEventListener('click', () => { syncGatesFromDOM(); gatesState.splice(i, 1); renderGates(); });
+      list.appendChild(row);
+    });
+  }
+
+  function syncGatesFromDOM() {
+    const rows = document.querySelectorAll('#gatesList .gate-item');
+    gatesState = [...rows].map((row) => ({
+      id: toInt(row.querySelector('.g-id').value, 1),
+      pin: toInt(row.querySelector('.g-pin').value, 1),
+    }));
+  }
+
+  function addGate() {
+    syncGatesFromDOM();
+    const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
+    gatesState.push({ id: nextId, pin: 1 });
+    renderGates();
+  }
+
+  // ---------- Visibilidad condicional ----------
+  function applyConditionalVisibility() {
+    const usesList = scannerUsesList();
+    $('scannersCond').hidden = !usesList;
+    $('scannersNoneHint').hidden = usesList;
+    $('baseUrlCustomCond').hidden = $('f_baseUrl').value !== '__custom__';
+    $('screenCond').hidden = !$('f_hasScreen').checked;
+    $('npCond').hidden = !$('f_npEnabled').checked;
+    $('wdCond').hidden = !$('f_wdEnabled').checked;
+    $('pollCond').hidden = !$('f_pollEnabled').checked;
+  }
+
+  // ---------- Recolección ----------
+  function collectFormIntoState() {
+    const cfg = clone(state);
+    cfg.schemaVersion = 1;
+
+    const did = txt($('f_deviceId'));
+    if (did) cfg.deviceId = did; else delete cfg.deviceId;
+    cfg.placeName = txt($('f_placeName'));
+
+    const baseSel = $('f_baseUrl').value;
+    cfg.api = {
+      baseUrl: baseSel === '__custom__' ? txt($('f_baseUrlCustom')) : baseSel,
+      verifierStyle: $('f_verifierStyle').value,
+    };
+
+    const type = $('f_scannerType').value;
+    cfg.scannerType = type;
+    if (type === 'hid' || type === 'opencv') {
+      syncScannersFromDOM();
+      cfg.scanners = clone(scannersState);
+    } else {
+      cfg.scanners = [];
+    }
+
+    const hasScreen = $('f_hasScreen').checked;
+    cfg.screen = { hasScreen };
+    if (hasScreen) {
+      cfg.screen.doorType = $('f_doorType').value;
+      const logo = txt($('f_logo'));
+      if (logo) cfg.screen.clientLogoUrl = logo;
+    }
+
+    syncGatesFromDOM();
+    cfg.gpio = {
+      enabled: $('f_gpioEnabled').checked,
+      mode: $('f_gpioMode').value,
+      gates: clone(gatesState),
+      pulseSeconds: toFloat($('f_pulse').value, 1),
+      neopixel: {
+        enabled: $('f_npEnabled').checked,
+        pin: txt($('f_npPin')) || 'D18',
+        count: toInt($('f_npCount').value, 55),
+      },
+      watchdog: {
+        enabled: $('f_wdEnabled').checked,
+        host: txt($('f_wdHost')) || '1.1.1.1',
+        intervalSec: toInt($('f_wdInterval').value, 240),
+      },
+    };
+
+    cfg.hikvision = {
+      enabled: $('f_hikEnabled').checked,
+      nightlyCleanupHour: toInt($('f_hikHour').value, 2),
+    };
+
+    cfg.polling = {
+      enabled: $('f_pollEnabled').checked,
+      intervalSeconds: toInt($('f_pollInterval').value, 60),
+    };
+
+    return cfg;
+  }
+
+  // ---------- Validación liviana en cliente ----------
+  function validateClient(cfg) {
+    const errs = [];
+    if (!/^https?:\/\//.test(cfg.api.baseUrl || '')) errs.push('api.baseUrl debe empezar con http:// o https://');
+    if (!['secure', 'legacy'].includes(cfg.api.verifierStyle)) errs.push('verifierStyle inválido');
+    (cfg.scanners || []).forEach((s, i) => {
+      if (!s.doorId) errs.push('Lector ' + (i + 1) + ': doorId es obligatorio');
+      if (cfg.scannerType === 'hid' && !s.deviceName)
+        errs.push('Lector ' + (i + 1) + ': elegí un deviceName (o "Otra…" con el nombre exacto)');
+      if (cfg.scannerType === 'opencv' && (!Number.isInteger(s.cameraIndex) || s.cameraIndex < 0))
+        errs.push('Lector ' + (i + 1) + ': cameraIndex debe ser entero ≥ 0');
+    });
+    if (cfg.gpio.pulseSeconds < 0.1) errs.push('pulseSeconds debe ser ≥ 0.1');
+    (cfg.gpio.gates || []).forEach((g, i) => {
+      if (!Number.isInteger(g.id) || g.id < 1) errs.push('Portón ' + (i + 1) + ': id debe ser entero ≥ 1');
+      if (!Number.isInteger(g.pin) || g.pin < 1) errs.push('Portón ' + (i + 1) + ': pin debe ser entero ≥ 1');
+    });
+    if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('GPIO habilitado sin portones configurados');
+    if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
+    if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
+    if (cfg.polling.enabled && cfg.polling.intervalSeconds < 10) errs.push('polling.intervalSeconds debe ser ≥ 10');
+    return errs;
+  }
+
+  // ---------- Sincronía con JSON crudo ----------
+  function refreshRawFromForm() { state = collectFormIntoState(); cfgArea.value = pretty(state); }
+
+  // ---------- Guardar ----------
   async function waitForRestart() {
     show('warn', 'Aplicado. El servicio se está reiniciando...');
     for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
       try {
         const r = await fetch('/', { cache: 'no-store' });
         if (r.ok) { await load(); show('ok', 'Reinicio completo. Configuración aplicada.'); return; }
@@ -131,40 +664,144 @@
   }
 
   async function save() {
-    let parsed;
-    try {
-      parsed = JSON.parse(cfgArea.value);
-    } catch (e) {
-      show('err', 'El JSON no es válido: ' + e.message); return;
+    state = collectFormIntoState();
+    const clientErrors = validateClient(state);
+    if (clientErrors.length) { show('err', 'Revisá:\n- ' + clientErrors.join('\n- ')); return; }
+
+    // Auto-incremento de configRevision sobre la cargada (control de idempotencia).
+    if (!state.configRevision || state.configRevision <= loadedRevision) {
+      state.configRevision = (loadedRevision || 0) + 1;
     }
-    // El backend es dueño de la revision en el flujo remoto; localmente la
-    // incrementamos sobre la cargada para pasar el control de idempotencia.
-    if (!parsed.configRevision || parsed.configRevision <= loadedRevision) {
-      parsed.configRevision = (loadedRevision || 0) + 1;
-    }
-    cfgArea.value = JSON.stringify(parsed, null, 2);
+    cfgArea.value = pretty(state);
     show('', 'Guardando...');
     try {
-      const resp = await fetch('/config', {
-        method: 'PUT', headers: headers(), body: JSON.stringify(parsed),
-      });
+      const resp = await fetch('/config', { method: 'PUT', headers: headers(), body: JSON.stringify(state) });
       const body = await resp.json();
       if (!resp.ok) {
-        const details = body.details ? '\n- ' + body.details.join('\n- ') : '';
-        show('err', 'Rechazada (' + resp.status + '): ' + body.error + details +
-             (body.currentRevision !== undefined ? '\nRevisión vigente: ' + body.currentRevision + ' — recargá.' : ''));
+        let extra = '';
+        if (body.details) extra += '\n- ' + body.details.join('\n- ');
+        if (body.expected) extra += '\n(device-id.txt del equipo: ' + body.expected + ' — corregí deviceId o dejalo vacío)';
+        if (body.currentRevision !== undefined) extra += '\nRevisión vigente: ' + body.currentRevision + ' — recargá.';
+        show('err', 'Rechazada (' + resp.status + '): ' + (body.error || '') + extra);
         return;
       }
       if (body.willRestart) { loadedRevision = body.revision; await waitForRestart(); }
-      else if (body.applied) { loadedRevision = body.revision; show('ok', 'Aplicada sin reinicio (revisión ' + body.revision + ').'); }
+      else if (body.applied) { loadedRevision = body.revision; $('revLine').textContent = 'revisión actual: ' + body.revision; show('ok', 'Aplicada sin reinicio (revisión ' + body.revision + ').'); }
       else { show('ok', 'Sin cambios (revisión ' + body.revision + ').'); }
     } catch (e) {
       show('err', 'Error guardando: ' + e.message);
     }
   }
 
+  // ---------- Provisionar token ----------
+  async function provisionToken() {
+    const t = txt($('provToken'));
+    const pm = $('provMsg');
+    if (t.length < 16 || t.length > 256 || /\s/.test(t)) {
+      pm.style.color = 'var(--err)'; pm.textContent = 'Token: 16–256 caracteres, sin espacios.'; return;
+    }
+    pm.style.color = ''; pm.textContent = 'Guardando token...';
+    try {
+      const resp = await fetch('/token', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: t }) });
+      const body = await resp.json();
+      if (!resp.ok) {
+        pm.style.color = 'var(--err)';
+        pm.textContent = 'Rechazado: ' + (body.error || '') + (body.details ? ' — ' + body.details.join(' ') : '');
+        return;
+      }
+      pm.style.color = 'var(--ok)'; pm.textContent = 'Token provisionado.';
+      await load();
+    } catch (e) {
+      pm.style.color = 'var(--err)'; pm.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  // ---------- Sesión / login ----------
+  function showLogin(message) {
+    $('loginCard').hidden = false;
+    $('statusCard').hidden = true;
+    $('form').hidden = true;
+    $('provisionCard').hidden = true;
+    const lm = $('loginMsg');
+    if (message) { lm.style.color = 'var(--err)'; lm.textContent = message; } else { lm.textContent = ''; }
+    $('loginPass').value = '';
+  }
+  function showApp(username) {
+    $('loginCard').hidden = true;
+    $('statusCard').hidden = false;
+    $('sessionUser').textContent = 'Sesión: ' + username;
+    $('pwd_user').value = username;
+  }
+  async function checkSession() {
+    try {
+      const r = await fetch('/admin/session', { headers: headers() });
+      const b = await r.json();
+      if (b.authenticated) { showApp(b.username); await load(); }
+      else { showLogin(); }
+    } catch (e) { showLogin('No se pudo contactar al equipo: ' + e.message); }
+  }
+  async function doLogin() {
+    const username = $('loginUser').value.trim();
+    const password = $('loginPass').value;
+    const lm = $('loginMsg');
+    lm.style.color = ''; lm.textContent = 'Ingresando...';
+    try {
+      const r = await fetch('/admin/login', { method: 'POST', headers: headers(), body: JSON.stringify({ username, password }) });
+      const b = await r.json();
+      if (!r.ok) { lm.style.color = 'var(--err)'; lm.textContent = b.error || 'No se pudo ingresar.'; return; }
+      lm.textContent = ''; showApp(b.username); await load();
+    } catch (e) { lm.style.color = 'var(--err)'; lm.textContent = 'Error: ' + e.message; }
+  }
+  async function doLogout() {
+    try { await fetch('/admin/logout', { method: 'POST', headers: headers() }); } catch (e) { /* ignore */ }
+    showLogin('Sesión cerrada.');
+  }
+  async function changePassword() {
+    const pm = $('pwdMsg');
+    const username = $('pwd_user').value.trim();
+    const currentPassword = $('pwd_current').value;
+    const newPassword = $('pwd_new').value;
+    pm.style.color = ''; pm.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/password', { method: 'POST', headers: headers(), body: JSON.stringify({ username, currentPassword, newPassword }) });
+      const b = await r.json();
+      if (!r.ok) { pm.style.color = 'var(--err)'; pm.textContent = (b.error || 'Rechazado') + (b.details ? ' — ' + b.details.join(' ') : ''); return; }
+      pm.style.color = 'var(--ok)'; pm.textContent = 'Credenciales actualizadas.';
+      $('pwd_current').value = ''; $('pwd_new').value = '';
+      showApp(b.username);
+    } catch (e) { pm.style.color = 'var(--err)'; pm.textContent = 'Error: ' + e.message; }
+  }
+
+  // ---------- Eventos ----------
+  $('btnLogin').addEventListener('click', doLogin);
+  $('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+  $('btnLogout').addEventListener('click', doLogout);
+  $('btnChangePwd').addEventListener('click', changePassword);
   $('btnLoad').addEventListener('click', load);
   $('btnSave').addEventListener('click', save);
+  $('btnAddScanner').addEventListener('click', addScanner);
+  $('btnAddGate').addEventListener('click', addGate);
+  $('btnProvision').addEventListener('click', provisionToken);
+
+  $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); applyConditionalVisibility(); });
+  $('f_baseUrl').addEventListener('change', applyConditionalVisibility);
+  ['f_hasScreen', 'f_npEnabled', 'f_wdEnabled', 'f_pollEnabled'].forEach((id) =>
+    $(id).addEventListener('change', applyConditionalVisibility));
+
+  $('btnJsonToForm').addEventListener('click', () => {
+    let parsed;
+    try { parsed = JSON.parse(cfgArea.value); }
+    catch (e) { show('err', 'JSON inválido: ' + e.message); return; }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) { show('err', 'El JSON debe ser un objeto.'); return; }
+    state = parsed;
+    populateForm(state);
+    show('ok', 'Formulario actualizado desde el JSON.');
+  });
+  $('btnFormToJson').addEventListener('click', () => { refreshRawFromForm(); show('ok', 'JSON actualizado desde el formulario.'); });
+  $('advanced').addEventListener('toggle', (e) => { if (e.target.open) refreshRawFromForm(); });
+
+  // Arranque: ¿hay sesión vigente? Si no, mostrar login.
+  checkSession();
 })();
 </script>
 </body>

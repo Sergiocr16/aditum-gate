@@ -16,13 +16,15 @@ import time
 
 from flask import jsonify, request
 
+from .admin_auth import is_admin_logged_in
+
 log = logging.getLogger("aditum.auth")
 
-# Paths accesibles sin token. Agregar uno aqui es una decision de seguridad:
-# debe quedar evidente en el code review.
-# /admin es solo el HTML estatico del editor local; los datos que muestra y
-# guarda salen de GET/PUT /config, que si exigen token.
-PUBLIC_PATHS = {"/", "/admin"}
+# Paths accesibles sin credencial. Agregar uno aqui es una decision de
+# seguridad: debe quedar evidente en el code review.
+# /admin es solo el HTML estatico del editor local (su contenido se tapa con
+# el login); /admin/login y /admin/session son el flujo de autenticacion.
+PUBLIC_PATHS = {"/", "/admin", "/admin/login", "/admin/logout", "/admin/session"}
 
 UNPROVISIONED_LOG_INTERVAL = 60  # segundos entre logs de "sin provisionar"
 _last_unprovisioned_log = 0.0
@@ -43,6 +45,11 @@ def init_auth(app, settings):
         if request.path in PUBLIC_PATHS:
             return None
 
+        # Una persona logueada en el editor local (cookie de sesion admin) es
+        # superusuario del API local, tenga o no token el dispositivo.
+        if is_admin_logged_in():
+            return None
+
         # settings.device_token se lee en cada request: PUT /token lo rota
         # en memoria sin reiniciar el proceso.
         expected = settings.device_token
@@ -51,9 +58,13 @@ def init_auth(app, settings):
             now = time.monotonic()
             if now - _last_unprovisioned_log >= UNPROVISIONED_LOG_INTERVAL:
                 _last_unprovisioned_log = now
-                log.error("Dispositivo SIN PROVISIONAR: API abierta. "
-                          "Provisionar token via PUT /token o device-token.txt")
-            return None
+                log.error("Dispositivo SIN PROVISIONAR: el API exige login admin. "
+                          "Provisionar token via PUT /token (TOFU) o device-token.txt")
+            # Sin token NO se abre el API: solo se permite la provision TOFU
+            # del token. Todo lo demas exige login admin.
+            if request.path == "/token" and request.method == "PUT":
+                return None
+            return jsonify({"error": "unauthorized"}), 401
 
         provided = _extract_token()
         if provided and hmac.compare_digest(provided, expected):

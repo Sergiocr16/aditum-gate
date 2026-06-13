@@ -13,6 +13,10 @@ device-token.txt
 config-runtime.json
 hikvision-cards.json
 
+# Credenciales del login admin del editor local (hash + secreto de sesion)
+admin-credentials.json
+admin-session-secret
+
 # Python
 __pycache__/
 *.pyc
