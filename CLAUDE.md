@@ -34,8 +34,10 @@ supervisor ni cron de reinicio:
    supervisores internos.
 2. **`aditum-web`** = `web/server.js` — Express+WebSocket :3000: sirve el
    build de Angular (`web/pedestal-app/dist/pedestal-app/browser`), recibe
-   los estados de los scanners y los broadcastea a la pantalla, y expone
-   `GET /api/config` (subset seguro de la config).
+   los estados de los scanners y los broadcastea a la pantalla, expone
+   `GET /api/config` (subset seguro de la config) y supervisa el kiosko
+   chromium (abre/relanza/cierra según `screen.hasScreen`, corriendo como
+   el usuario de la sesión gráfica).
 
 ### Sistema de configuración (lo más importante)
 

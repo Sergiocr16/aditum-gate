@@ -7,7 +7,9 @@
  * - GET /api/config: subset seguro de config-runtime.json para Angular.
  * - Si la config cambia en disco, emite { state: "reload" } para que la
  *   pantalla se recargue.
- * - Lanza chromium en kiosko solo si la config dice hasScreen.
+ * - Kiosko supervisado (rol del viejo aditum-screen-web): chromium a
+ *   pantalla completa si la config dice hasScreen; se relanza si muere
+ *   y se cierra si hasScreen pasa a false (sin reiniciar procesos).
  */
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -59,12 +61,7 @@ if (fs.existsSync(ANGULAR_DIST)) {
 
 const server = app.listen(PORT, () => {
     console.log(`Servidor de pantalla en puerto ${PORT}`);
-    const config = readConfig();
-    if (config.screen && config.screen.hasScreen) {
-        launchKiosk();
-    } else {
-        console.log('hasScreen=false: no se lanza el kiosko');
-    }
+    superviseKiosk();
 });
 
 // ------------------------------------------------------------------
@@ -130,15 +127,95 @@ app.post('/api/success-exit', (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// Kiosko
+// Kiosko (rol del viejo aditum-screen-web): chromium a pantalla completa
+// contra este mismo server. Supervisado: si chromium muere o el escritorio
+// todavia no estaba listo al boot, se reintenta; si hasScreen pasa a false
+// en la config, se cierra. PM2 nos corre como root, asi que el navegador
+// se lanza como el usuario duenio de la sesion grafica (X11 o Wayland).
 // ------------------------------------------------------------------
+const KIOSK_URL = 'http://localhost:3000';
+// [c]hromium: regex que matchea el proceso pero no al propio pgrep/pkill
+const KIOSK_PATTERN = '[c]hromium.*localhost:3000';
+const KIOSK_CHECK_MS = 15000;
+const KIOSK_FLAGS = '--start-fullscreen --disable-session-crashed-bubble ' +
+    '--noerrdialogs --no-first-run --incognito';
+let kioskLaunching = false;
+
+function desktopUser() {
+    // Duenio de la sesion grafica: el primer /run/user/<uid> no-root con
+    // entrada en /etc/passwd. En una Pi de escritorio es "pi" (uid 1000).
+    try {
+        const uids = fs.readdirSync('/run/user')
+            .filter((u) => /^\d+$/.test(u) && u !== '0')
+            .sort((a, b) => Number(a) - Number(b));
+        const passwd = fs.readFileSync('/etc/passwd', 'utf8').split('\n');
+        for (const uid of uids) {
+            const entry = passwd.find((l) => l.split(':')[2] === uid);
+            if (entry) {
+                const parts = entry.split(':');
+                return { name: parts[0], uid, home: parts[5] };
+            }
+        }
+    } catch (error) { /* sin sesion grafica todavia */ }
+    return null;
+}
+
+function kioskCommand() {
+    // Binario segun la version de Raspberry Pi OS
+    const chromium = 'BROWSER=$(command -v chromium-browser || command -v chromium)';
+    const run = `$BROWSER ${KIOSK_FLAGS} ${KIOSK_URL}`;
+
+    if (process.getuid && process.getuid() === 0) {
+        const user = desktopUser();
+        if (!user) return null; // el supervisor reintenta en el proximo ciclo
+        const rtdir = `/run/user/${user.uid}`;
+        const env = [`DISPLAY=:0`, `XDG_RUNTIME_DIR=${rtdir}`];
+        try {
+            // Wayland (Bookworm default): el socket se llama wayland-N
+            const wl = fs.readdirSync(rtdir).find((f) => /^wayland-\d+$/.test(f));
+            if (wl) env.push(`WAYLAND_DISPLAY=${wl}`);
+        } catch (error) { /* X11 puro */ }
+        if (fs.existsSync(path.join(user.home, '.Xauthority'))) {
+            env.push(`XAUTHORITY=${path.join(user.home, '.Xauthority')}`);
+        }
+        return `runuser -u ${user.name} -- sh -c '${chromium}; ${env.join(' ')} ${run}'`;
+    }
+    // En dev (sin root) se lanza directo con el entorno propio
+    return `sh -c '${chromium}; ${run}'`;
+}
+
 function launchKiosk() {
-    const command = 'chromium-browser --start-fullscreen ' +
-        '--disable-session-crashed-bubble --incognito http://localhost:3000';
-    exec(command, { env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' } },
-        (error) => {
-            if (error) {
-                console.error(`No se pudo lanzar el kiosko: ${error.message}`);
+    if (kioskLaunching) return;
+    const command = kioskCommand();
+    if (!command) {
+        console.log('Kiosko: sin sesion grafica todavia, se reintenta');
+        return;
+    }
+    kioskLaunching = true;
+    console.log('Lanzando kiosko de pantalla');
+    // exec resuelve cuando chromium TERMINA: el flag evita relanzar en paralelo
+    exec(command, (error) => {
+        kioskLaunching = false;
+        if (error) {
+            console.error(`Kiosko termino con error: ${error.message}`);
+        }
+    });
+}
+
+function superviseKiosk() {
+    const tick = () => {
+        const config = readConfig();
+        const wantsKiosk = !!(config.screen && config.screen.hasScreen);
+        exec(`pgrep -f "${KIOSK_PATTERN}"`, (err) => {
+            const running = !err;
+            if (wantsKiosk && !running && !kioskLaunching) {
+                launchKiosk();
+            } else if (!wantsKiosk && running) {
+                console.log('hasScreen=false: cerrando el kiosko');
+                exec(`pkill -f "${KIOSK_PATTERN}"`);
             }
         });
+    };
+    tick();
+    setInterval(tick, KIOSK_CHECK_MS);
 }
