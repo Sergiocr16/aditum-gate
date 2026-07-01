@@ -404,6 +404,9 @@
     <div class="card" id="sec-pantalla">
       <h2>Pantalla</h2>
       <label class="check" id="screenToggleRow"><input type="checkbox" id="f_hasScreen"> Tiene pantalla pedestal</label>
+      <p class="hint" id="screenForcedHint" hidden><strong>Un pedestal siempre tiene pantalla.</strong>
+        Para apagarla, cambiá el <a href="#sec-tipo">Tipo de equipo</a> a
+        "Controlador de portones" o "Portones + lectores" y guardá.</p>
       <p class="hint">La pantalla del pedestal le muestra a la persona el resultado del escaneo.</p>
       <div class="cond" id="screenCond">
         <div class="grid">
@@ -817,6 +820,7 @@
     // Pedestal: pantalla siempre activa (no se puede apagar)
     if (isPedestal) $('f_hasScreen').checked = true;
     $('screenToggleRow').hidden = isPedestal;
+    $('screenForcedHint').hidden = !isPedestal;
 
     // Secciones segun tipo de equipo
     setSectionVisible('sec-lectores', hasReaders);
