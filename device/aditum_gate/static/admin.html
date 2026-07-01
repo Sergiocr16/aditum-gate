@@ -178,6 +178,12 @@
 
   /* ---------- Chips ---------- */
   .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+  .hsub{ font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+         color:var(--mut); margin:18px 0 6px; }
+  .hlist{ margin:4px 0 0; padding:0; list-style:none; font-size:13px; }
+  .hlist li{ padding:5px 0; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:baseline; }
+  .hlist li:last-child{ border-bottom:none; }
+  .hlist code{ font-size:12px; color:var(--mut); }
   .chip{
     display:inline-flex; align-items:center; gap:7px;
     font-size:12.5px; font-weight:600; padding:5px 12px 5px 11px; border-radius:999px;
@@ -318,6 +324,7 @@
   <div id="form" hidden>
 
     <nav class="secnav" aria-label="Secciones">
+      <a href="#sec-salud" data-sec="sec-salud">Salud</a>
       <a href="#sec-tipo" data-sec="sec-tipo">Tipo</a>
       <a href="#sec-identidad" data-sec="sec-identidad">Identidad</a>
       <a href="#sec-lectores" data-sec="sec-lectores">Lectores</a>
@@ -329,6 +336,15 @@
       <a href="#sec-polling" data-sec="sec-polling">Polling</a>
       <a href="#sec-avanzado" data-sec="sec-avanzado">Avanzado</a>
     </nav>
+
+    <div class="card" id="sec-salud">
+      <h2>Salud del equipo</h2>
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <span class="hint" id="healthUpdated" style="margin-top:0"></span>
+        <button class="sec sm" id="btnHealth" type="button">Actualizar</button>
+      </div>
+      <div id="healthBody"><p class="hint">Cargando salud…</p></div>
+    </div>
 
     <div class="card" id="sec-tipo">
       <h2>Tipo de equipo</h2>
@@ -615,6 +631,7 @@
       $('revLine').textContent = 'revisión actual: ' + (state.configRevision || 0) +
                                  ' · schemaVersion ' + (state.schemaVersion || 1);
       show('ok', 'Configuración cargada.');
+      loadHealth(); startHealthTimer();
     } catch (e) {
       show('err', 'No se pudo cargar: ' + e.message);
     }
@@ -1012,6 +1029,7 @@
     } catch (e) { lm.style.color = 'var(--err)'; lm.textContent = 'Error: ' + e.message; }
   }
   async function doLogout() {
+    stopHealthTimer();
     try { await fetch('/admin/logout', { method: 'POST', headers: headers() }); } catch (e) { /* ignore */ }
     showLogin('Sesión cerrada.');
   }
@@ -1031,12 +1049,104 @@
     } catch (e) { pm.style.color = 'var(--err)'; pm.textContent = 'Error: ' + e.message; }
   }
 
+  // ---------- Salud ----------
+  let healthTimer = null;
+  function fmtUptime(sec) {
+    if (sec === null || sec === undefined) return null;
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + ' min';
+  }
+  function healthChip(text, kind) {
+    return '<span class="chip' + (kind ? ' ' + kind : '') + '">' + esc(text) + '</span>';
+  }
+  function renderHealth(h) {
+    const parts = [];
+
+    // Servicios (PM2 + check HTTP del server web)
+    parts.push('<div class="hsub">Servicios</div>');
+    const svcNames = { 'aditum-device': 'Controlador (aditum-device)', 'aditum-web': 'Pantalla/WS (aditum-web)', 'web-server-3000': 'Server web :3000' };
+    const svc = (h.services || []).map((s) => {
+      let label = (svcNames[s.name] || s.name) + ': ' + (s.online ? 'en línea' : 'CAÍDO');
+      if (typeof s.restarts === 'number') label += ' · ↺' + s.restarts;
+      const up = fmtUptime(s.uptimeSec);
+      if (up) label += ' · ' + up;
+      return healthChip(label, s.online ? 'ok' : 'bad');
+    });
+    if (h.kioskExpected) svc.push(healthChip('kiosk de pantalla: activado', ''));
+    parts.push('<div class="chips" style="margin-top:6px">' + svc.join('') + '</div>');
+    if (h.pm2Available === false) parts.push('<p class="hint">PM2 no respondió: sin datos de reinicios/uptime de procesos.</p>');
+
+    // Lectores configurados vs hardware detectado
+    parts.push('<div class="hsub">Lectores configurados</div>');
+    const readers = h.readers || [];
+    if (readers.length) {
+      parts.push('<div class="chips" style="margin-top:6px">' + readers.map((r) => {
+        const name = r.deviceName || (r.cameraIndex !== undefined ? 'cámara ' + r.cameraIndex : '');
+        const where = (r.paths && r.paths.length) ? ' (' + r.paths.join(', ') + ')' : '';
+        const role = r.role === 'entry' ? 'Entrada' : 'Salida';
+        if (r.connected === null) return healthChip(role + ' · sin lector local', '');
+        const st = r.connected ? '✓ conectado' : '✗ no detectado';
+        return healthChip(role + ' · ' + name + ' · ' + st + where, r.connected ? 'ok' : 'bad');
+      }).join('') + '</div>');
+    } else {
+      parts.push('<p class="hint">Este equipo no tiene lectores configurados.</p>');
+    }
+
+    // Dispositivos de entrada conectados (equivalente a sudo evtest)
+    parts.push('<div class="hsub">Dispositivos de entrada detectados</div>');
+    const devs = h.inputDevices || [];
+    if (devs.length) {
+      parts.push('<ul class="hlist">' + devs.map((d) =>
+        '<li><span>' + esc(d.name) + '</span><code>' + esc(d.path) + '</code></li>').join('') + '</ul>');
+    } else {
+      parts.push('<p class="hint">No se detectaron dispositivos de entrada.</p>');
+    }
+
+    // Sistema
+    const sys = h.system || {};
+    parts.push('<div class="hsub">Sistema</div>');
+    const sysChips = [];
+    if (sys.cpuTempC !== null && sys.cpuTempC !== undefined)
+      sysChips.push(healthChip('CPU ' + sys.cpuTempC + ' °C', sys.cpuTempC >= 75 ? 'warn' : 'ok'));
+    const sysUp = fmtUptime(sys.uptimeSec);
+    if (sysUp) sysChips.push(healthChip('encendido hace ' + sysUp, ''));
+    if (sys.memAvailableMb !== null && sys.memAvailableMb !== undefined)
+      sysChips.push(healthChip('RAM libre ' + sys.memAvailableMb + '/' + sys.memTotalMb + ' MB',
+                               sys.memAvailableMb < 100 ? 'warn' : ''));
+    parts.push(sysChips.length
+      ? '<div class="chips" style="margin-top:6px">' + sysChips.join('') + '</div>'
+      : '<p class="hint">Sin datos del sistema.</p>');
+
+    $('healthBody').innerHTML = parts.join('');
+  }
+  async function loadHealth() {
+    try {
+      const r = await fetch('/health', fetchOpts());
+      if (r.status === 401) { stopHealthTimer(); return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      renderHealth(await r.json());
+      $('healthUpdated').textContent = 'Actualizado ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      $('healthBody').innerHTML = '<p class="hint">No se pudo leer la salud: ' + esc(e.message) + '</p>';
+    }
+  }
+  function startHealthTimer() {
+    stopHealthTimer();
+    healthTimer = setInterval(() => {
+      if (!document.hidden && !$('form').hidden && !$('sec-salud').hidden) loadHealth();
+    }, 10000);
+  }
+  function stopHealthTimer() { if (healthTimer) { clearInterval(healthTimer); healthTimer = null; } }
+
   // ---------- Eventos ----------
   $('btnLogin').addEventListener('click', doLogin);
   $('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   $('btnLogout').addEventListener('click', doLogout);
   $('btnChangePwd').addEventListener('click', changePassword);
   $('btnLoad').addEventListener('click', load);
+  $('btnHealth').addEventListener('click', loadHealth);
   $('btnSave').addEventListener('click', save);
   $('btnAddScanner').addEventListener('click', addScanner);
   $('btnAddGate').addEventListener('click', addGate);

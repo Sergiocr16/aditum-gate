@@ -53,9 +53,10 @@ Health mínimo, sin información del dispositivo.
 #### `GET /admin` — público (solo HTML)
 Editor local de configuración: en el Pi se accede como
 `http://localhost:8080/admin`. La página es estática y no revela nada; los
-datos que muestra y guarda salen de `GET /config` y `PUT /config`, que sí
-exigen el token (la página lo pide y lo recuerda en el browser). Útil para
-técnicos en sitio sin pasar por el admin de Aditum.
+datos que muestra y guarda salen de `GET /config`, `PUT /config` y
+`GET /health`, que exigen sesión de administrador (login de la propia página,
+cookie firmada HttpOnly) o el token del dispositivo. Útil para técnicos en
+sitio sin pasar por el admin de Aditum.
 
 #### `GET /status` — protegido
 ```json
@@ -78,6 +79,42 @@ técnicos en sitio sin pasar por el admin de Aditum.
   fallback (nunca recibió config); mostrarlo como alerta.
 - `schemaVersion` es la versión de schema que **soporta el código** del Pi;
   el editor del admin debe usar el schema correspondiente.
+
+#### `GET /health` — protegido
+Reporte de salud para diagnóstico en sitio (lo consume la sección "Salud" de
+`/admin`; también puede consultarlo el backend con el token). Incluye los
+dispositivos de entrada USB conectados (equivalente a `evtest`), el cruce con
+los lectores configurados, el estado de los procesos PM2 y del server web
+`:3000`, y métricas básicas del sistema.
+```json
+{
+  "services": [
+    {"name": "aditum-device", "online": true, "pid": 2305,
+     "status": "online", "restarts": 0, "uptimeSec": 5400},
+    {"name": "aditum-web", "online": true, "pid": 2307,
+     "status": "online", "restarts": 0, "uptimeSec": 5400},
+    {"name": "web-server-3000", "online": true, "httpStatus": 200}
+  ],
+  "pm2Available": true,
+  "inputDevices": [
+    {"path": "/dev/input/event4", "name": "Newtologic  4010E"}
+  ],
+  "readers": [
+    {"role": "entry", "doorId": "34", "deviceName": "Newtologic  4010E",
+     "connected": true, "paths": ["/dev/input/event4"]}
+  ],
+  "system": {"cpuTempC": 52.1, "uptimeSec": 86400,
+             "memAvailableMb": 512, "memTotalMb": 944},
+  "kioskExpected": false
+}
+```
+- `web-server-3000` es un check HTTP real contra `:3000`: PM2 puede reportar
+  el proceso `online` con el puerto muerto; este campo distingue ambos casos.
+- `pm2Available: false` → no se pudo consultar PM2 (p.ej. banco de dev);
+  los servicios traen solo lo verificable (`online` por check directo).
+- `readers[].connected: null` → el equipo no usa lector local
+  (`scannerType` hikvision/none).
+- Los campos de `system` pueden venir `null` si esa lectura falló.
 
 ### Configuración
 

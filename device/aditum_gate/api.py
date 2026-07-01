@@ -14,7 +14,7 @@ from datetime import timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import admin_auth
+from . import admin_auth, health
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .settings import DEVICE_TOKEN_FILE
@@ -64,7 +64,8 @@ def create_app(settings, gates, hikvision_service, screen):
     # Publico: health minimo, sin informacion del dispositivo
     # ------------------------------------------------------------
     @app.route("/")
-    def health():
+    def root_health():
+        # No llamarla "health": sombrearia el modulo health importado arriba
         return jsonify({"status": "ok"})
 
     @app.route("/admin")
@@ -144,6 +145,12 @@ def create_app(settings, gates, hikvision_service, screen):
             "hikvisionEnabled": settings.hikvision_enabled,
             "pollingEnabled": settings.polling_enabled,
         })
+
+    @app.route("/health")
+    def health_report():
+        # Salud del dispositivo: USB conectados, lectores, servicios, sistema.
+        # Protegido por el before_request global (sesion admin o token).
+        return jsonify(health.report(settings))
 
     @app.route("/config")
     def get_config():
