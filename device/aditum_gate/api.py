@@ -17,7 +17,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from . import admin_auth, health
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
-from .settings import DEVICE_TOKEN_FILE
+from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
 
 log = logging.getLogger("aditum.api")
 
@@ -25,6 +25,24 @@ RESTART_RESPONSE_GRACE = 1.0  # segundos para que la respuesta HTTP salga antes 
 
 TOKEN_MIN_LEN = 16
 TOKEN_MAX_LEN = 256
+
+
+def _write_device_id_file(device_id):
+    # Identidad del equipo; escritura atomica como el token (no es secreto)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(DEVICE_ID_FILE.parent), prefix=".device-id.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(device_id + "\n")
+        os.replace(tmp_path, DEVICE_ID_FILE)
+        os.chmod(DEVICE_ID_FILE, 0o644)
+    except OSError:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _write_token_file(token):
@@ -167,17 +185,36 @@ def create_app(settings, gates, hikvision_service, screen):
 
         # Defensa contra entry points intercambiados: la config de otra Pi
         # no se aplica. deviceId vacio/ausente = config generica, se acepta.
+        # Excepcion: la sesion admin del editor local si puede re-identificar
+        # el equipo (reescribe device-id.txt); un push con token no.
         body_device_id = new_config.get("deviceId") or ""
-        if body_device_id and settings.device_id and body_device_id != settings.device_id:
-            return jsonify({
-                "error": "deviceId mismatch",
-                "expected": settings.device_id,
-            }), 409
+        wants_new_id = (isinstance(body_device_id, str)
+                        and body_device_id != settings.device_id)
+        rewrite_id = False
+        if wants_new_id and body_device_id:
+            if admin_auth.is_admin_logged_in():
+                if len(body_device_id) > 128 or any(c.isspace() for c in body_device_id):
+                    return jsonify({
+                        "error": "invalid config",
+                        "details": ["deviceId: maximo 128 caracteres, sin espacios"],
+                    }), 400
+                rewrite_id = True
+            elif settings.device_id:
+                return jsonify({
+                    "error": "deviceId mismatch",
+                    "expected": settings.device_id,
+                }), 409
 
         result = apply_config(new_config, settings)
         if result.get("error"):
             http_status = 400 if result["error"] == "invalid config" else 409
             return jsonify(result), http_status
+
+        if rewrite_id:
+            _write_device_id_file(body_device_id)
+            log.warning("deviceId re-identificado via sesion admin: %r -> %r",
+                        settings.device_id, body_device_id)
+            settings.device_id = body_device_id
 
         if result["willRestart"]:
             # La respuesta debe salir antes del exit (mismo patron que /restart)

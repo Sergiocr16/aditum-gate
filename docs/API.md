@@ -145,8 +145,15 @@ Respuestas:
 | Idéntica a la vigente (retry) | 200 | `{"applied": false, "willRestart": false, "revision": 42}` |
 | Revisión vieja | 409 | `{"error": "stale revision", "currentRevision": 42}` |
 | `deviceId` de otro Pi | 409 | `{"error": "deviceId mismatch", "expected": "GATE-CR-0034"}` |
+| `deviceId` inválido (solo sesión admin) | 400 | `{"error": "invalid config", "details": ["deviceId: maximo 128 caracteres, sin espacios"]}` |
 | `schemaVersion` no soportada | 409 | `{"error": "unsupported schemaVersion", "supportedSchemaVersion": 1}` |
 | No valida contra el schema | 400 | `{"error": "invalid config", "details": ["...mensajes jsonschema..."]}` |
+
+**Re-identificación local**: el 409 `deviceId mismatch` aplica a los push
+autenticados con token (protege contra aplicar la config de otra Pi). Una
+**sesión admin** del editor local sí puede mandar un `deviceId` distinto:
+se acepta, se reescribe `device-id.txt` y el equipo queda re-identificado
+(máx. 128 caracteres, sin espacios).
 
 **Contrato post-restart**: con `willRestart: true` el Pi se reinicia ~1 s
 después de responder y queda inaccesible **5–15 s**. El backend debe:
