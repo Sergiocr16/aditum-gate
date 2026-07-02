@@ -462,6 +462,17 @@
           </div>
         </div>
       </div>
+
+      <hr style="border:none; border-top:1px solid var(--line); margin:24px 0 0">
+      <div class="hsub">Respaldo de configuración</div>
+      <div class="row" style="margin-top:10px">
+        <button class="sec sm" id="btnExport" type="button">Exportar JSON</button>
+        <button class="sec sm" id="btnImport" type="button">Importar JSON</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+      <div class="hint">Exportá la configuración de este equipo como archivo, o importá la de otro
+        para clonarla. Al importar solo se llena el formulario: revisá y presioná Guardar.
+        El deviceId y la revisión de este equipo se conservan.</div>
     </div>
 
     <div class="card" id="sec-identidad">
@@ -981,6 +992,45 @@
     }
   }
 
+  // ---------- Exportar / Importar configuracion ----------
+  function exportConfig() {
+    const cfg = collectFormIntoState();
+    const errs = validateClient(cfg);
+    if (errs.length) { show('err', 'Revisá antes de exportar:\n- ' + errs.join('\n- ')); return; }
+    const name = 'aditum-config-' + (txt($('f_deviceId')) || deviceIdFromStatus || 'equipo') +
+                 '-' + new Date().toISOString().slice(0, 10) + '.json';
+    const blob = new Blob([JSON.stringify(cfg, null, 2) + '\n'], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    show('ok', 'Configuración exportada: ' + name);
+  }
+  function importConfig(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const cfg = JSON.parse(reader.result);
+        if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('el archivo no es un objeto JSON');
+        if (!cfg.api && !cfg.scannerType && !cfg.gpio) throw new Error('no parece una configuración de aditum-gate');
+        // Identidad y revision de ESTE equipo se conservan (importar = clonar el resto)
+        if ((state && state.deviceId) || deviceIdFromStatus) {
+          cfg.deviceId = (state && state.deviceId) || deviceIdFromStatus;
+        } else {
+          delete cfg.deviceId;
+        }
+        cfg.configRevision = loadedRevision || 0;
+        populateForm(cfg);
+        show('ok', 'Importada al formulario (' + file.name + '). Revisá y presioná Guardar para aplicarla.');
+      } catch (e) {
+        show('err', 'No se pudo importar: ' + e.message);
+      }
+    };
+    reader.onerror = () => show('err', 'No se pudo leer el archivo.');
+    reader.readAsText(file);
+  }
+
   // ---------- Provisionar token ----------
   async function provisionToken() {
     const t = txt($('provToken'));
@@ -1202,6 +1252,13 @@
   $('btnSave').addEventListener('click', save);
   $('btnAddScanner').addEventListener('click', addScanner);
   $('btnAddGate').addEventListener('click', addGate);
+  $('btnExport').addEventListener('click', exportConfig);
+  $('btnImport').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', () => {
+    const f = $('importFile').files[0];
+    if (f) importConfig(f);
+    $('importFile').value = ''; // permite reimportar el mismo archivo
+  });
   $('btnProvision').addEventListener('click', provisionToken);
 
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
