@@ -8,7 +8,8 @@ las reglas y la arquitectura del proyecto para sesiones de Claude Code.
 **Nunca crear branches por variante de producto ni duplicar archivos por
 tipo de instalación.** Históricamente cada variante vivía en un branch
 (`hikvision-qr`, `pistolaqr`, `qr-readers`, `qr-small`, `pedestal-app`) con
-código duplicado y divergente; eso se consolidó en `main` en 2026-06. Qué hace
+código duplicado y divergente; eso se consolidó en 2026-06. El branch de
+despliegue es **`production`** (la flota lo trackea). Qué hace
 cada dispositivo lo decide su **config JSON** (ver `config.schema.json`):
 
 - `scannerType`: `"hid"` (pistolas QR evdev) | `"opencv"` (cámaras USB) |
@@ -28,7 +29,8 @@ Dos procesos supervisados por PM2 (`ecosystem.config.js`); no hay otro
 supervisor ni cron de reinicio:
 
 1. **`aditum-device`** = `device/main.py` — un único proceso Python con
-   threads: Flask :8080 (portones GPIO, Hikvision ISAPI, health), 0–2 threads
+   threads: Flask :8080 (portones GPIO, Hikvision ISAPI, health, editor
+   /admin), 0–2 threads
    de scanner, config-agent, watchdog, limpieza nocturna Hikvision. Ante
    fallo irrecuperable se hace `os._exit(1)` y PM2 lo relanza — no inventar
    supervisores internos.
@@ -43,9 +45,15 @@ supervisor ni cron de reinicio:
 
 - La config de cada Pi se administra **desde Aditum por push**: el backend
   hace `PUT /config` al Entry Point del Pi. También hay un editor local en
-  `http://localhost:8080/admin` (misma vía: GET/PUT /config). El poller pull
-  (`config_agent.ConfigAgent`) es solo respaldo, apagado por default
-  (`polling.enabled: false`).
+  `http://localhost:8080/admin` (misma vía: GET/PUT /config, con login de
+  sesión propio — ver abajo). El poller pull (`config_agent.ConfigAgent`)
+  es solo respaldo: el editor lo fija en 40 s siempre activo;
+  `config-default.json` lo trae apagado.
+- El editor /admin **simplifica por tipo de equipo** (portones / portones +
+  lectores / pedestal) y fija políticas no configurables: GPIO siempre modo
+  BOARD con pulso de 1 s, polling fijo 40 s, pantalla implícita del tipo
+  pedestal. El schema sigue aceptando otros valores (configs viejas), pero
+  el formulario los normaliza al guardar. No re-exponer esas opciones.
 - Ambas vías convergen en `config_agent.apply_config()` (lock, idempotencia
   por `configRevision`, validación contra `config.schema.json`, escritura
   atómica). `apply_config` **no reinicia**: el caller decide (el handler HTTP
@@ -59,14 +67,22 @@ supervisor ni cron de reinicio:
 
 ### Seguridad del API (Flask :8080)
 
-- **Todos los endpoints exigen el token del dispositivo** (`Authorization:
-  Bearer` o `X-Device-Token`), enforced por un `before_request` global en
-  `auth.py` — fail-secure: un endpoint nuevo nace protegido. Lo público es la
-  allowlist `PUBLIC_PATHS` en `auth.py`; **agregar un path ahí es una decisión
-  de seguridad** que debe justificarse en el review.
-- Pi sin provisionar (sin `device-token.txt`): API abierta en modo transición
-  con log de error rate-limited; `GET /status` lo reporta (`provisioned`).
-  No convertir esto en fail-closed: brickearía la flota.
+- **Todos los endpoints exigen credencial**, enforced por un `before_request`
+  global en `auth.py` — fail-secure: un endpoint nuevo nace protegido. Dos
+  vías válidas: el **token del dispositivo** (`Authorization: Bearer` o
+  `X-Device-Token`, para el backend) o una **sesión admin** del editor
+  (`admin_auth.py`: login persona, cookie firmada, superusuario local). Lo
+  público es la allowlist `PUBLIC_PATHS` en `auth.py` (`/`, el HTML de
+  `/admin` y su flujo de login); **agregar un path ahí es una decisión de
+  seguridad** que debe justificarse en el review.
+- Pi sin provisionar (sin `device-token.txt`): el API exige login admin para
+  todo salvo `PUT /token` (provisión TOFU). `GET /status` lo reporta
+  (`provisioned: false`).
+- La identidad (`device-id.txt`) solo la cambia una **sesión admin** via
+  `PUT /config` con otro `deviceId`; un push con token y `deviceId` ajeno se
+  rechaza 409 (protección contra entry points intercambiados). Las
+  credenciales del editor (`admin-credentials.json`, `admin-session-secret`)
+  están gitignoreadas y NUNCA van en HTML/JS.
 - El contrato del API vive en `docs/API.md` — **todo endpoint nuevo o cambio
   de shape se documenta ahí** (es lo que implementa el equipo de aditum-jh).
 - No agregar bypass por IP loopback: el túnel remoteiot entrega las requests
@@ -108,6 +124,13 @@ Pis no compilan: todo cambio bajo `web/pedestal-app/src` exige regenerar el
 build (`npm ci && npm run build` con Node 20) y commitear `dist/` en el MISMO
 commit — el job `screen-build-check` del CI falla si no.
 
+**`admin.html` pesa ~130 KB (logos base64): nunca leerlo entero ni editarlo a
+mano** — usar scripts Node de reemplazo verificado (`count === 1` por ancla,
+abortar si no es única) y probar la UI con jsdom simulando `fetch`. Al probar
+`create_app()` en esta Pi, sandboxear SIEMPRE los paths de archivos
+(`admin_auth.CREDENTIALS_FILE`, etc.): la app siembra/reescribe credenciales
+reales si no puede leerlas.
+
 En dev (sin Raspberry) el GPIO corre en modo simulado (`RPi.GPIO` ausente) y
 se puede probar el Flask con `app.test_client()`. Los cambios al schema deben
 actualizar también `config-default.json`, los `examples/` y, si aplica,
@@ -122,11 +145,18 @@ actualizar también `config-default.json`, los `examples/` y, si aplica,
   `scripts/configure.py` genera la config desde las plantillas de `examples/`.
 - **Pull-based**: cada Pi corre `scripts/self-update.sh` via systemd timer
   cada 15 min, trackeando el branch **`production`** (pin por Pi con
-  `ADITUM_BRANCH` en `/etc/default/aditum-gate`) (flock compartido con bootstrap, stamps sha256 para reinstalar
-  deps solo si cambian, health check final; nunca `git clean -x` — borraría
-  identidad y venv). No hay push por SSH — las Pis están detrás de NAT. No
-  reintroducir workflows de deploy por SSH (el branch `auto` lo intentó y no
-  funciona).
+  `ADITUM_BRANCH` en `/etc/default/aditum-gate`; flock compartido con
+  bootstrap, stamps sha256 para reinstalar deps solo si cambian, health
+  check final; nunca `git clean -x` — borraría identidad y venv). No hay
+  push por SSH — las Pis están detrás de NAT; no reintroducir workflows de
+  deploy por SSH (el branch `auto` lo intentó y no funciona).
+- **Cuidado**: cada Pi ejecuta el `self-update.sh` que tiene EN DISCO, así
+  que cambiar el branch trackeado requiere un último push al branch viejo.
+  La flota instalada antes de 2026-07 aún trackea `main`; migrarla = push a
+  `main` del commit que cambia el default (pendiente, requiere confirmación
+  explícita del usuario). Esta Pi de banco ya trackea `production`: **todo
+  cambio local sin push se pierde en ≤15 min** (pausar con
+  `sudo systemctl stop aditum-update.timer` mientras se desarrolla).
 - GitHub Actions (`.github/workflows/ci.yml`) solo valida: sintaxis + schema.
 - Cambiar el comportamiento de un dispositivo en producción = editar su
   config en el backend (sube `configRevision`), no tocar código.

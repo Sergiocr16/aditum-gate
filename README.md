@@ -30,7 +30,7 @@ lectores/cámaras (`scanners`), watchdog de red, NeoPixel, y API
 │  ├─ config-agent ──► config-runtime.json (cache de la config remota)│
 │  └─ watchdog / neopixel                                             │
 └─────────────────────────────────────────────────────────────────────┘
-         ▲ GET /api/gate-devices/{deviceId}/config (polling 60s)
+         ▲ GET /api/gate-devices/{deviceId}/config (poller de respaldo, 40 s)
    Backend Aditum (app/caseta.aditumcr.com)
 ```
 
@@ -48,8 +48,10 @@ aditum-gate/
 │   └── aditum_gate/
 │       ├── settings.py          # Carga y acceso tipado a la config
 │       ├── auth.py              # Token por dispositivo (before_request fail-secure)
+│       ├── admin_auth.py        # Login de persona para el editor /admin (sesion cookie)
+│       ├── health.py            # GET /health: USB, lectores, PM2, sistema
 │       ├── config_agent.py      # apply_config (push/pull) + poller opcional
-│       ├── static/admin.html    # Editor local: http://localhost:8080/admin
+│       ├── static/admin.html    # Editor en linea: http://localhost:8080/admin
 │       ├── log.py               # Logging a stdout (PM2 lo captura)
 │       ├── httpclient.py        # Session con reintentos y timeouts
 │       ├── backend.py           # Verificación QR (estilos secure/legacy)
@@ -79,8 +81,8 @@ aditum-gate/
 ```
 
 La config real de cada Pi vive en el backend y se cachea en
-`config-runtime.json` (no versionado, junto con `device-id.txt` y
-`device-token.txt`).
+`config-runtime.json` (no versionado, junto con `device-id.txt`,
+`device-token.txt`, `admin-credentials.json` y `admin-session-secret`).
 
 ## Configuración
 
@@ -91,7 +93,8 @@ backend la guarda y la empuja al Pi con `PUT /config` (contrato completo en
 atómicamente en `config-runtime.json` y se reinicia para aplicarla (PM2 lo
 relanza). Sin red se opera con la última cache; sin cache, con
 `config-default.json` (modo seguro: solo portones). Existe además un poller
-pull de respaldo (`polling.enabled`, apagado por default).
+pull de respaldo (`polling`): el editor en línea lo deja siempre activo a
+40 s; `config-default.json` lo trae apagado.
 
 Identidad del dispositivo (provisionar una vez por Pi, **no se versionan**):
 
@@ -101,16 +104,31 @@ echo '<token-del-backend>' > device-token.txt && chmod 600 device-token.txt
 ```
 
 El token también puede provisionarse remotamente: un Pi sin token acepta
-`PUT /token` (hacerlo apenas se registra el Entry Point — mientras no haya
-token el API queda abierto en modo transición y `GET /status` lo reporta con
-`provisioned: false`).
+`PUT /token` sin credencial (TOFU — hacerlo apenas se registra el Entry
+Point). Mientras no haya token, **el resto del API exige la sesión del
+editor en línea** y `GET /status` lo reporta con `provisioned: false`.
+También se puede provisionar desde la sección Seguridad del editor.
 
-**Editor local**: en el Pi, `http://localhost:8080/admin` muestra la config
-vigente y permite editarla y aplicarla (pide el token del dispositivo; en el
-Pi está en `device-token.txt`). Sirve para técnicos en sitio o mientras la
-pantalla de administración de Aditum no exista. También se puede empujar por
-curl (`PUT /config`, ver docs/API.md) o copiar un ejemplo a
-`config-runtime.json`.
+**Editor en línea**: en el Pi, `http://localhost:8080/admin` (o vía el Entry
+Point remoto). Pide login de administrador local (semilla `admin`/`admin0606`,
+cambiarla en Seguridad; hash en `admin-credentials.json`). Secciones:
+
+- **Salud**: dashboard con prosa de la config aplicada, servicios PM2,
+  lectores configurados vs USB detectados (equivale a `evtest`), CPU/RAM y
+  botón de reinicio del servicio con confirmación (`GET /health`).
+- **Equipo**: todo se configura eligiendo el tipo (portones / portones +
+  lectores / pedestal). El editor fija las políticas simples: GPIO siempre
+  modo BOARD con pulso de 1 s, polling siempre 40 s, pantalla implícita en
+  el tipo pedestal.
+- **Identidad**: nombre del lugar y `deviceId`. Cambiar el `deviceId` desde
+  una sesión admin re-identifica el equipo (reescribe `device-id.txt`); un
+  push del backend con otro `deviceId` se sigue rechazando (409).
+- **Respaldo**: exportar la config como JSON e importar la de otro equipo
+  (se aplica de inmediato, conservando identidad y revisión locales).
+- **Seguridad**: provisionar token (si falta) y cambiar credenciales.
+
+También se puede empujar por curl (`PUT /config`, ver docs/API.md) o copiar
+un ejemplo a `config-runtime.json`.
 
 Las credenciales de los terminales Hikvision **no** van en la config: llegan
 en cada `POST /update-card` desde el backend (tabla `gate`).
@@ -118,8 +136,9 @@ en cada `POST /update-card` desde el backend (tabla `gate`).
 ## Seguridad del API
 
 Todos los endpoints del Pi exigen el token del dispositivo
-(`Authorization: Bearer` o `X-Device-Token`), salvo `GET /` que es un health
-mínimo sin información. Detalles, flujo de rotación en dos fases y modelo de
+(`Authorization: Bearer` o `X-Device-Token`) **o una sesión del editor en
+línea** (login de persona, superusuario local). Público solo: `GET /`
+(health mínimo), el HTML de `/admin` y su flujo de login. Detalles, flujo de rotación en dos fases y modelo de
 amenaza: [`docs/API.md`](docs/API.md). Regla operativa clave: el Entry Point
 registrado en Aditum debe ser siempre la URL del túnel remoteiot, nunca un
 port-forward del router.
@@ -130,7 +149,7 @@ En cualquier Raspberry Pi (virgen **o con una instalación vieja** de
 cualquier branch histórico), como en una terminal con `sudo`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sergiocr16/aditum-gate/main/scripts/bootstrap.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Sergiocr16/aditum-gate/production/scripts/bootstrap.sh | sudo bash
 ```
 
 El instalador (`scripts/bootstrap.sh`) hace todo y es **idempotente**
@@ -177,7 +196,7 @@ Otras variables: `ADITUM_BRANCH` (pin de branch por Pi), `ADITUM_RECONFIGURE=1`
 ### Checklist de prueba en banco (antes del rollout)
 
 1. **Pi virgen**: one-liner → wizard → `curl localhost:8080/` OK → push dummy
-   a main → la Pi se actualiza sola en ≤15 min → segundo one-liner no rompe
+   a production → la Pi se actualiza sola en ≤15 min → segundo one-liner no rompe
    nada (idempotencia).
 2. **Pi "vieja" simulada**: checkout de `pistolaqr` con edits + nvm/PM2 bajo
    pi + crons de 10 min + nginx→4200 → one-liner → verificar backup completo,
@@ -191,7 +210,8 @@ Otras variables: `ADITUM_BRANCH` (pin de branch por Pi), `ADITUM_RECONFIGURE=1`
 ```bash
 sudo pm2 status          # aditum-device + aditum-web
 sudo pm2 logs            # logs de ambos
-curl localhost:8080/     # health: deviceId, variante, revision de config
+curl localhost:8080/     # health minimo publico: {"status": "ok"}
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/health   # salud completa
 curl localhost:8080/openGate/1
 ```
 
