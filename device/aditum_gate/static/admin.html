@@ -220,6 +220,10 @@
   .dashhead{ display:flex; align-items:center; gap:14px; margin:4px 0 2px; }
   .dashhead h2{ margin:0; }
   .dashhead .spacer{ flex:1; }
+  .cfgprose{ background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+             padding:18px 22px; margin-top:14px; font-size:14px; line-height:1.7;
+             color:var(--ink); box-shadow:var(--shadow-sm); }
+  .cfgprose strong{ font-weight:700; color:var(--pri-700); }
   .dsec{ font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
          color:var(--mut); margin:24px 0 0; }
   .dgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
@@ -398,6 +402,7 @@
         <button class="sec sm" id="btnHealth" type="button">Actualizar</button>
       </div>
       <div class="chips" id="chips" style="margin:8px 0 2px"></div>
+      <div class="cfgprose" id="cfgSummary" hidden></div>
       <div id="healthBody"><p class="hint">Cargando salud…</p></div>
     </div>
 
@@ -675,6 +680,8 @@
       chip(st.provisioned ? 'token OK' : 'SIN TOKEN', st.provisioned ? 'ok' : 'bad');
       chip('fuente: ' + (cfg.source || 'default'),
            cfg.source === 'config-runtime.json' ? '' : 'warn');
+      $('cfgSummary').innerHTML = configSummaryHTML(state);
+      $('cfgSummary').hidden = false;
       savedBaseline = JSON.stringify(collectFormIntoState());
       updateDirty();
       show('ok', 'Configuración cargada.');
@@ -845,6 +852,60 @@
   // ---------- Paginas (menu lateral): una seccion visible a la vez ----------
   let currentSec = 'sec-salud';
   const secTypeHidden = {}; // secciones excluidas por el tipo de equipo
+  function configSummaryHTML(cfg) {
+    const gates = (cfg.gpio && cfg.gpio.gates) || [];
+    const scanners = cfg.scanners || [];
+    const hasScreen = !!(cfg.screen && cfg.screen.hasScreen);
+    const p = [];
+
+    let tipo;
+    if (hasScreen) {
+      const dt = (cfg.screen.doorType === 'EXIT') ? 'salida' : 'entrada';
+      tipo = 'un <strong>pedestal</strong> con pantalla de <strong>' + dt + '</strong>';
+    } else if (gates.length && scanners.length) {
+      tipo = 'un <strong>controlador de portones con lectores</strong>';
+    } else if (gates.length) {
+      tipo = 'un <strong>controlador de portones</strong>';
+    } else {
+      tipo = 'un equipo <strong>sin portones ni lectores locales</strong>';
+    }
+    p.push('Este equipo es ' + tipo + '.');
+
+    if (gates.length) {
+      const g = gates.map((x) => '#' + x.id + ' (pin ' + x.pin + ')').join(', ');
+      p.push('Controla <strong>' + gates.length + (gates.length === 1 ? ' portón' : ' portones') +
+             '</strong>: ' + g + ', con pulso de apertura de 1 segundo.');
+    }
+
+    if (scanners.length) {
+      const t = cfg.scannerType === 'opencv' ? 'cámara' : 'pistola QR';
+      const list = scanners.map((s) => {
+        const rol = s.role === 'entry' ? 'entrada' : 'salida';
+        const que = s.deviceName ? '“' + esc(s.deviceName) + '”'
+                  : (s.cameraIndex !== undefined ? 'cámara ' + s.cameraIndex : '');
+        return rol + (que ? ' con ' + que : '') + (s.doorId ? ' (puerta ' + s.doorId + ')' : '');
+      }).join(' y ');
+      p.push('Lee códigos con <strong>' + scanners.length +
+             (scanners.length > 1 ? ' lectores' : ' lector') + ' de tipo ' + t + '</strong>: ' + list + '.');
+    } else if (cfg.scannerType === 'hikvision') {
+      p.push('Los códigos los leen <strong>terminales Hikvision</strong> (sin lector local).');
+    }
+
+    const np = cfg.gpio && cfg.gpio.neopixel;
+    if (np && np.enabled) {
+      p.push('Enciende una tira <strong>NeoPixel de ' + np.count + ' LEDs</strong> en el pin ' + esc(String(np.pin)) + '.');
+    }
+    if (cfg.hikvision && cfg.hikvision.enabled) {
+      p.push('Administra <strong>terminales Hikvision</strong> (limpieza nocturna a las ' +
+             cfg.hikvision.nightlyCleanupHour + ':00).');
+    }
+    const host = String((cfg.api && cfg.api.baseUrl) || '').replace(/^https?:\/\//, '').replace(/\/api$/, '');
+    if (host) {
+      p.push('Verifica los códigos contra <strong>' + esc(host) + '</strong>' +
+             ((cfg.api || {}).verifierStyle === 'legacy' ? ' (formato legacy)' : '') + '.');
+    }
+    return p.join(' ');
+  }
   function updateDirty() {
     if (!state) return;
     formDirty = JSON.stringify(collectFormIntoState()) !== savedBaseline;
