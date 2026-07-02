@@ -289,7 +289,6 @@
     padding:16px 18px; margin-top:22px; box-shadow:var(--shadow-up);
   }
   .savebar .row{ align-items:center; }
-  .savebar .hint{ margin-top:0; }
   .savebar #btnSave{ min-height:48px; padding:0 28px; font-size:15px; }
 
   /* ---------- Sesion (pie del sidebar) ---------- */
@@ -567,7 +566,6 @@
     <div class="savebar">
       <div class="row">
         <button id="btnSave">Guardar y aplicar</button>
-        <span class="hint" id="revLine"></span>
       </div>
       <div id="msg"></div>
     </div>
@@ -582,6 +580,8 @@
   const msg = $('msg'), chips = $('chips');
 
   let state = null;             // documento canónico (clon de lo cargado)
+  let savedBaseline = '';       // snapshot JSON de lo aplicado (para detectar cambios)
+  let formDirty = false;        // hay cambios sin guardar
   let loadedRevision = null;    // baseline de idempotencia
   let deviceIdFromStatus = '';  // device-id.txt efectivo del equipo
   let scannersState = [];       // estado de la lista de lectores
@@ -649,8 +649,8 @@
       chip(st.provisioned ? 'token OK' : 'SIN TOKEN', st.provisioned ? 'ok' : 'bad');
       chip('fuente: ' + (cfg.source || 'default'),
            cfg.source === 'config-runtime.json' ? '' : 'warn');
-      $('revLine').textContent = 'revisión actual: ' + (state.configRevision || 0) +
-                                 ' · schemaVersion ' + (state.schemaVersion || 1);
+      savedBaseline = JSON.stringify(collectFormIntoState());
+      updateDirty();
       show('ok', 'Configuración cargada.');
       loadHealth(); startHealthTimer();
     } catch (e) {
@@ -819,6 +819,11 @@
   // ---------- Paginas (menu lateral): una seccion visible a la vez ----------
   let currentSec = 'sec-salud';
   const secTypeHidden = {}; // secciones excluidas por el tipo de equipo
+  function updateDirty() {
+    if (!state) return;
+    formDirty = JSON.stringify(collectFormIntoState()) !== savedBaseline;
+    refreshPages();
+  }
   function refreshPages() {
     if (secTypeHidden[currentSec]) currentSec = 'sec-tipo'; // la activa quedo excluida
     document.querySelectorAll('.secnav a[data-sec]').forEach((a) => {
@@ -827,13 +832,14 @@
       if (el) el.hidden = !active;
       a.classList.toggle('active', active);
     });
-    // Guardar aplica a las paginas de configuracion, no a Salud/Seguridad
-    document.querySelector('.savebar').hidden =
-      currentSec === 'sec-salud' || currentSec === 'sec-seguridad';
+    // Guardar solo en paginas de configuracion y solo con cambios o mensaje activo
+    const configPage = currentSec !== 'sec-salud' && currentSec !== 'sec-seguridad';
+    document.querySelector('.savebar').hidden = !configPage || (!formDirty && !msg.textContent);
   }
   function selectSection(secId) {
     if (secTypeHidden[secId] || !$(secId)) return;
     currentSec = secId;
+    if (!formDirty) show('', ''); // limpia mensajes viejos al navegar
     refreshPages();
     if (secId === 'sec-salud') loadHealth();
     window.scrollTo(0, 0);
@@ -988,8 +994,10 @@
         return;
       }
       if (body.willRestart) { loadedRevision = body.revision; await waitForRestart(); }
-      else if (body.applied) { loadedRevision = body.revision; $('revLine').textContent = 'revisión actual: ' + body.revision; show('ok', 'Aplicada sin reinicio (revisión ' + body.revision + ').'); }
+      else if (body.applied) { loadedRevision = body.revision; show('ok', 'Aplicada sin reinicio (revisión ' + body.revision + ').'); }
       else { show('ok', 'Sin cambios (revisión ' + body.revision + ').'); }
+      savedBaseline = JSON.stringify(collectFormIntoState());
+      updateDirty();
     } catch (e) {
       show('err', 'Error guardando: ' + e.message);
     }
@@ -1025,6 +1033,7 @@
         }
         cfg.configRevision = loadedRevision || 0;
         populateForm(cfg);
+        updateDirty();
         show('ok', 'Importada al formulario (' + file.name + '). Revisá y presioná Guardar para aplicarla.');
       } catch (e) {
         show('err', 'No se pudo importar: ' + e.message);
@@ -1262,6 +1271,11 @@
     if (f) importConfig(f);
     $('importFile').value = ''; // permite reimportar el mismo archivo
   });
+
+  // Deteccion de cambios sin guardar: la savebar solo aparece cuando hace falta
+  $('pages').addEventListener('input', () => updateDirty());
+  $('pages').addEventListener('change', () => updateDirty());
+  $('pages').addEventListener('click', () => setTimeout(updateDirty, 0));
   $('btnProvision').addEventListener('click', provisionToken);
 
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
