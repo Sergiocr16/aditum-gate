@@ -1322,10 +1322,7 @@
                        'web-server-3000': 'Server web :3000' };
     const svcIcons = { 'aditum-device': 'cpu', 'aditum-web': 'monitor',
                        'web-server-3000': 'server' };
-    // Sin pantalla, aditum-web/:3000 no cumplen funcion visible: no aplican
-    const svcData = (h.services || []).filter((s) =>
-      h.kioskExpected || (s.name !== 'aditum-web' && s.name !== 'web-server-3000'));
-    const svc = svcData.map((s) => {
+    const svc = (h.services || []).map((s) => {
       const k = s.online ? 'ok' : 'bad';
       const sub = [s.name];
       if (typeof s.restarts === 'number') sub.push('↺ ' + s.restarts);

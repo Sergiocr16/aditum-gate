@@ -117,11 +117,16 @@ def _pm2_snapshot():
 
 
 def services_status(settings):
-    """Estado de los dos procesos y del server web :3000."""
+    """Estado de los procesos y del server web :3000.
+
+    Sin pantalla, aditum-web y el server :3000 no cumplen funcion visible
+    para ese equipo: se omiten del reporte (no aplican).
+    """
     pm2 = _pm2_snapshot()
     services = []
+    names = PM2_PROCESS_NAMES if settings.has_screen else ("aditum-device",)
 
-    for name in PM2_PROCESS_NAMES:
+    for name in names:
         info = {"name": name}
         if name == "aditum-device":
             # Si respondemos este request, el proceso esta vivo por definicion
@@ -138,22 +143,23 @@ def services_status(settings):
                 info["status"] = "missing"
         services.append(info)
 
-    # El check real de aditum-web es HTTP: PM2 puede decir online con el
-    # puerto muerto. Se reporta aparte para distinguir proceso vs servicio.
-    web = {"name": "web-server-3000"}
-    try:
-        resp = request("GET", WEB_SERVER_URL, timeout=(2, 5))
-        web["online"] = resp.status_code == 200
-        web["httpStatus"] = resp.status_code
-    except Exception as e:
-        web["online"] = False
-        web["error"] = str(e)[:200]
-    services.append(web)
+    if settings.has_screen:
+        # El check real de aditum-web es HTTP: PM2 puede decir online con el
+        # puerto muerto. Se reporta aparte para distinguir proceso vs servicio.
+        web = {"name": "web-server-3000"}
+        try:
+            resp = request("GET", WEB_SERVER_URL, timeout=(2, 5))
+            web["online"] = resp.status_code == 200
+            web["httpStatus"] = resp.status_code
+        except Exception as e:
+            web["online"] = False
+            web["error"] = str(e)[:200]
+        services.append(web)
 
-    # aditum-web sin dato de PM2: usar el check HTTP como veredicto
-    for svc in services:
-        if svc["name"] == "aditum-web" and "online" not in svc:
-            svc["online"] = web["online"]
+        # aditum-web sin dato de PM2: usar el check HTTP como veredicto
+        for svc in services:
+            if svc["name"] == "aditum-web" and "online" not in svc:
+                svc["online"] = web["online"]
 
     return {"services": services, "pm2Available": pm2 is not None}
 

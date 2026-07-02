@@ -139,6 +139,9 @@ los lectores configurados, el estado de los procesos PM2 y del server web
 ```
 - `web-server-3000` es un check HTTP real contra `:3000`: PM2 puede reportar
   el proceso `online` con el puerto muerto; este campo distingue ambos casos.
+- Si el equipo **no tiene pantalla**, `services` trae solo `aditum-device`:
+  `aditum-web` y `web-server-3000` no aplican y se omiten
+  (`kioskExpected: false`).
 - `pm2Available: false` → no se pudo consultar PM2 (p.ej. banco de dev);
   los servicios traen solo lo verificable (`online` por check directo).
 - `readers[].connected: null` → el equipo no usa lector local
