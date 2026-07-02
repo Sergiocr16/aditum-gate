@@ -4,10 +4,14 @@ Reemplaza scanner.py y scannerExit.py: el indice de camara viene de la
 config (scanners[].cameraIndex) en vez de ser la diferencia entre dos
 archivos. Mantiene la recuperacion por uhubctl cuando la camara se cae.
 
-showCameraFeed abre la ventana de cv2 para debug; bajo PM2 (sin X) debe
-quedar en false.
+showCameraFeed abre la ventana de cv2 con el cuadro en tiempo real. Bajo PM2
+(root, env minimo) no hay DISPLAY: _ensure_display_env() apunta la ventana a
+la sesion grafica local, igual que hace web/server.js con el kiosk. Si aun
+asi no hay pantalla, el feed se auto-deshabilita al primer fallo.
 """
 import logging
+import os
+import pwd
 import subprocess
 import time
 
@@ -17,6 +21,33 @@ from pyzbar import pyzbar
 from .base import Scanner
 
 log = logging.getLogger("aditum.scanner.opencv")
+
+
+def _ensure_display_env():
+    """Prepara DISPLAY/WAYLAND para poder abrir la ventana desde PM2."""
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        return
+    try:
+        for entry in sorted(os.listdir("/run/user")):
+            if not entry.isdigit() or entry == "0":
+                continue
+            runtime = f"/run/user/{entry}"
+            os.environ.setdefault("XDG_RUNTIME_DIR", runtime)
+            os.environ.setdefault("DISPLAY", ":0")
+            for sock in sorted(os.listdir(runtime)):
+                if sock.startswith("wayland-") and not sock.endswith(".lock"):
+                    os.environ.setdefault("WAYLAND_DISPLAY", sock)
+                    break
+            xauth = os.path.join(pwd.getpwuid(int(entry)).pw_dir, ".Xauthority")
+            if os.path.exists(xauth):
+                os.environ.setdefault("XAUTHORITY", xauth)
+            log.info("Entorno grafico para el feed: runtime=%s display=%s wayland=%s",
+                     runtime, os.environ.get("DISPLAY"),
+                     os.environ.get("WAYLAND_DISPLAY"))
+            return
+        log.warning("showCameraFeed activo pero no hay sesion grafica")
+    except (OSError, KeyError) as e:
+        log.warning("No se pudo preparar el entorno grafico del feed: %s", e)
 
 FRAME_WIDTH = 480
 FRAME_HEIGHT = 360
@@ -31,6 +62,8 @@ class OpenCvScanner(Scanner):
         super().__init__(*args, **kwargs)
         self._capture = None
         self._failed_restarts = 0
+        if self.reader.show_camera_feed:
+            _ensure_display_env()
 
     def _open_camera(self):
         capture = cv2.VideoCapture(self.reader.camera_index, cv2.CAP_V4L2)
