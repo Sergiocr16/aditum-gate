@@ -58,6 +58,12 @@ if [ ! -x .venv/bin/python3 ]; then
   log "Venv ausente: recreando"
   python3 -m venv --system-site-packages .venv
 fi
+# El venv debe ver los paquetes de apt (python3-opencv, RPi.GPIO): un venv
+# creado a mano sin --system-site-packages deja imports rotos para siempre.
+if grep -q '^include-system-site-packages = false' .venv/pyvenv.cfg 2>/dev/null; then
+  log "Venv sin system-site-packages: habilitando"
+  sed -i 's/^include-system-site-packages = false/include-system-site-packages = true/' .venv/pyvenv.cfg
+fi
 REQ_STAMP="$(stamp device/requirements.txt)"
 if [ "$REQ_STAMP" != "$(cat .venv/.requirements.sha256 2>/dev/null || true)" ]; then
   log "requirements.txt cambio: pip install"

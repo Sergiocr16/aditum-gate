@@ -149,6 +149,9 @@ los lectores configurados, el estado de los procesos PM2 y del server web
   "inputDevices": [
     {"path": "/dev/input/event4", "name": "Newtologic  4010E"}
   ],
+  "cameras": [
+    {"index": 0, "name": "NexiGo N60 FHD Webcam"}
+  ],
   "readers": [
     {"role": "entry", "doorId": "34", "deviceName": "Newtologic  4010E",
      "connected": true, "paths": ["/dev/input/event4"]}
@@ -165,6 +168,9 @@ los lectores configurados, el estado de los procesos PM2 y del server web
   (`kioskExpected: false`).
 - `pm2Available: false` → no se pudo consultar PM2 (p.ej. banco de dev);
   los servicios traen solo lo verificable (`online` por check directo).
+- `cameras` son las webcams USB de captura detectadas (`index` es el
+  `cameraIndex` a usar en la config); el editor las sugiere en el
+  formulario. Excluye los códecs del SoC.
 - `readers[].connected: null` → el equipo no usa lector local
   (`scannerType` hikvision/none).
 - Los campos de `system` pueden venir `null` si esa lectura falló.

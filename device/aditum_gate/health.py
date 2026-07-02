@@ -57,6 +57,41 @@ def list_input_devices():
     return devices
 
 
+def list_cameras():
+    """Camaras USB de captura: menor /dev/videoN por dispositivo fisico.
+
+    Se filtra por bus USB para excluir los codecs del SoC (bcm2835-*); una
+    webcam expone varios nodos (captura + metadata) con el mismo padre, el
+    de menor indice es el de captura.
+    """
+    base = "/sys/class/video4linux"
+    by_parent = {}
+    try:
+        entries = os.listdir(base)
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.startswith("video"):
+            continue
+        try:
+            index = int(entry[len("video"):])
+        except ValueError:
+            continue
+        real = os.path.realpath(os.path.join(base, entry))
+        if "/usb" not in real:
+            continue
+        try:
+            with open(os.path.join(base, entry, "name")) as f:
+                name = f.read().strip()
+        except OSError:
+            name = entry
+        parent = real.rsplit("/video4linux", 1)[0]
+        current = by_parent.get(parent)
+        if current is None or index < current["index"]:
+            by_parent[parent] = {"index": index, "name": name}
+    return sorted(by_parent.values(), key=lambda c: c["index"])
+
+
 def readers_status(settings, input_devices):
     """Cruza los lectores configurados con el hardware detectado."""
     readers = []
@@ -210,6 +245,7 @@ def report(settings):
         "services": services["services"],
         "pm2Available": services["pm2Available"],
         "inputDevices": input_devices,
+        "cameras": list_cameras(),
         "readers": readers_status(settings, input_devices),
         "system": system_status(),
         "kioskExpected": bool(settings.has_screen),
