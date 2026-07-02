@@ -361,7 +361,6 @@
       <a href="#sec-tipo" data-sec="sec-tipo">Equipo</a>
       <a href="#sec-hikvision" data-sec="sec-hikvision">Hikvision</a>
       <a href="#sec-red" data-sec="sec-red">Red</a>
-      <a href="#sec-polling" data-sec="sec-polling">Polling</a>
       <a href="#sec-seguridad" data-sec="sec-seguridad">Seguridad</a>
       <div class="navfoot">
         <span id="sessionUser"></span>
@@ -513,18 +512,6 @@
       </div>
     </div>
 
-    <div class="card" id="sec-polling">
-      <h2>Polling de configuración</h2>
-      <label class="check"><input type="checkbox" id="f_pollEnabled"> Poller pull de respaldo (normalmente apagado: la config llega por push)</label>
-      <div class="cond" id="pollCond" style="margin-top:14px; max-width:220px">
-        <div class="field">
-          <label for="f_pollInterval">Intervalo de consulta <span class="muted">(segundos, ≥10)</span> <span class="key">intervalSeconds</span></label>
-          <input type="number" id="f_pollInterval" min="10" value="60">
-          <div class="hint">Cada cuánto el equipo le pregunta al servidor si hay configuración nueva.</div>
-        </div>
-      </div>
-    </div>
-
     <div class="card" id="sec-seguridad">
       <div id="provisionCard" hidden>
         <h2>Provisionar token</h2>
@@ -660,7 +647,7 @@
   function populateForm(cfg) {
     const api = cfg.api || {}, screen = cfg.screen || {}, gpio = cfg.gpio || {},
           np = gpio.neopixel || {}, wd = gpio.watchdog || {},
-          hik = cfg.hikvision || {}, poll = cfg.polling || {};
+          hik = cfg.hikvision || {};
 
     // Identidad
     setVal('f_deviceId', cfg.deviceId || deviceIdFromStatus || '');
@@ -691,10 +678,6 @@
     // Hikvision
     setChk('f_hikEnabled', hik.enabled);
     setVal('f_hikHour', hik.nightlyCleanupHour !== undefined ? hik.nightlyCleanupHour : 2);
-
-    // Polling
-    setChk('f_pollEnabled', poll.enabled);
-    setVal('f_pollInterval', poll.intervalSeconds !== undefined ? poll.intervalSeconds : 60);
 
     applyConditionalVisibility();
     renderScanners();
@@ -861,7 +844,6 @@
     // Conds internos
     $('npCond').hidden = !$('f_npEnabled').checked;
     $('wdCond').hidden = !$('f_wdEnabled').checked;
-    $('pollCond').hidden = !$('f_pollEnabled').checked;
 
     refreshPages();
   }
@@ -924,10 +906,8 @@
       nightlyCleanupHour: toInt($('f_hikHour').value, 2),
     };
 
-    cfg.polling = {
-      enabled: $('f_pollEnabled').checked,
-      intervalSeconds: toInt($('f_pollInterval').value, 60),
-    };
+    // Poller pull de respaldo: fijo, sin opciones en la UI
+    cfg.polling = { enabled: true, intervalSeconds: 40 };
 
     return cfg;
   }
@@ -951,7 +931,6 @@
     if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('El equipo controla portones pero no agregaste ninguno');
     if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
     if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
-    if (cfg.polling.enabled && cfg.polling.intervalSeconds < 10) errs.push('polling.intervalSeconds debe ser ≥ 10');
     return errs;
   }
 
@@ -1223,7 +1202,7 @@
 
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
-  ['f_npEnabled', 'f_wdEnabled', 'f_pollEnabled', 'f_hikEnabled'].forEach((id) =>
+  ['f_npEnabled', 'f_wdEnabled', 'f_hikEnabled'].forEach((id) =>
     $(id).addEventListener('change', applyConditionalVisibility));
 
 
