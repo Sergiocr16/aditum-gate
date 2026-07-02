@@ -356,9 +356,9 @@
   <div id="form" hidden>
 
     <nav class="secnav" aria-label="Secciones">
+      <a href="#sec-identidad" data-sec="sec-identidad">Identidad</a>
       <a href="#sec-salud" data-sec="sec-salud">Salud</a>
       <a href="#sec-tipo" data-sec="sec-tipo">Equipo</a>
-      <a href="#sec-identidad" data-sec="sec-identidad">Identidad</a>
       <a href="#sec-hikvision" data-sec="sec-hikvision">Hikvision</a>
       <a href="#sec-red" data-sec="sec-red">Red</a>
       <a href="#sec-polling" data-sec="sec-polling">Polling</a>
@@ -816,7 +816,7 @@
 
   // ---------- Visibilidad condicional ----------
   // ---------- Paginas (menu lateral): una seccion visible a la vez ----------
-  let currentSec = 'sec-salud';
+  let currentSec = 'sec-identidad';
   const secTypeHidden = {}; // secciones excluidas por el tipo de equipo
   function refreshPages() {
     if (secTypeHidden[currentSec]) currentSec = 'sec-tipo'; // la activa quedo excluida
