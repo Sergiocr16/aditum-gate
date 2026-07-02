@@ -352,16 +352,14 @@
 
     <nav class="secnav" aria-label="Secciones">
       <a href="#sec-salud" data-sec="sec-salud">Salud</a>
-      <a href="#sec-tipo" data-sec="sec-tipo">Tipo</a>
+      <a href="#sec-tipo" data-sec="sec-tipo">Equipo</a>
       <a href="#sec-identidad" data-sec="sec-identidad">Identidad</a>
       <a href="#sec-lectores" data-sec="sec-lectores">Lectores</a>
       <a href="#sec-pantalla" data-sec="sec-pantalla">Pantalla</a>
-      <a href="#sec-portones" data-sec="sec-portones">Portones</a>
       <a href="#sec-neopixel" data-sec="sec-neopixel">NeoPixel</a>
       <a href="#sec-hikvision" data-sec="sec-hikvision">Hikvision</a>
       <a href="#sec-red" data-sec="sec-red">Red</a>
       <a href="#sec-polling" data-sec="sec-polling">Polling</a>
-      <a href="#sec-avanzado" data-sec="sec-avanzado">Avanzado</a>
       <a href="#sec-seguridad" data-sec="sec-seguridad">Seguridad</a>
       <div class="navfoot">
         <span id="sessionUser"></span>
@@ -386,7 +384,7 @@
     </div>
 
     <div class="card" id="sec-tipo">
-      <h2>Tipo de equipo</h2>
+      <h2>Equipo</h2>
       <div class="field" style="max-width:460px">
         <label for="f_deviceType">¿Qué es este equipo?</label>
         <select id="f_deviceType">
@@ -395,6 +393,16 @@
           <option value="gate_readers">Portones + lectores (pistola o cámara)</option>
         </select>
         <div class="hint">Define qué módulos se muestran abajo. La configuración técnica (scannerType, pantalla…) se arma sola según el tipo.</div>
+      </div>
+      <div class="cond" id="gatesCond" style="margin-top:18px">
+        <div class="field">
+          <label>Portones <span class="key">gates</span></label>
+          <p class="hint" style="margin:0 0 10px"><b>id</b>: número del portón en el sistema ·
+            <b>pin</b>: número físico del conector (BOARD) que dispara su relé.
+            El pulso de apertura es de 1&nbsp;segundo.</p>
+          <div id="gatesList"></div>
+          <button class="sec sm" id="btnAddGate" type="button">+ Agregar portón</button>
+        </div>
       </div>
     </div>
 
@@ -465,33 +473,6 @@
       </div>
     </div>
 
-    <div class="card" id="sec-portones">
-      <h2>Portones / GPIO</h2>
-      <label class="check"><input type="checkbox" id="f_gpioEnabled"> GPIO habilitado</label>
-      <p class="hint">Apertura física de los portones mediante los pines GPIO de la Raspberry Pi.</p>
-      <div class="grid" style="margin-top:16px">
-        <div class="field">
-          <label for="f_gpioMode">Numeración de pines <span class="key">mode</span></label>
-          <select id="f_gpioMode">
-            <option value="BOARD">BOARD — número físico del conector</option>
-            <option value="BCM">BCM — numeración del chip</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="f_pulse">Duración del pulso <span class="muted">(segundos)</span> <span class="key">pulseSeconds</span></label>
-          <input type="number" id="f_pulse" min="0.1" step="0.1" value="1">
-          <div class="hint">Tiempo que el relé queda activado para abrir el portón.</div>
-        </div>
-      </div>
-      <div class="field" style="margin-top:16px">
-        <label>Portones <span class="key">gates</span></label>
-        <p class="hint" style="margin:0 0 10px"><b>id</b>: número del portón en el sistema · <b>pin</b>: pin GPIO que dispara su relé.</p>
-        <div id="gatesList"></div>
-        <button class="sec sm" id="btnAddGate" type="button">+ Agregar portón</button>
-      </div>
-
-    </div>
-
     <div class="card" id="sec-neopixel">
       <h2>NeoPixel / LED</h2>
       <label class="check"><input type="checkbox" id="f_npEnabled"> Luces NeoPixel <span class="muted">(tira LED indicadora)</span></label>
@@ -549,19 +530,6 @@
       </div>
     </div>
 
-    <div class="card" id="sec-avanzado">
-      <details id="advanced">
-        <summary>Avanzado: JSON crudo</summary>
-        <p class="hint" style="margin-top:12px">Reflejo del documento completo. Para que tus cambios acá cuenten,
-          presioná <b>“Aplicar JSON al formulario”</b> antes de guardar (al guardar se toma lo del formulario).</p>
-        <textarea id="cfg" spellcheck="false"></textarea>
-        <div class="row" style="margin-top:12px">
-          <button class="sec sm" id="btnJsonToForm" type="button">Aplicar JSON al formulario</button>
-          <button class="sec sm" id="btnFormToJson" type="button">Actualizar JSON desde el formulario</button>
-        </div>
-      </details>
-    </div>
-
     <div class="card" id="sec-seguridad">
       <div id="provisionCard" hidden>
         <h2>Provisionar token</h2>
@@ -611,7 +579,7 @@
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const msg = $('msg'), chips = $('chips'), cfgArea = $('cfg');
+  const msg = $('msg'), chips = $('chips');
 
   let state = null;             // documento canónico (clon de lo cargado)
   let loadedRevision = null;    // baseline de idempotencia
@@ -671,7 +639,6 @@
       state = clone(cfg.config || {});
 
       populateForm(state);
-      cfgArea.value = pretty(state);
       $('form').hidden = false;
       $('provisionCard').hidden = !!st.provisioned;
 
@@ -718,9 +685,6 @@
     setVal('f_logo', screen.clientLogoUrl || '');
 
     // GPIO
-    setChk('f_gpioEnabled', gpio.enabled !== undefined ? gpio.enabled : true);
-    $('f_gpioMode').value = gpio.mode || 'BOARD';
-    setVal('f_pulse', gpio.pulseSeconds !== undefined ? gpio.pulseSeconds : 1);
     gatesState = clone(gpio.gates || []);
     renderGates();
     setChk('f_npEnabled', np.enabled);
@@ -898,7 +862,7 @@
     // Secciones segun tipo de equipo
     setSectionVisible('sec-lectores', hasReaders);
     setSectionVisible('sec-pantalla', isPedestal);
-    setSectionVisible('sec-portones', hasGates);
+    $('gatesCond').hidden = !hasGates;
     setSectionVisible('sec-neopixel', isPedestal);
     setSectionVisible('sec-hikvision', hasGates);
     setSectionVisible('sec-red', true);
@@ -948,11 +912,13 @@
     }
 
     syncGatesFromDOM();
+    // Sin opciones de GPIO: BOARD y pulso de 1s siempre; habilitado si el
+    // tipo de equipo controla portones.
     cfg.gpio = {
-      enabled: hasGates ? $('f_gpioEnabled').checked : false,
-      mode: $('f_gpioMode').value,
+      enabled: hasGates,
+      mode: 'BOARD',
       gates: hasGates ? clone(gatesState) : [],
-      pulseSeconds: toFloat($('f_pulse').value, 1),
+      pulseSeconds: 1,
       neopixel: {
         enabled: isPedestal && $('f_npEnabled').checked,
         pin: txt($('f_npPin')) || 'D18',
@@ -990,20 +956,17 @@
       if (cfg.scannerType === 'opencv' && (!Number.isInteger(s.cameraIndex) || s.cameraIndex < 0))
         errs.push('Lector ' + (i + 1) + ': cameraIndex debe ser entero ≥ 0');
     });
-    if (cfg.gpio.pulseSeconds < 0.1) errs.push('pulseSeconds debe ser ≥ 0.1');
     (cfg.gpio.gates || []).forEach((g, i) => {
       if (!Number.isInteger(g.id) || g.id < 1) errs.push('Portón ' + (i + 1) + ': id debe ser entero ≥ 1');
       if (!Number.isInteger(g.pin) || g.pin < 1) errs.push('Portón ' + (i + 1) + ': pin debe ser entero ≥ 1');
     });
-    if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('GPIO habilitado sin portones configurados');
+    if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('El equipo controla portones pero no agregaste ninguno');
     if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
     if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
     if (cfg.polling.enabled && cfg.polling.intervalSeconds < 10) errs.push('polling.intervalSeconds debe ser ≥ 10');
     return errs;
   }
 
-  // ---------- Sincronía con JSON crudo ----------
-  function refreshRawFromForm() { state = collectFormIntoState(); cfgArea.value = pretty(state); }
 
   // ---------- Guardar ----------
   async function waitForRestart() {
@@ -1027,7 +990,6 @@
     if (!state.configRevision || state.configRevision <= loadedRevision) {
       state.configRevision = (loadedRevision || 0) + 1;
     }
-    cfgArea.value = pretty(state);
     show('', 'Guardando...');
     try {
       const resp = await fetch('/config', { method: 'PUT', headers: headers(), body: JSON.stringify(state) });
@@ -1254,17 +1216,6 @@
   ['f_hasScreen', 'f_npEnabled', 'f_wdEnabled', 'f_pollEnabled', 'f_hikEnabled'].forEach((id) =>
     $(id).addEventListener('change', applyConditionalVisibility));
 
-  $('btnJsonToForm').addEventListener('click', () => {
-    let parsed;
-    try { parsed = JSON.parse(cfgArea.value); }
-    catch (e) { show('err', 'JSON inválido: ' + e.message); return; }
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) { show('err', 'El JSON debe ser un objeto.'); return; }
-    state = parsed;
-    populateForm(state);
-    show('ok', 'Formulario actualizado desde el JSON.');
-  });
-  $('btnFormToJson').addEventListener('click', () => { refreshRawFromForm(); show('ok', 'JSON actualizado desde el formulario.'); });
-  $('advanced').addEventListener('toggle', (e) => { if (e.target.open) refreshRawFromForm(); });
 
   // Menu lateral y links internos a secciones
   document.querySelectorAll('a[href^="#sec-"]').forEach((a) =>
