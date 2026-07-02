@@ -60,6 +60,9 @@
   .appbar .spacer{ flex:1; }
   .appbar .env{ display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--mut-2); white-space:nowrap; }
   .appbar .env::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--pri); box-shadow:0 0 0 3px var(--pri-50); flex:none; }
+  .appbar .who{ font-size:13px; font-weight:700; color:var(--ink); white-space:nowrap;
+                overflow:hidden; text-overflow:ellipsis; max-width:45vw; }
+  .appbar .who .place{ font-weight:600; color:var(--mut); }
 
   /* ---------- Layout ---------- */
   .wrap{ max-width:none; margin:0; padding:16px 24px 80px; }
@@ -317,6 +320,7 @@
     .wrap{ padding:22px 14px 140px; }
     .card{ padding:18px 16px; }
     .appbar .tag{ display:none; }
+    .appbar .env{ display:none; }
     .secnav{ top:51px; }
   }
   @media (prefers-reduced-motion:reduce){
@@ -332,6 +336,7 @@
     <span class="sep"></span>
     <span class="tag">Gate · Configuración del dispositivo</span>
     <span class="spacer"></span>
+    <span class="who" id="hdrWho"></span>
     <span class="env">Editor local</span>
   </div>
 </header>
@@ -655,6 +660,8 @@
       const cfg = await cfgResp.json();
 
       deviceIdFromStatus = st.deviceId || '';
+      $('hdrWho').innerHTML = esc(st.deviceId || 'sin identidad') +
+        (st.placeName ? ' <span class="place">· ' + esc(st.placeName) + '</span>' : '');
       loadedRevision = (cfg.config && cfg.config.configRevision) || 0;
       state = clone(cfg.config || {});
 
