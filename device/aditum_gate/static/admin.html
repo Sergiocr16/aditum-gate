@@ -201,6 +201,36 @@
   .hlist li{ padding:5px 0; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:baseline; }
   .hlist li:last-child{ border-bottom:none; }
   .hlist code{ font-size:12px; color:var(--mut); }
+
+  /* ---------- Dashboard de salud ---------- */
+  .dashhead{ display:flex; align-items:center; gap:14px; margin:4px 0 2px; }
+  .dashhead h2{ margin:0; }
+  .dashhead .spacer{ flex:1; }
+  .dsec{ font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+         color:var(--mut); margin:24px 0 0; }
+  .dgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr));
+          gap:14px; margin-top:12px; }
+  .tile{ background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+         padding:16px 18px; box-shadow:var(--shadow-sm); min-width:0; }
+  .t-label{ font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+            color:var(--mut-2); }
+  .t-big{ font-size:30px; font-weight:750; color:var(--ink); line-height:1.1; margin-top:8px;
+          font-variant-numeric:tabular-nums; }
+  .t-big small{ font-size:15px; font-weight:600; color:var(--mut); }
+  .t-big.ok{ color:var(--ok); } .t-big.warn{ color:var(--warn); } .t-big.bad{ color:var(--err); }
+  .t-sub{ font-size:12.5px; color:var(--mut); margin-top:5px; overflow-wrap:anywhere; }
+  .t-name{ font-size:14px; font-weight:700; color:var(--ink); }
+  .tile.svc{ display:flex; align-items:center; gap:12px; }
+  .tile.svc .svc-main{ flex:1; min-width:0; }
+  .tile.svc .t-sub{ margin-top:2px; }
+  .dot{ width:10px; height:10px; border-radius:50%; flex:none;
+        background:#9aa6b8; box-shadow:0 0 0 4px rgba(154,166,184,.16); }
+  .tile.svc.ok .dot{ background:var(--ok); box-shadow:0 0 0 4px var(--ok-bg); }
+  .tile.svc.bad .dot{ background:var(--err); box-shadow:0 0 0 4px var(--err-bg); }
+  .badge{ font-size:10.5px; font-weight:800; letter-spacing:.05em; padding:4px 10px;
+          border-radius:999px; flex:none; white-space:nowrap; }
+  .badge.ok{ background:var(--ok-bg); color:var(--ok); border:1px solid var(--ok-line); }
+  .badge.bad{ background:var(--err-bg); color:var(--err); border:1px solid var(--err-line); }
   .chip{
     display:inline-flex; align-items:center; gap:7px;
     font-size:12.5px; font-weight:600; padding:5px 12px 5px 11px; border-radius:999px;
@@ -344,13 +374,14 @@
 
     <div id="pages">
 
-    <div class="card" id="sec-salud">
-      <h2>Salud del equipo</h2>
-      <div class="chips" id="chips" style="margin:10px 0 4px"></div>
-      <div class="row" style="justify-content:space-between; align-items:center">
-        <span class="hint" id="healthUpdated" style="margin-top:0"></span>
+    <div id="sec-salud">
+      <div class="dashhead">
+        <h2>Salud del equipo</h2>
+        <span class="hint" id="healthUpdated" style="margin:0"></span>
+        <span class="spacer"></span>
         <button class="sec sm" id="btnHealth" type="button">Actualizar</button>
       </div>
+      <div class="chips" id="chips" style="margin:8px 0 2px"></div>
       <div id="healthBody"><p class="hint">Cargando salud…</p></div>
     </div>
 
@@ -1106,66 +1137,84 @@
     if (h > 0) return h + 'h ' + m + 'm';
     return m + ' min';
   }
-  function healthChip(text, kind) {
-    return '<span class="chip' + (kind ? ' ' + kind : '') + '">' + esc(text) + '</span>';
+  function tile(label, big, kind, sub) {
+    return '<div class="tile"><div class="t-label">' + label + '</div>' +
+      '<div class="t-big' + (kind ? ' ' + kind : '') + '">' + big + '</div>' +
+      (sub ? '<div class="t-sub">' + sub + '</div>' : '') + '</div>';
+  }
+  function svcTile(kind, name, sub, badge) {
+    return '<div class="tile svc' + (kind ? ' ' + kind : '') + '"><span class="dot"></span>' +
+      '<div class="svc-main"><div class="t-name">' + esc(name) + '</div>' +
+      '<div class="t-sub">' + esc(sub) + '</div></div>' +
+      (badge ? '<span class="badge ' + kind + '">' + badge + '</span>' : '') + '</div>';
   }
   function renderHealth(h) {
     const parts = [];
+    const sys = h.system || {};
+    const devs = h.inputDevices || [];
 
-    // Servicios (PM2 + check HTTP del server web)
-    parts.push('<div class="hsub">Servicios</div>');
-    const svcNames = { 'aditum-device': 'Controlador (aditum-device)', 'aditum-web': 'Pantalla/WS (aditum-web)', 'web-server-3000': 'Server web :3000' };
+    // KPIs del sistema
+    const kpis = [];
+    if (sys.cpuTempC !== null && sys.cpuTempC !== undefined) {
+      const k = sys.cpuTempC >= 80 ? 'bad' : (sys.cpuTempC >= 70 ? 'warn' : 'ok');
+      kpis.push(tile('Temperatura CPU', sys.cpuTempC + '<small> °C</small>', k,
+                     k === 'ok' ? 'normal' : 'alta'));
+    }
+    const up = fmtUptime(sys.uptimeSec);
+    if (up) kpis.push(tile('Encendido hace', up, '', 'desde el último arranque del Pi'));
+    if (sys.memAvailableMb !== null && sys.memAvailableMb !== undefined) {
+      const k = sys.memAvailableMb < 100 ? 'bad' : (sys.memAvailableMb < 250 ? 'warn' : '');
+      kpis.push(tile('RAM libre', sys.memAvailableMb + '<small> MB</small>', k,
+                     'de ' + sys.memTotalMb + ' MB totales'));
+    }
+    kpis.push(tile('USB de entrada', String(devs.length), '', 'dispositivos detectados'));
+    parts.push('<div class="dgrid">' + kpis.join('') + '</div>');
+
+    // Servicios
+    parts.push('<div class="dsec">Servicios</div>');
+    const svcNames = { 'aditum-device': 'Controlador', 'aditum-web': 'Pantalla / WebSocket',
+                       'web-server-3000': 'Server web :3000' };
     const svc = (h.services || []).map((s) => {
-      let label = (svcNames[s.name] || s.name) + ': ' + (s.online ? 'en línea' : 'CAÍDO');
-      if (typeof s.restarts === 'number') label += ' · ↺' + s.restarts;
-      const up = fmtUptime(s.uptimeSec);
-      if (up) label += ' · ' + up;
-      return healthChip(label, s.online ? 'ok' : 'bad');
+      const k = s.online ? 'ok' : 'bad';
+      const sub = [s.name];
+      if (typeof s.restarts === 'number') sub.push('↺ ' + s.restarts);
+      const u = fmtUptime(s.uptimeSec);
+      if (u) sub.push(u);
+      if (!s.online && s.error) sub.push(s.error);
+      return svcTile(k, svcNames[s.name] || s.name, sub.join(' · '),
+                     s.online ? 'EN LÍNEA' : 'CAÍDO');
     });
-    if (h.kioskExpected) svc.push(healthChip('kiosk de pantalla: activado', ''));
-    parts.push('<div class="chips" style="margin-top:6px">' + svc.join('') + '</div>');
-    if (h.pm2Available === false) parts.push('<p class="hint">PM2 no respondió: sin datos de reinicios/uptime de procesos.</p>');
+    if (h.kioskExpected) svc.push(svcTile('', 'Kiosk de pantalla', 'activado por configuración', ''));
+    parts.push('<div class="dgrid">' + svc.join('') + '</div>');
+    if (h.pm2Available === false) {
+      parts.push('<p class="hint">PM2 no respondió: sin datos de reinicios/uptime de procesos.</p>');
+    }
 
     // Lectores configurados vs hardware detectado
-    parts.push('<div class="hsub">Lectores configurados</div>');
+    parts.push('<div class="dsec">Lectores configurados</div>');
     const readers = h.readers || [];
     if (readers.length) {
-      parts.push('<div class="chips" style="margin-top:6px">' + readers.map((r) => {
-        const name = r.deviceName || (r.cameraIndex !== undefined ? 'cámara ' + r.cameraIndex : '');
-        const where = (r.paths && r.paths.length) ? ' (' + r.paths.join(', ') + ')' : '';
+      parts.push('<div class="dgrid">' + readers.map((r) => {
         const role = r.role === 'entry' ? 'Entrada' : 'Salida';
-        if (r.connected === null) return healthChip(role + ' · sin lector local', '');
-        const st = r.connected ? '✓ conectado' : '✗ no detectado';
-        return healthChip(role + ' · ' + name + ' · ' + st + where, r.connected ? 'ok' : 'bad');
+        const name = r.deviceName || (r.cameraIndex !== undefined ? 'Cámara ' + r.cameraIndex : '');
+        if (r.connected === null) return svcTile('', role, 'sin lector local (Hikvision/portones)', '');
+        const k = r.connected ? 'ok' : 'bad';
+        const sub = (r.paths && r.paths.length) ? r.paths.join(', ') : 'no detectado en USB';
+        return svcTile(k, role + ' · ' + name, sub, r.connected ? 'CONECTADO' : 'FALTA');
       }).join('') + '</div>');
     } else {
       parts.push('<p class="hint">Este equipo no tiene lectores configurados.</p>');
     }
 
-    // Dispositivos de entrada conectados (equivalente a sudo evtest)
-    parts.push('<div class="hsub">Dispositivos de entrada detectados</div>');
-    const devs = h.inputDevices || [];
+    // Dispositivos de entrada (equivalente a sudo evtest)
+    parts.push('<div class="dsec">Dispositivos de entrada (USB)</div>');
     if (devs.length) {
-      parts.push('<ul class="hlist">' + devs.map((d) =>
-        '<li><span>' + esc(d.name) + '</span><code>' + esc(d.path) + '</code></li>').join('') + '</ul>');
+      parts.push('<div class="tile" style="margin-top:12px"><ul class="hlist" style="margin:0">' +
+        devs.map((d) => '<li><span>' + esc(d.name) + '</span><code>' + esc(d.path) + '</code></li>').join('') +
+        '</ul></div>');
     } else {
       parts.push('<p class="hint">No se detectaron dispositivos de entrada.</p>');
     }
-
-    // Sistema
-    const sys = h.system || {};
-    parts.push('<div class="hsub">Sistema</div>');
-    const sysChips = [];
-    if (sys.cpuTempC !== null && sys.cpuTempC !== undefined)
-      sysChips.push(healthChip('CPU ' + sys.cpuTempC + ' °C', sys.cpuTempC >= 75 ? 'warn' : 'ok'));
-    const sysUp = fmtUptime(sys.uptimeSec);
-    if (sysUp) sysChips.push(healthChip('encendido hace ' + sysUp, ''));
-    if (sys.memAvailableMb !== null && sys.memAvailableMb !== undefined)
-      sysChips.push(healthChip('RAM libre ' + sys.memAvailableMb + '/' + sys.memTotalMb + ' MB',
-                               sys.memAvailableMb < 100 ? 'warn' : ''));
-    parts.push(sysChips.length
-      ? '<div class="chips" style="margin-top:6px">' + sysChips.join('') + '</div>'
-      : '<p class="hint">Sin datos del sistema.</p>');
 
     $('healthBody').innerHTML = parts.join('');
   }
