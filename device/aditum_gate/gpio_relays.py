@@ -26,9 +26,16 @@ class GateController:
         if GPIO:
             GPIO.setmode(GPIO.BOARD if settings.gpio_mode == "BOARD" else GPIO.BCM)
             GPIO.setwarnings(False)
-            for gate in self.gates.values():
-                GPIO.setup(gate["pin"], GPIO.OUT)
-                GPIO.output(gate["pin"], GPIO.HIGH)  # relay inactivo
+            # Un pin invalido (3.3V/GND/fuera de rango) no debe tumbar el
+            # proceso completo: se excluye ese porton y el resto sigue.
+            for gate in list(self.gates.values()):
+                try:
+                    GPIO.setup(gate["pin"], GPIO.OUT)
+                    GPIO.output(gate["pin"], GPIO.HIGH)  # relay inactivo
+                except (ValueError, RuntimeError) as e:
+                    log.error("Porton %s con pin invalido (%s): %s — excluido",
+                              gate["id"], gate["pin"], e)
+                    del self.gates[gate["id"]]
 
     def _gate(self, gate_id):
         gate = self.gates.get(gate_id)

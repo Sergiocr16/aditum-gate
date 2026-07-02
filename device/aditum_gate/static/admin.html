@@ -644,6 +644,12 @@
   // Lectores HID conocidos (los que usábamos antes). El match es por substring
   // contra /proc/bus/input/devices, así que el valor exacto importa.
   const READER_NAMES = ['Newtologic  4010E', 'MJ-8200'];
+  // Pines fisicos (BOARD) que son GPIO reales; 1/2/4/6/9/14/17/20/25/30/34/39
+  // son alimentacion o tierra y RPi.GPIO los rechaza (crash al boot).
+  const GPIO_PINS = [3, 5, 7, 8, 10, 11, 12, 13, 15, 16, 18, 19, 21, 22, 23,
+                     24, 26, 29, 31, 32, 33, 35, 36, 37, 38, 40];
+  // Orden historico de relays (config-default): defaults de portones nuevos
+  const DEFAULT_GATE_PINS = [7, 11, 12, 13, 15, 16, 18, 22, 29, 35];
   let detectedCameras = []; // [{index, name}] segun /health
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -860,10 +866,14 @@
       row.className = 'list-item gate-item';
       row.innerHTML =
         '<div class="field"><label>id</label><input type="number" class="g-id" min="1" style="max-width:110px"></div>' +
-        '<div class="field"><label>pin</label><input type="number" class="g-pin" min="1" style="max-width:110px"></div>' +
+        '<div class="field"><label>pin</label><select class="g-pin" style="max-width:130px">' +
+        GPIO_PINS.map((p) => '<option value="' + p + '">' + p + '</option>').join('') +
+        (GPIO_PINS.includes(g.pin) || g.pin === undefined
+          ? '' : '<option value="' + g.pin + '">' + g.pin + ' (no válido)</option>') +
+        '</select></div>' +
         '<div class="field"><button type="button" class="sec sm danger g-del">Quitar</button></div>';
       row.querySelector('.g-id').value = (g.id !== undefined ? g.id : i + 1);
-      row.querySelector('.g-pin').value = (g.pin !== undefined ? g.pin : 1);
+      row.querySelector('.g-pin').value = String(g.pin !== undefined ? g.pin : 7);
       row.querySelector('.g-del').addEventListener('click', () => { syncGatesFromDOM(); gatesState.splice(i, 1); renderGates(); });
       list.appendChild(row);
     });
@@ -873,14 +883,16 @@
     const rows = document.querySelectorAll('#gatesList .gate-item');
     gatesState = [...rows].map((row) => ({
       id: toInt(row.querySelector('.g-id').value, 1),
-      pin: toInt(row.querySelector('.g-pin').value, 1),
+      pin: toInt(row.querySelector('.g-pin').value, 7),
     }));
   }
 
   function addGate() {
     syncGatesFromDOM();
     const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
-    gatesState.push({ id: nextId, pin: 1 });
+    const used = gatesState.map((g) => g.pin);
+    const pin = DEFAULT_GATE_PINS.find((p) => !used.includes(p)) || GPIO_PINS.find((p) => !used.includes(p)) || 7;
+    gatesState.push({ id: nextId, pin: pin });
     renderGates();
   }
 
@@ -1073,7 +1085,7 @@
     });
     (cfg.gpio.gates || []).forEach((g, i) => {
       if (!Number.isInteger(g.id) || g.id < 1) errs.push('Portón ' + (i + 1) + ': id debe ser entero ≥ 1');
-      if (!Number.isInteger(g.pin) || g.pin < 1) errs.push('Portón ' + (i + 1) + ': pin debe ser entero ≥ 1');
+      if (!GPIO_PINS.includes(g.pin)) errs.push('Portón ' + (i + 1) + ': pin ' + g.pin + ' no es un GPIO válido (es alimentación/tierra)');
     });
     if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('El equipo controla portones pero no agregaste ninguno');
     if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
