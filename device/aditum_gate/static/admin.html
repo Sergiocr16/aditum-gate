@@ -207,6 +207,13 @@
   .hlist code{ font-size:12px; color:var(--mut); }
 
   /* ---------- Dashboard de salud ---------- */
+  .modal-back{ position:fixed; inset:0; background:rgba(13,36,64,.45); z-index:60;
+               display:flex; align-items:center; justify-content:center; padding:20px; }
+  .modal-back[hidden]{ display:none; }
+  .modal{ background:#fff; border-radius:var(--radius); box-shadow:var(--shadow);
+          padding:26px 28px; max-width:440px; width:100%; }
+  .modal h3{ margin:0 0 8px; font-size:17px; }
+  .modal p{ margin:0 0 18px; color:var(--mut); font-size:13.5px; line-height:1.5; }
   .dashhead{ display:flex; align-items:center; gap:14px; margin:4px 0 2px; }
   .dashhead h2{ margin:0; }
   .dashhead .spacer{ flex:1; }
@@ -382,6 +389,7 @@
         <h2>Salud del equipo</h2>
         <span class="hint" id="healthUpdated" style="margin:0"></span>
         <span class="spacer"></span>
+        <button class="sec sm danger" id="btnRestart" type="button">Reiniciar servicio</button>
         <button class="sec sm" id="btnHealth" type="button">Actualizar</button>
       </div>
       <div class="chips" id="chips" style="margin:8px 0 2px"></div>
@@ -574,6 +582,18 @@
   </div>
 </div>
 
+<div class="modal-back" id="restartModal" hidden>
+  <div class="modal">
+    <h3>Reiniciar servicio</h3>
+    <p>Se reinicia el proceso del equipo (<code>aditum-device</code>). Los portones y
+       lectores quedan fuera de servicio unos 5–15 segundos mientras vuelve.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="sec sm" id="btnRestartCancel" type="button">Cancelar</button>
+      <button class="sec sm danger" id="btnRestartConfirm" type="button">Sí, reiniciar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -644,7 +664,6 @@
 
       chip(st.deviceId || 'sin device-id', st.deviceId ? '' : 'warn');
       chip(st.placeName || '—');
-      chip('revisión ' + st.configRevision);
       chip('scanner: ' + st.scannerType);
       chip(st.provisioned ? 'token OK' : 'SIN TOKEN', st.provisioned ? 'ok' : 'bad');
       chip('fuente: ' + (cfg.source || 'default'),
@@ -1235,6 +1254,25 @@
 
     $('healthBody').innerHTML = parts.join('');
   }
+  async function restartService() {
+    $('restartModal').hidden = true;
+    $('healthUpdated').textContent = 'Reiniciando servicio...';
+    try {
+      await fetch('/restart', Object.assign(fetchOpts(), { method: 'POST' }));
+    } catch (e) { /* la conexion se corta por el propio reinicio */ }
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const r = await fetch('/', { cache: 'no-store' });
+        if (r.ok) {
+          await loadHealth();
+          $('healthUpdated').textContent = 'Servicio reiniciado.';
+          return;
+        }
+      } catch (e) { /* aun reiniciando */ }
+    }
+    $('healthUpdated').textContent = 'El servicio no volvió en 60 s; revisar "sudo pm2 logs" en el Pi.';
+  }
   async function loadHealth() {
     try {
       const r = await fetch('/health', fetchOpts());
@@ -1261,6 +1299,12 @@
   $('btnChangePwd').addEventListener('click', changePassword);
   $('btnLoad').addEventListener('click', load);
   $('btnHealth').addEventListener('click', loadHealth);
+  $('btnRestart').addEventListener('click', () => { $('restartModal').hidden = false; });
+  $('btnRestartCancel').addEventListener('click', () => { $('restartModal').hidden = true; });
+  $('restartModal').addEventListener('click', (e) => {
+    if (e.target === $('restartModal')) $('restartModal').hidden = true;
+  });
+  $('btnRestartConfirm').addEventListener('click', restartService);
   $('btnSave').addEventListener('click', save);
   $('btnAddScanner').addEventListener('click', addScanner);
   $('btnAddGate').addEventListener('click', addGate);
