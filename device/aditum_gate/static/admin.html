@@ -550,13 +550,23 @@
     <div class="card" id="sec-seguridad">
       <div id="provisionCard" hidden>
         <h2>Provisionar token</h2>
-        <p class="hint" style="margin-top:0">Este equipo aún no tiene token: la API está abierta.
-          Asigná uno (16–256 caracteres, sin espacios) para protegerla.</p>
+        <p class="hint" style="margin-top:0">Este equipo aún no tiene token: el backend de Aditum
+          no puede administrarlo. Asigná uno (16–256 caracteres, sin espacios).</p>
         <div class="row" style="margin-top:14px">
           <input type="text" id="provToken" style="flex:1; min-width:220px" placeholder="nuevo token...">
           <button id="btnProvision" class="sm">Guardar token</button>
         </div>
         <div id="provMsg" class="hint"></div>
+        <hr style="border:none; border-top:1px solid var(--line); margin:22px 0">
+      </div>
+      <div id="tokenCard" hidden>
+        <h2>Token del dispositivo</h2>
+        <p class="hint" style="margin-top:0">Este equipo tiene token provisionado: es la credencial
+          con la que el backend de Aditum lo administra.</p>
+        <div class="row" style="margin-top:14px">
+          <button class="sec sm danger" id="btnRemoveToken" type="button">Quitar token</button>
+        </div>
+        <div id="tokMsg" class="hint"></div>
         <hr style="border:none; border-top:1px solid var(--line); margin:22px 0">
       </div>
       <details id="pwdDetails" open>
@@ -589,6 +599,19 @@
     </div>
 
     </div><!-- /pages -->
+  </div>
+</div>
+
+<div class="modal-back" id="tokenModal" hidden>
+  <div class="modal">
+    <h3>Quitar el token del dispositivo</h3>
+    <p>El backend de Aditum dejará de poder administrar este equipo (portones, config,
+       tarjetas) hasta que se provisione un token nuevo. El equipo queda esperando
+       token (provisión abierta): asigná uno de inmediato.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="sec sm" id="btnTokenCancel" type="button">Cancelar</button>
+      <button class="sec sm danger" id="btnTokenConfirm" type="button">Sí, quitar token</button>
+    </div>
   </div>
 </div>
 
@@ -673,6 +696,7 @@
       populateForm(state);
       $('form').hidden = false;
       $('provisionCard').hidden = !!st.provisioned;
+      $('tokenCard').hidden = !st.provisioned;
 
       chip(st.deviceId || 'sin device-id', st.deviceId ? '' : 'warn');
       chip(st.placeName || '—');
@@ -1132,6 +1156,26 @@
   }
 
   // ---------- Provisionar token ----------
+  async function removeToken() {
+    $('tokenModal').hidden = true;
+    const tm = $('tokMsg');
+    tm.style.color = ''; tm.textContent = 'Quitando token...';
+    try {
+      const r = await fetch('/token', Object.assign(fetchOpts(), { method: 'DELETE' }));
+      const b = await r.json();
+      if (!r.ok) {
+        tm.style.color = 'var(--err)';
+        tm.textContent = 'Error (' + r.status + '): ' + (b.error || '');
+        return;
+      }
+      tm.textContent = '';
+      await load(); // provisioned:false -> muestra provisionCard, oculta este bloque
+      const pm = $('provMsg');
+      pm.style.color = ''; pm.textContent = 'Token eliminado: el equipo quedó sin provisionar.';
+    } catch (e) {
+      tm.style.color = 'var(--err)'; tm.textContent = 'Error: ' + e.message;
+    }
+  }
   async function provisionToken() {
     const t = txt($('provToken'));
     const pm = $('provMsg');
@@ -1374,6 +1418,12 @@
     if (e.target === $('restartModal')) $('restartModal').hidden = true;
   });
   $('btnRestartConfirm').addEventListener('click', restartService);
+  $('btnRemoveToken').addEventListener('click', () => { $('tokenModal').hidden = false; });
+  $('btnTokenCancel').addEventListener('click', () => { $('tokenModal').hidden = true; });
+  $('tokenModal').addEventListener('click', (e) => {
+    if (e.target === $('tokenModal')) $('tokenModal').hidden = true;
+  });
+  $('btnTokenConfirm').addEventListener('click', removeToken);
   $('btnSave').addEventListener('click', save);
   $('btnAddScanner').addEventListener('click', addScanner);
   $('btnAddGate').addEventListener('click', addGate);
