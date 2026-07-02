@@ -61,7 +61,7 @@
   .appbar .env::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--pri); box-shadow:0 0 0 3px var(--pri-50); flex:none; }
 
   /* ---------- Layout ---------- */
-  .wrap{ max-width:none; margin:0; padding:26px 28px 80px; }
+  .wrap{ max-width:none; margin:0; padding:16px 24px 80px; }
   h1{ font-size:24px; line-height:1.2; letter-spacing:-.015em; font-weight:700; color:var(--ink); margin:0 0 6px; }
   .sub{ color:var(--mut); font-size:13.5px; margin:0 0 22px; max-width:64ch; }
 
@@ -80,7 +80,8 @@
   #form[hidden]{ display:none; }
   #pages{ min-width:0; }
   .secnav{
-    position:sticky; top:72px; z-index:25;
+    position:sticky; top:68px; z-index:25;
+    max-height:calc(100vh - 84px); overflow-y:auto;
     display:flex; flex-direction:column; gap:4px;
     background:#fff; border:1px solid var(--line); border-radius:var(--radius);
     padding:10px; box-shadow:var(--shadow);
@@ -103,6 +104,9 @@
     }
     .secnav::-webkit-scrollbar{ display:none; }
     .secnav a{ flex:none; }
+    .navfoot{ border-top:none; margin:0 0 0 auto; padding:0;
+              flex-direction:row; align-items:center; }
+    #sessionUser{ display:none; }
   }
 
   /* ---------- Fields ---------- */
@@ -249,8 +253,10 @@
   .savebar .hint{ margin-top:0; }
   .savebar #btnSave{ min-height:48px; padding:0 28px; font-size:15px; }
 
-  /* ---------- Session header ---------- */
-  #sessionUser{ font-size:14px; font-weight:600; color:var(--ink); }
+  /* ---------- Sesion (pie del sidebar) ---------- */
+  #sessionUser{ font-size:12.5px; font-weight:600; color:var(--mut); padding:0 4px; }
+  .navfoot{ margin-top:10px; padding:12px 4px 2px; border-top:1px solid var(--line);
+            display:flex; flex-direction:column; gap:8px; }
 
   /* ---------- Login ---------- */
   #loginCard{ max-width:440px; margin:7vh auto 16px; padding:32px 30px 28px; box-shadow:var(--shadow); }
@@ -286,9 +292,11 @@
 </header>
 
 <div class="wrap">
-  <h1>Configuración del dispositivo</h1>
-  <p class="sub">Editor local. Los cambios se validan contra el schema y, si aplican,
-  el servicio se reinicia solo (~10&nbsp;s sin conexión).</p>
+  <div id="pageIntro">
+    <h1>Configuración del dispositivo</h1>
+    <p class="sub">Editor local. Los cambios se validan contra el schema y, si aplican,
+    el servicio se reinicia solo (~10&nbsp;s sin conexión).</p>
+  </div>
 
   <!-- Login -->
   <div class="card" id="loginCard" hidden>
@@ -309,30 +317,6 @@
     <div id="loginMsg" class="hint"></div>
   </div>
 
-  <!-- Sesión (autenticado) -->
-  <div class="card" id="statusCard" hidden>
-    <div class="row" style="justify-content:space-between; align-items:center">
-      <span class="muted" id="sessionUser"></span>
-      <div class="row">
-        <button class="sec sm" id="btnLoad">Recargar</button>
-        <button class="sec sm" id="btnLogout">Cerrar sesión</button>
-      </div>
-    </div>
-    <div class="chips" id="chips"></div>
-  </div>
-
-  <!-- Provisionar token (solo si no provisionado) -->
-  <div class="card" id="provisionCard" hidden>
-    <h2>Provisionar token</h2>
-    <p class="hint" style="margin-top:0">Este equipo aún no tiene token: la API está abierta.
-      Asigná uno (16–256 caracteres, sin espacios) para protegerla.</p>
-    <div class="row" style="margin-top:14px">
-      <input type="text" id="provToken" style="flex:1; min-width:220px" placeholder="nuevo token...">
-      <button id="btnProvision" class="sm">Guardar token</button>
-    </div>
-    <div id="provMsg" class="hint"></div>
-  </div>
-
   <!-- Formulario -->
   <div id="form" hidden>
 
@@ -349,12 +333,20 @@
       <a href="#sec-polling" data-sec="sec-polling">Polling</a>
       <a href="#sec-avanzado" data-sec="sec-avanzado">Avanzado</a>
       <a href="#sec-seguridad" data-sec="sec-seguridad">Seguridad</a>
+      <div class="navfoot">
+        <span id="sessionUser"></span>
+        <div class="row">
+          <button class="sec sm" id="btnLoad" type="button">Recargar</button>
+          <button class="sec sm" id="btnLogout" type="button">Salir</button>
+        </div>
+      </div>
     </nav>
 
     <div id="pages">
 
     <div class="card" id="sec-salud">
       <h2>Salud del equipo</h2>
+      <div class="chips" id="chips" style="margin:10px 0 4px"></div>
       <div class="row" style="justify-content:space-between; align-items:center">
         <span class="hint" id="healthUpdated" style="margin-top:0"></span>
         <button class="sec sm" id="btnHealth" type="button">Actualizar</button>
@@ -540,6 +532,17 @@
     </div>
 
     <div class="card" id="sec-seguridad">
+      <div id="provisionCard" hidden>
+        <h2>Provisionar token</h2>
+        <p class="hint" style="margin-top:0">Este equipo aún no tiene token: la API está abierta.
+          Asigná uno (16–256 caracteres, sin espacios) para protegerla.</p>
+        <div class="row" style="margin-top:14px">
+          <input type="text" id="provToken" style="flex:1; min-width:220px" placeholder="nuevo token...">
+          <button id="btnProvision" class="sm">Guardar token</button>
+        </div>
+        <div id="provMsg" class="hint"></div>
+        <hr style="border:none; border-top:1px solid var(--line); margin:22px 0">
+      </div>
       <details id="pwdDetails" open>
         <summary>Cambiar usuario / contraseña</summary>
         <p class="hint" style="margin-top:12px">Cambia las credenciales del login de este editor (no afecta el token del dispositivo).</p>
@@ -1040,7 +1043,7 @@
   // ---------- Sesión / login ----------
   function showLogin(message) {
     $('loginCard').hidden = false;
-    $('statusCard').hidden = true;
+    $('pageIntro').hidden = false;
     $('form').hidden = true;
     $('provisionCard').hidden = true;
     const lm = $('loginMsg');
@@ -1049,7 +1052,7 @@
   }
   function showApp(username) {
     $('loginCard').hidden = true;
-    $('statusCard').hidden = false;
+    $('pageIntro').hidden = true;
     $('sessionUser').textContent = 'Sesión: ' + username;
     $('pwd_user').value = username;
   }
