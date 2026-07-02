@@ -118,11 +118,12 @@ los lectores configurados, el estado de los procesos PM2 y del server web
 ```json
 {
   "services": [
-    {"name": "aditum-device", "online": true, "pid": 2305,
-     "status": "online", "restarts": 0, "uptimeSec": 5400},
-    {"name": "aditum-web", "online": true, "pid": 2307,
-     "status": "online", "restarts": 0, "uptimeSec": 5400},
-    {"name": "web-server-3000", "online": true, "httpStatus": 200}
+    {"name": "aditum-device", "label": "Controlador", "online": true,
+     "pid": 2305, "status": "online", "restarts": 0, "uptimeSec": 5400},
+    {"name": "aditum-web", "label": "Pantalla / WebSocket", "online": true,
+     "pid": 2307, "status": "online", "restarts": 0, "uptimeSec": 5400},
+    {"name": "web-server-3000", "label": "Server web :3000", "online": true,
+     "httpStatus": 200}
   ],
   "pm2Available": true,
   "inputDevices": [

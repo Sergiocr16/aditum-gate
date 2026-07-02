@@ -1318,8 +1318,6 @@
 
     // Servicios
     parts.push('<div class="dsec">Servicios</div>');
-    const svcNames = { 'aditum-device': 'Controlador', 'aditum-web': 'Pantalla / WebSocket',
-                       'web-server-3000': 'Server web :3000' };
     const svcIcons = { 'aditum-device': 'cpu', 'aditum-web': 'monitor',
                        'web-server-3000': 'server' };
     const svc = (h.services || []).map((s) => {
@@ -1329,7 +1327,7 @@
       const u = fmtUptime(s.uptimeSec);
       if (u) sub.push(u);
       if (!s.online && s.error) sub.push(s.error);
-      return svcTile(svcIcons[s.name] || 'server', k, svcNames[s.name] || s.name,
+      return svcTile(svcIcons[s.name] || 'server', k, s.label || s.name,
                      sub.join(' · '), s.online ? 'EN LÍNEA' : 'CAÍDO');
     });
     if (h.kioskExpected) svc.push(svcTile('monitor', '', 'Kiosk de pantalla', 'activado por configuración', ''));

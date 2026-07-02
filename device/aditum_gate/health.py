@@ -18,6 +18,13 @@ log = logging.getLogger("aditum.health")
 WEB_SERVER_URL = "http://localhost:3000/api/config"
 PM2_PROCESS_NAMES = ("aditum-device", "aditum-web")
 
+# Nombre legible de cada servicio (lo que muestra la vista de Salud)
+SERVICE_LABELS = {
+    "aditum-device": "Controlador",
+    "aditum-web": "Pantalla / WebSocket",
+    "web-server-3000": "Server web :3000",
+}
+
 
 def list_input_devices():
     """Todos los input devices con handler eventX (formato de evtest)."""
@@ -127,7 +134,7 @@ def services_status(settings):
     names = PM2_PROCESS_NAMES if settings.has_screen else ("aditum-device",)
 
     for name in names:
-        info = {"name": name}
+        info = {"name": name, "label": SERVICE_LABELS.get(name, name)}
         if name == "aditum-device":
             # Si respondemos este request, el proceso esta vivo por definicion
             info["online"] = True
@@ -146,7 +153,8 @@ def services_status(settings):
     if settings.has_screen:
         # El check real de aditum-web es HTTP: PM2 puede decir online con el
         # puerto muerto. Se reporta aparte para distinguir proceso vs servicio.
-        web = {"name": "web-server-3000"}
+        web = {"name": "web-server-3000",
+               "label": SERVICE_LABELS["web-server-3000"]}
         try:
             resp = request("GET", WEB_SERVER_URL, timeout=(2, 5))
             web["online"] = resp.status_code == 200
