@@ -13,7 +13,7 @@ set -euo pipefail
 export PATH="${ADITUM_PATH_OVERRIDE:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BRANCH="${ADITUM_BRANCH:-main}"
+BRANCH="${ADITUM_BRANCH:-production}"
 LOCK_FILE="${ADITUM_LOCK_FILE:-/var/lock/aditum-update.lock}"
 cd "$REPO_DIR"
 
@@ -28,6 +28,11 @@ log() { echo "$(date '+%F %T') $*"; }
 # ------------------------------------------------------------------
 # 1. Codigo
 # ------------------------------------------------------------------
+# Self-heal: git como root exige safe.directory (bootstrap lo deja seteado,
+# pero una instalacion manual no); sin esto el update falla para siempre.
+git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$REPO_DIR" || \
+  git config --system --add safe.directory "$REPO_DIR" 2>/dev/null || true
+
 git fetch origin "$BRANCH" --quiet
 
 LOCAL="$(git rev-parse HEAD)"

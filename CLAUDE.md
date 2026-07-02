@@ -121,7 +121,8 @@ actualizar también `config-default.json`, los `examples/` y, si aplica,
   cambiar a python3 de sistema), PM2 root y el timer de auto-update. El wizard
   `scripts/configure.py` genera la config desde las plantillas de `examples/`.
 - **Pull-based**: cada Pi corre `scripts/self-update.sh` via systemd timer
-  cada 15 min (flock compartido con bootstrap, stamps sha256 para reinstalar
+  cada 15 min, trackeando el branch **`production`** (pin por Pi con
+  `ADITUM_BRANCH` en `/etc/default/aditum-gate`) (flock compartido con bootstrap, stamps sha256 para reinstalar
   deps solo si cambian, health check final; nunca `git clean -x` — borraría
   identidad y venv). No hay push por SSH — las Pis están detrás de NAT. No
   reintroducir workflows de deploy por SSH (el branch `auto` lo intentó y no

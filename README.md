@@ -4,7 +4,7 @@ Control de acceso para condominios sobre Raspberry Pi: abre portones por GPIO,
 valida códigos QR contra el backend de Aditum y opcionalmente muestra una
 pantalla pedestal.
 
-**Todas las variantes corren con este mismo código (branch `main`).** Qué hace
+**Todas las variantes corren con este mismo código (branch `production`).** Qué hace
 cada dispositivo lo decide su **configuración**, no el branch:
 
 | Variante | `scannerType` | Hardware |
@@ -195,7 +195,7 @@ curl localhost:8080/     # health: deviceId, variante, revision de config
 curl localhost:8080/openGate/1
 ```
 
-Despliegue: push a `main` → cada Pi se actualiza sola en ≤15 min
+Despliegue: push a `production` → cada Pi se actualiza sola en ≤15 min
 (`scripts/self-update.sh` vía systemd timer: lock anti-solape, reinstala
 dependencias solo si cambiaron — stamps sha256 —, health check al final).
 Una Pi puede fijarse a otro branch con `ADITUM_BRANCH=...` en

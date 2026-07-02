@@ -15,7 +15,7 @@
 # Variables opcionales:
 #   ADITUM_HOME=/home/pi/aditum-gate   ruta de instalacion
 #   ADITUM_USER=pi                     usuario de la instalacion vieja
-#   ADITUM_BRANCH=main                 branch a trackear
+#   ADITUM_BRANCH=production           branch a trackear
 #   ADITUM_RECONFIGURE=1               forzar el wizard aunque haya config
 #   ADITUM_CONFIG_URL=... / ADITUM_CONFIG_FILE=...   config preparada
 #   ADITUM_NONINTERACTIVE=1 + ADITUM_DEVICE_ID etc.  (ver configure.py)
@@ -25,7 +25,7 @@ set -euo pipefail
 REPO_URL="https://github.com/Sergiocr16/aditum-gate"
 REPO_DIR="${ADITUM_HOME:-/home/pi/aditum-gate}"
 PI_USER="${ADITUM_USER:-pi}"
-BRANCH="${ADITUM_BRANCH:-main}"
+BRANCH="${ADITUM_BRANCH:-production}"
 BACKUP_DIR="/home/$PI_USER/aditum-backup-$(date +%Y%m%d-%H%M%S)"
 LOCK_FILE="${ADITUM_LOCK_FILE:-/var/lock/aditum-update.lock}"
 LOG_FILE=/var/log/aditum-bootstrap.log
