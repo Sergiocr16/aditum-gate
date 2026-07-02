@@ -239,6 +239,16 @@ Body: `{"token": "<nuevo token>"}` (16–256 caracteres, sin espacios).
   Efecto inmediato.
 - Token inválido: `400 {"error": "invalid token", "details": [...]}`.
 
+#### `DELETE /token` — protegido
+
+Desprovisiona el equipo: borra `device-token.txt` con efecto inmediato →
+`200 {"deprovisioned": true}` (idempotente). El equipo vuelve al estado
+TOFU: `GET /status` reporta `provisioned: false` y `PUT /token` acepta un
+token nuevo sin credencial — **re-provisionar de inmediato**, igual que en
+la instalación. El backend la usa al desvincular o resetear un equipo.
+Firmware viejo sin este endpoint responde `405` (con credencial válida) o
+`401` (sin ella).
+
 ### Portones
 
 | Endpoint | Método | Respuesta |

@@ -256,6 +256,20 @@ def create_app(settings, gates, hikvision_service, screen):
         log.warning("Token de dispositivo %s", "provisionado" if first_provision else "rotado")
         return jsonify({"provisioned": True} if first_provision else {"rotated": True})
 
+    @app.route("/token", methods=["DELETE"])
+    def delete_token():
+        # Desprovisiona el equipo: borra device-token.txt y vuelve al estado
+        # TOFU (PUT /token abierto de nuevo; el resto exige sesion admin).
+        # Accion autenticada (token vigente o sesion admin) e idempotente;
+        # el backend la usa al desvincular o re-provisionar un equipo.
+        try:
+            os.unlink(DEVICE_TOKEN_FILE)
+        except FileNotFoundError:
+            pass
+        settings.device_token = ""  # efecto inmediato (auth lo lee por request)
+        log.warning("Token de dispositivo ELIMINADO: equipo sin provisionar (TOFU abierto)")
+        return jsonify({"deprovisioned": True})
+
     # ------------------------------------------------------------
     # Portones (GPIO)
     # ------------------------------------------------------------
