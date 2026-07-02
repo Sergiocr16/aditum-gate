@@ -25,14 +25,20 @@ lectores/cámaras (`scanners`), watchdog de red, NeoPixel, y API
 │  aditum-device (Python, PM2)            aditum-web (Node, PM2)      │
 │  ├─ Flask :8080  ← Aditum llama         ├─ Express+WS :3000         │
 │  │   /openGate /update-card ...         │   sirve pedestal-app      │
+│  ├─ editor /admin + GET /health         ├─ supervisa kiosk chromium │
 │  ├─ scanners (hid/opencv) ──────────────┼─► estados de pantalla     │
 │  ├─ hikvision (ISAPI → terminales)      └─ GET /api/config          │
 │  ├─ config-agent ──► config-runtime.json (cache de la config remota)│
 │  └─ watchdog / neopixel                                             │
 └─────────────────────────────────────────────────────────────────────┘
-         ▲ GET /api/gate-devices/{deviceId}/config (poller de respaldo, 40 s)
+         ▲ GET /api/gate-devices/{deviceId}/config (poller de respaldo)
    Backend Aditum (app/caseta.aditumcr.com)
 ```
+
+Si la config dice `screen.hasScreen`, `aditum-web` además supervisa el
+navegador kiosk (chromium a pantalla completa como el usuario de la sesión
+gráfica): lo abre, lo relanza si muere y lo cierra si la pantalla se apaga
+por config — revisa cada 15 s.
 
 ## Estructura del repositorio
 
@@ -66,7 +72,7 @@ aditum-gate/
 │           ├── hid.py           # Lectores pistola (evdev), 1 o 2
 │           └── opencv.py        # Cámaras USB (cv2+pyzbar), 1 o 2
 ├── web/
-│   ├── server.js                # Express+WS :3000, sirve Angular, GET /api/config
+│   ├── server.js                # Express+WS :3000, sirve Angular, GET /api/config, kiosk
 │   └── pedestal-app/            # Angular 18 (pantalla pedestal)
 ├── docs/
 │   └── API.md                   # Contrato del API del Pi (para aditum-jh)
@@ -189,11 +195,15 @@ ADITUM_SCANNERS='[{"role":"entry","doorId":"118","deviceName":"Newtologic  4010E
 ```
 
 Otras variables: `ADITUM_BRANCH` (pin de branch por Pi), `ADITUM_RECONFIGURE=1`
-(forzar el wizard), `ADITUM_HOME`, y las del wizard (`ADITUM_PLACE_NAME`,
-`ADITUM_VERIFIER`, `ADITUM_HAS_SCREEN`, `ADITUM_DOOR_TYPE`, `ADITUM_LOGO_URL`,
-`ADITUM_WATCHDOG`, `ADITUM_NEOPIXEL`, `ADITUM_TOKEN`).
+(forzar el wizard), `ADITUM_HOME`, `ADITUM_USER` (usuario de la instalación),
+`ADITUM_CONFIG_FILE` (config preparada local, alternativa a
+`ADITUM_CONFIG_URL`), `ADITUM_ADMIN_USER` / `ADITUM_ADMIN_PASSWORD` (siembra
+de las credenciales del editor en línea), y las del wizard
+(`ADITUM_PLACE_NAME`, `ADITUM_VERIFIER`, `ADITUM_HAS_SCREEN`,
+`ADITUM_DOOR_TYPE`, `ADITUM_LOGO_URL`, `ADITUM_WATCHDOG`, `ADITUM_NEOPIXEL`,
+`ADITUM_TOKEN`).
 
-### Checklist de prueba en banco (antes del rollout)
+### Checklist de prueba en banco (histórico: rollout de la consolidación 2026-06)
 
 1. **Pi virgen**: one-liner → wizard → `curl localhost:8080/` OK → push dummy
    a production → la Pi se actualiza sola en ≤15 min → segundo one-liner no rompe
@@ -282,7 +292,7 @@ Modelo sugerido (tabla `gate_device` en aditum-jh): `device_id` (unique),
 `device_token_hash` (SHA-256 del token), `company_id` (FK opcional),
 `config_json` (clob), `config_revision` (int), `last_seen_at` (timestamp).
 
-## Migración desde los branches viejos
+## Migración desde los branches viejos (histórico: consolidación 2026-06)
 
 Antes cada variante vivía en un branch distinto. Todo se consolidó aquí; el
 branch viejo de cada Pi se reproduce con una config:
@@ -292,8 +302,8 @@ branch viejo de cada Pi se reproduce con una config:
 | `hikvision-qr` | `scannerType: "hid"` o `"hikvision"`, `verifierStyle: "secure"`, `hikvision.enabled` según el caso |
 | `pistolaqr` | `scannerType: "hid"`, `baseUrl: caseta`, 2 scanners, `hasScreen: true` |
 | `qr-readers` | Igual que pistolaqr pero `baseUrl: app` |
-| `qr-small` | `scannerType: "none"`, `watchdog.enabled: true`, `hasScreen: false` |
-| `pedestal-app` | `scannerType: "opencv"`, `hasScreen: true`, `neopixel.enabled: true` |
+| `qr-small` | `scannerType: "none"`, `gpio.watchdog.enabled: true`, `hasScreen: false` |
+| `pedestal-app` | `scannerType: "opencv"`, `hasScreen: true`, `gpio.neopixel.enabled: true` |
 | `main` (viejo) | `scannerType: "opencv"`, `verifierStyle: "legacy"` |
 
 Correspondencia de archivos eliminados → nuevos:

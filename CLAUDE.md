@@ -31,8 +31,9 @@ supervisor ni cron de reinicio:
 1. **`aditum-device`** = `device/main.py` — un único proceso Python con
    threads: Flask :8080 (portones GPIO, Hikvision ISAPI, health, editor
    /admin), 0–2 threads
-   de scanner, config-agent, watchdog, limpieza nocturna Hikvision. Ante
-   fallo irrecuperable se hace `os._exit(1)` y PM2 lo relanza — no inventar
+   de scanner, config-agent, watchdog, limpieza nocturna Hikvision. El
+   reinicio (nueva config, `POST /restart`) es `os._exit(0)` en
+   `config_agent.restart_process` y PM2 lo relanza — no inventar
    supervisores internos.
 2. **`aditum-web`** = `web/server.js` — Express+WebSocket :3000: sirve el
    build de Angular (`web/pedestal-app/dist/pedestal-app/browser`), recibe
@@ -124,7 +125,7 @@ Pis no compilan: todo cambio bajo `web/pedestal-app/src` exige regenerar el
 build (`npm ci && npm run build` con Node 20) y commitear `dist/` en el MISMO
 commit — el job `screen-build-check` del CI falla si no.
 
-**`admin.html` pesa ~130 KB (logos base64): nunca leerlo entero ni editarlo a
+**`admin.html` pesa ~150 KB (logos base64): nunca leerlo entero ni editarlo a
 mano** — usar scripts Node de reemplazo verificado (`count === 1` por ancla,
 abortar si no es única) y probar la UI con jsdom simulando `fetch`. Al probar
 `create_app()` en esta Pi, sandboxear SIEMPRE los paths de archivos
@@ -157,7 +158,9 @@ actualizar también `config-default.json`, los `examples/` y, si aplica,
   explícita del usuario). Esta Pi de banco ya trackea `production`: **todo
   cambio local sin push se pierde en ≤15 min** (pausar con
   `sudo systemctl stop aditum-update.timer` mientras se desarrolla).
-- GitHub Actions (`.github/workflows/ci.yml`) solo valida: sintaxis + schema.
+- GitHub Actions (`.github/workflows/ci.yml`) solo valida, no despliega:
+  job `validate` (sintaxis + schema) y job `screen-build-check` (el build
+  de Angular commiteado debe estar al día con `src/`).
 - Cambiar el comportamiento de un dispositivo en producción = editar su
   config en el backend (sube `configRevision`), no tocar código.
 

@@ -19,22 +19,35 @@ remoteiot — ver [Modelo de amenaza](#modelo-de-amenaza)).
 > - [ ] Generar y provisionar un token por dispositivo (ver
 >       [Provisión](#provisión-y-rotación-del-token))
 >
-> Mientras un Pi **no tiene token provisionado**, acepta llamadas sin header
-> (modo de transición para no dejar sin servicio a la flota), pero loguea
-> error y se delata en `GET /status` con `"provisioned": false`. La meta es
-> que ningún Pi quede en ese estado.
+> Un Pi **sin token provisionado** NO deja el API abierto: exige la sesión
+> del editor en línea para todo, salvo `PUT /token` (provisión TOFU), y se
+> delata en `GET /status` con `"provisioned": false`. La meta es que ningún
+> Pi quede en ese estado.
 
 ## Autenticación
 
-Token opaco por dispositivo (32 bytes hex recomendado), generado por Aditum.
-Se envía en cualquiera de los dos headers:
+Hay **dos credenciales válidas**; cualquiera de las dos pasa el
+`before_request` global:
 
-```
-Authorization: Bearer <token>
-X-Device-Token: <token>
-```
+1. **Token del dispositivo** (para el backend, máquina a máquina). Opaco,
+   32 bytes hex recomendado, generado por Aditum. Se envía en cualquiera de
+   los dos headers:
 
-- Respuesta sin/mal token: `401 {"error": "unauthorized"}` (también para
+   ```
+   Authorization: Bearer <token>
+   X-Device-Token: <token>
+   ```
+
+2. **Sesión de administrador** (para una persona en el editor en línea
+   `/admin`): login usuario/contraseña → cookie firmada HttpOnly (8 h). Una
+   sesión admin es superusuario del API local. Ver
+   [Login del editor](#login-del-editor-en-línea).
+
+Reglas:
+
+- Público (sin credencial) solo: `GET /`, el HTML de `GET /admin` y su flujo
+  de login (`/admin/login`, `/admin/logout`, `/admin/session`).
+- Respuesta sin/mal credencial: `401 {"error": "unauthorized"}` (también para
   rutas inexistentes — no hay enumeración de endpoints).
 - El backend guarda **solo el SHA-256** del token, nunca el token en claro.
 - El token **jamás debe llegar al browser** del admin: todas las llamadas al
@@ -57,6 +70,22 @@ datos que muestra y guarda salen de `GET /config`, `PUT /config` y
 `GET /health`, que exigen sesión de administrador (login de la propia página,
 cookie firmada HttpOnly) o el token del dispositivo. Útil para técnicos en
 sitio sin pasar por el admin de Aditum.
+
+### Login del editor en línea
+
+Autentica a una **persona** (no al backend). Credenciales en
+`admin-credentials.json` del Pi (hash PBKDF2; semilla inicial
+`admin`/`admin0606`, cambiable). La cookie de sesión dura 8 horas.
+
+| Endpoint | Método | Notas |
+|---|---|---|
+| `/admin/session` | GET | Público. `{"authenticated": true\|false, "username": ...}` |
+| `/admin/login` | POST | Público. Body `{"username", "password"}` → `200 {"ok": true}` con cookie, o `401 {"error": "credenciales invalidas"}` (con freno anti fuerza bruta) |
+| `/admin/logout` | POST | Público. Cierra la sesión → `{"ok": true}` |
+| `/admin/password` | POST | **Exige sesión**. Body `{"username", "currentPassword", "newPassword"}`. `401` sin sesión, `403` contraseña actual incorrecta, `400` nueva inválida (6–256 caracteres) |
+
+Estos endpoints son para la página `/admin`; el backend de aditum-jh no los
+usa (usa el token).
 
 #### `GET /status` — protegido
 ```json
@@ -148,6 +177,7 @@ Respuestas:
 | `deviceId` inválido (solo sesión admin) | 400 | `{"error": "invalid config", "details": ["deviceId: maximo 128 caracteres, sin espacios"]}` |
 | `schemaVersion` no soportada | 409 | `{"error": "unsupported schemaVersion", "supportedSchemaVersion": 1}` |
 | No valida contra el schema | 400 | `{"error": "invalid config", "details": ["...mensajes jsonschema..."]}` |
+| Body que no es objeto JSON | 400 | `{"error": "body must be a JSON object"}` |
 
 **Re-identificación local**: el 409 `deviceId mismatch` aplica a los push
 autenticados con token (protege contra aplicar la config de otra Pi). Una
@@ -218,7 +248,8 @@ Si el Pi no tiene Hikvision habilitado → `400`.
 1. *Manual*: el técnico escribe `device-token.txt` en el Pi al instalar.
 2. *Remota (TOFU)*: apenas se registra el Entry Point en el admin, el backend
    genera el token y hace `PUT /token` (el Pi sin provisionar lo acepta).
-   Hacerlo inmediatamente: mientras no haya token, el API está abierto.
+   Hacerlo inmediatamente: mientras no haya token, el backend no puede
+   administrar el Pi (todo salvo `PUT /token` exige la sesión del editor).
 
 **Rotación en dos fases** (responsabilidad del backend — el Pi mantiene un
 solo token vigente): al rotar, guardar `device_token_hash` (viejo) y

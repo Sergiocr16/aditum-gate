@@ -2,7 +2,7 @@
 # ============================================================================
 # Instalador de un comando de aditum-gate para Raspberry Pi.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Sergiocr16/aditum-gate/main/scripts/bootstrap.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/Sergiocr16/aditum-gate/production/scripts/bootstrap.sh | sudo bash
 #
 # Funciona en una Pi virgen Y sobre una instalacion vieja (cualquier branch
 # historico): respalda todo en ~/aditum-backup-<fecha>/, cosecha los valores
