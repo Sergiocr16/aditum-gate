@@ -354,9 +354,6 @@
       <a href="#sec-salud" data-sec="sec-salud">Salud</a>
       <a href="#sec-tipo" data-sec="sec-tipo">Equipo</a>
       <a href="#sec-identidad" data-sec="sec-identidad">Identidad</a>
-      <a href="#sec-lectores" data-sec="sec-lectores">Lectores</a>
-      <a href="#sec-pantalla" data-sec="sec-pantalla">Pantalla</a>
-      <a href="#sec-neopixel" data-sec="sec-neopixel">NeoPixel</a>
       <a href="#sec-hikvision" data-sec="sec-hikvision">Hikvision</a>
       <a href="#sec-red" data-sec="sec-red">Red</a>
       <a href="#sec-polling" data-sec="sec-polling">Polling</a>
@@ -404,6 +401,59 @@
           <button class="sec sm" id="btnAddGate" type="button">+ Agregar portón</button>
         </div>
       </div>
+
+      <div class="cond" id="lectoresBlock" style="margin-top:20px">
+        <div class="hsub">Lectores</div>
+        <div class="field" style="max-width:340px">
+          <label for="f_scannerType">Tipo de lector <span class="key">scannerType</span></label>
+          <select id="f_scannerType">
+            <option value="hid">Pistola (lector HID por USB)</option>
+            <option value="opencv">Cámara USB (OpenCV)</option>
+          </select>
+          <div class="hint">Cómo lee los QR este equipo: lector pistola o cámara USB.</div>
+        </div>
+        <div id="scannersCond">
+          <p class="hint" style="margin:0 0 10px">Hasta 2 lectores. <b>role</b>: entrada (entry) o salida (exit) · <b>doorId</b>: id de la puerta que abre en Aditum. Según el tipo: <b>device name</b> (pistola) o <b>cámara</b> (índice USB).</p>
+          <div id="scannersList"></div>
+          <button class="sec sm" id="btnAddScanner" type="button">+ Agregar lector</button>
+        </div>
+      </div>
+
+      <div class="cond" id="pantallaBlock" style="margin-top:20px">
+        <div class="hsub">Pantalla</div>
+        <p class="hint" style="margin-top:0">Un pedestal siempre tiene pantalla: le muestra a la persona el resultado del escaneo.</p>
+        <div class="grid">
+          <div class="field">
+            <label for="f_doorType">Sentido de la puerta <span class="key">doorType</span></label>
+            <select id="f_doorType">
+              <option value="ENTRY">ENTRY — entrada</option>
+              <option value="EXIT">EXIT — salida</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f_logo">Logo del cliente <span class="key">clientLogoUrl</span></label>
+            <input type="text" id="f_logo" placeholder="https://...">
+            <div class="hint">URL de la imagen que se muestra en la pantalla.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cond" id="neopixelBlock" style="margin-top:20px">
+        <div class="hsub">NeoPixel / LED</div>
+        <label class="check"><input type="checkbox" id="f_npEnabled"> Luces NeoPixel <span class="muted">(tira LED indicadora)</span></label>
+        <div class="cond" id="npCond" style="margin-top:14px">
+          <div class="grid">
+            <div class="field">
+              <label for="f_npPin">Pin de datos <span class="key">pin</span></label>
+              <input type="text" id="f_npPin" value="D18">
+            </div>
+            <div class="field">
+              <label for="f_npCount">Cantidad de LEDs <span class="key">count</span></label>
+              <input type="number" id="f_npCount" min="1" value="55">
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="card" id="sec-identidad">
@@ -426,66 +476,6 @@
             <option value="legacy">Legacy (prefijo ADITUMGATE=)</option>
           </select>
           <div class="hint">Tipo de código QR que acepta el equipo. Usá <b>Seguro</b> salvo en sitios con códigos viejos. El servidor es siempre caseta.aditumcr.com.</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="sec-lectores">
-      <h2>Lectores</h2>
-      <div class="field" style="max-width:340px">
-        <label for="f_scannerType">Tipo de lector <span class="key">scannerType</span></label>
-        <select id="f_scannerType">
-          <option value="hid">Pistola (lector HID por USB)</option>
-          <option value="opencv">Cámara USB (OpenCV)</option>
-        </select>
-        <div class="hint">Cómo lee los QR este equipo: lector pistola o cámara USB.</div>
-      </div>
-      <div class="cond" id="scannersCond">
-        <p class="hint" style="margin:0 0 10px">Hasta 2 lectores. <b>role</b>: entrada (entry) o salida (exit) · <b>doorId</b>: id de la puerta que abre en Aditum. Según el tipo: <b>device name</b> (pistola) o <b>cámara</b> (índice USB).</p>
-        <div id="scannersList"></div>
-        <button class="sec sm" id="btnAddScanner" type="button">+ Agregar lector</button>
-      </div>
-      <p class="hint" id="scannersNoneHint" hidden>Este tipo de equipo no usa lectores pistola.</p>
-    </div>
-
-    <div class="card" id="sec-pantalla">
-      <h2>Pantalla</h2>
-      <label class="check" id="screenToggleRow"><input type="checkbox" id="f_hasScreen"> Tiene pantalla pedestal</label>
-      <p class="hint" id="screenForcedHint" hidden><strong>Un pedestal siempre tiene pantalla.</strong>
-        Para apagarla, cambiá el <a href="#sec-tipo">Tipo de equipo</a> a
-        "Controlador de portones" o "Portones + lectores" y guardá.</p>
-      <p class="hint">La pantalla del pedestal le muestra a la persona el resultado del escaneo.</p>
-      <div class="cond" id="screenCond">
-        <div class="grid">
-          <div class="field">
-            <label for="f_doorType">Sentido de la puerta <span class="key">doorType</span></label>
-            <select id="f_doorType">
-              <option value="ENTRY">ENTRY — entrada</option>
-              <option value="EXIT">EXIT — salida</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="f_logo">Logo del cliente <span class="key">clientLogoUrl</span></label>
-            <input type="text" id="f_logo" placeholder="https://...">
-            <div class="hint">URL de la imagen que se muestra en la pantalla.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="sec-neopixel">
-      <h2>NeoPixel / LED</h2>
-      <label class="check"><input type="checkbox" id="f_npEnabled"> Luces NeoPixel <span class="muted">(tira LED indicadora)</span></label>
-      <div class="cond" id="npCond" style="margin-top:14px">
-        <div class="grid">
-          <div class="field">
-            <label for="f_npPin">Pin de datos <span class="key">pin</span></label>
-            <input type="text" id="f_npPin" value="D18">
-          </div>
-          <div class="field">
-            <label for="f_npCount">Cantidad de LEDs <span class="key">count</span></label>
-            <input type="number" id="f_npCount" min="1" value="55">
-          </div>
         </div>
       </div>
     </div>
@@ -680,7 +670,6 @@
     scannersState = clone(cfg.scanners || []);
 
     // Pantalla
-    setChk('f_hasScreen', screen.hasScreen);
     $('f_doorType').value = screen.doorType || 'ENTRY';
     setVal('f_logo', screen.clientLogoUrl || '');
 
@@ -854,23 +843,17 @@
     const hasGates = (t === 'gate' || t === 'gate_readers');
     const isPedestal = (t === 'pedestal');
 
-    // Pedestal: pantalla siempre activa (no se puede apagar)
-    if (isPedestal) $('f_hasScreen').checked = true;
-    $('screenToggleRow').hidden = isPedestal;
-    $('screenForcedHint').hidden = !isPedestal;
-
-    // Secciones segun tipo de equipo
-    setSectionVisible('sec-lectores', hasReaders);
-    setSectionVisible('sec-pantalla', isPedestal);
+    // Bloques dentro de Equipo segun el tipo
     $('gatesCond').hidden = !hasGates;
-    setSectionVisible('sec-neopixel', isPedestal);
+    $('lectoresBlock').hidden = !hasReaders;
+    $('pantallaBlock').hidden = !isPedestal;
+    $('neopixelBlock').hidden = !isPedestal;
+
+    // Secciones del menu segun tipo de equipo
     setSectionVisible('sec-hikvision', hasGates);
     setSectionVisible('sec-red', true);
 
     // Conds internos
-    $('scannersCond').hidden = !hasReaders;
-    $('scannersNoneHint').hidden = hasReaders;
-    $('screenCond').hidden = !$('f_hasScreen').checked;
     $('npCond').hidden = !$('f_npEnabled').checked;
     $('wdCond').hidden = !$('f_wdEnabled').checked;
     $('pollCond').hidden = !$('f_pollEnabled').checked;
@@ -1213,7 +1196,7 @@
 
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
-  ['f_hasScreen', 'f_npEnabled', 'f_wdEnabled', 'f_pollEnabled', 'f_hikEnabled'].forEach((id) =>
+  ['f_npEnabled', 'f_wdEnabled', 'f_pollEnabled', 'f_hikEnabled'].forEach((id) =>
     $(id).addEventListener('change', applyConditionalVisibility));
 
 
