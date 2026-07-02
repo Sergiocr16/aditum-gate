@@ -55,6 +55,26 @@ Reglas:
 
 ## Endpoints
 
+Índice rápido (P = público, T/S = exige token del dispositivo o sesión admin):
+
+| Endpoint | Método | Auth | Para qué |
+|---|---|---|---|
+| `/` | GET | P | Health mínimo |
+| `/admin` | GET | P | HTML del editor en línea |
+| `/admin/session`, `/admin/login`, `/admin/logout` | GET/POST | P | Flujo de login del editor |
+| `/admin/password` | POST | S | Cambiar credenciales del editor |
+| `/status` | GET | T/S | Identidad, revisión, provisioned |
+| `/health` | GET | T/S | Salud: servicios, USB, lectores, sistema |
+| `/config` | GET / PUT | T/S | Leer / aplicar la configuración |
+| `/backup` | GET | T/S | Config en formato exportable (respaldo) |
+| `/token` | PUT | especial | Provisión TOFU / rotación |
+| `/token` | DELETE | T/S | Desprovisionar el equipo |
+| `/gateStatus[/<id>]` | GET | T/S | Estado de portones |
+| `/openGate/<id>`, `/closeGate/<id>` | GET | T/S | Pulso de apertura/cierre |
+| `/update-card`, `/cleanup-cards` | POST | T/S | Tarjetas Hikvision |
+| `/code-*`, `/wait-for-response/<name>` | GET | T/S | Estados de pantalla (compat) |
+| `/restart` | POST | T/S | Reiniciar el proceso |
+
 ### Salud y estado
 
 #### `GET /` — público
@@ -303,13 +323,17 @@ confirmar (próximo `GET /status` exitoso con el nuevo token) y recién
 entonces descartar el viejo. Esto cubre el caso del `200` perdido en el
 túnel. Rotar ante cualquier sospecha de filtración y al desvincular personal.
 
+**Desprovisionar** (`DELETE /token`): al desvincular o resetear un equipo.
+Borra el token con efecto inmediato y reabre la provisión TOFU —
+re-provisionar de inmediato o dejar el equipo desvinculado a propósito.
+
 ## Modelo de amenaza
 
 - **El Entry Point registrado en Aditum debe ser siempre la URL del túnel
   remoteiot, nunca una IP/puerto forwardeado del router del condominio**
   (eso enviaría el token en claro por internet).
 - Token único por dispositivo: el radio de daño de una filtración es un Pi,
-  y se cierra con `PUT /token`.
+  y se cierra rotando (`PUT /token`) o revocando (`DELETE /token`).
 - El backend guarda solo SHA-256 de los tokens; el token nunca va al browser.
 - Fuera de alcance deliberadamente (no sobre-ingeniar para este despliegue):
   mTLS, firma HMAC por request, anti-replay con nonce.
@@ -317,7 +341,7 @@ túnel. Rotar ante cualquier sospecha de filtración y al desvincular personal.
 
 ## Modelo de datos sugerido en aditum-jh
 
-Tabla `gate_device`:
+En la entidad `gate_access` (una por Raspberry):
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -326,11 +350,15 @@ Tabla `gate_device`:
 | `device_token_hash` | varchar | SHA-256 del token vigente |
 | `pending_token_hash` | varchar null | rotación en dos fases |
 | `company_id` | FK opcional | condominio |
-| `config_json` | clob | documento completo del schema |
+| `config_json` | clob | documento completo del schema (lo que se pushea) |
 | `config_revision` | int | se incrementa en cada guardado |
+| `config_backup` | clob | último `GET /backup` (restaurable tal cual) |
+| `backed_up_at` | timestamp | cuándo se tomó el respaldo |
 | `last_seen_at` | timestamp | actualizar en cada llamada exitosa |
 
 Pantalla de administración sugerida: editor del JSON validado contra
 `config.schema.json`, botón **Aplicar** (`PUT /config` vía servidor),
-botones provisionar/rotar token, badges `provisioned` / `configSource` /
-revisión aplicada / last seen.
+botones provisionar/rotar/quitar token, botón **Abrir editor del equipo**
+(link a `{entry_point_url}/admin`, pestaña nueva), botón **Descargar
+respaldo** (`config_backup` como archivo `.json`), badges `provisioned` /
+`configSource` / revisión aplicada / last seen.
