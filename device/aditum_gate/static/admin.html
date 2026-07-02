@@ -52,7 +52,7 @@
     backdrop-filter:saturate(1.4) blur(14px); -webkit-backdrop-filter:saturate(1.4) blur(14px);
     border-bottom:1px solid var(--line);
   }
-  .appbar-inner{ max-width:960px; margin:0 auto; padding:13px 20px; display:flex; align-items:center; gap:14px; }
+  .appbar-inner{ max-width:none; margin:0; padding:13px 24px; display:flex; align-items:center; gap:14px; }
   .appbar img{ height:26px; width:auto; display:block; }
   .appbar .sep{ width:1px; height:22px; background:var(--line-2); flex:none; }
   .appbar .tag{ font-size:12.5px; font-weight:600; color:var(--mut); letter-spacing:.02em; white-space:nowrap; }
@@ -61,7 +61,7 @@
   .appbar .env::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--pri); box-shadow:0 0 0 3px var(--pri-50); flex:none; }
 
   /* ---------- Layout ---------- */
-  .wrap{ max-width:960px; margin:0 auto; padding:28px 20px 140px; }
+  .wrap{ max-width:none; margin:0; padding:26px 28px 80px; }
   h1{ font-size:24px; line-height:1.2; letter-spacing:-.015em; font-weight:700; color:var(--ink); margin:0 0 6px; }
   .sub{ color:var(--mut); font-size:13.5px; margin:0 0 22px; max-width:64ch; }
 
@@ -76,21 +76,34 @@
   }
 
   /* ---------- Section nav ---------- */
+  #form{ display:grid; grid-template-columns:230px minmax(0,1fr); gap:26px; align-items:start; }
+  #form[hidden]{ display:none; }
+  #pages{ min-width:0; }
   .secnav{
-    position:sticky; top:52px; z-index:25;
-    display:flex; gap:6px; overflow-x:auto;
-    padding:12px 2px; margin:-8px 0 12px;
-    background:linear-gradient(180deg, var(--bg) 82%, rgba(241,244,248,0) 100%);
-    -webkit-overflow-scrolling:touch; scrollbar-width:none;
+    position:sticky; top:72px; z-index:25;
+    display:flex; flex-direction:column; gap:4px;
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+    padding:10px; box-shadow:var(--shadow);
   }
-  .secnav::-webkit-scrollbar{ display:none; }
   .secnav a{
-    flex:none; text-decoration:none; font-size:13px; font-weight:600; color:var(--mut);
-    padding:9px 15px; border-radius:999px; background:#fff; border:1px solid var(--line);
-    transition:color .15s, border-color .15s, background .15s;
+    text-decoration:none; font-size:13.5px; font-weight:600; color:var(--mut);
+    padding:10px 14px; border-radius:10px;
+    transition:color .15s, background .15s;
   }
-  .secnav a:hover{ color:var(--pri); border-color:#b9d0e8; background:#f4f9ff; }
+  .secnav a:hover{ color:var(--pri); background:#f4f9ff; }
+  .secnav a.active{ background:var(--pri); color:#fff; }
+  .secnav a.active:hover{ color:#fff; }
   .secnav a:focus-visible{ outline:none; box-shadow:0 0 0 3px var(--ring); }
+  @media (max-width:820px){
+    #form{ grid-template-columns:1fr; gap:0; }
+    .secnav{
+      position:sticky; top:52px; flex-direction:row; overflow-x:auto;
+      padding:8px; margin-bottom:14px;
+      -webkit-overflow-scrolling:touch; scrollbar-width:none;
+    }
+    .secnav::-webkit-scrollbar{ display:none; }
+    .secnav a{ flex:none; }
+  }
 
   /* ---------- Fields ---------- */
   label{ display:block; font-size:12.5px; font-weight:600; color:var(--mut); margin-bottom:6px; letter-spacing:.005em; }
@@ -335,7 +348,10 @@
       <a href="#sec-red" data-sec="sec-red">Red</a>
       <a href="#sec-polling" data-sec="sec-polling">Polling</a>
       <a href="#sec-avanzado" data-sec="sec-avanzado">Avanzado</a>
+      <a href="#sec-seguridad" data-sec="sec-seguridad">Seguridad</a>
     </nav>
+
+    <div id="pages">
 
     <div class="card" id="sec-salud">
       <h2>Salud del equipo</h2>
@@ -523,8 +539,8 @@
       </details>
     </div>
 
-    <div class="card">
-      <details id="pwdDetails">
+    <div class="card" id="sec-seguridad">
+      <details id="pwdDetails" open>
         <summary>Cambiar usuario / contraseña</summary>
         <p class="hint" style="margin-top:12px">Cambia las credenciales del login de este editor (no afecta el token del dispositivo).</p>
         <div class="grid">
@@ -554,6 +570,7 @@
       <div id="msg"></div>
     </div>
 
+    </div><!-- /pages -->
   </div>
 </div>
 
@@ -806,8 +823,30 @@
   }
 
   // ---------- Visibilidad condicional ----------
+  // ---------- Paginas (menu lateral): una seccion visible a la vez ----------
+  let currentSec = 'sec-salud';
+  const secTypeHidden = {}; // secciones excluidas por el tipo de equipo
+  function refreshPages() {
+    if (secTypeHidden[currentSec]) currentSec = 'sec-tipo'; // la activa quedo excluida
+    document.querySelectorAll('.secnav a[data-sec]').forEach((a) => {
+      const sec = a.dataset.sec, el = $(sec);
+      const active = sec === currentSec;
+      if (el) el.hidden = !active;
+      a.classList.toggle('active', active);
+    });
+    // Guardar aplica a las paginas de configuracion, no a Salud/Seguridad
+    document.querySelector('.savebar').hidden =
+      currentSec === 'sec-salud' || currentSec === 'sec-seguridad';
+  }
+  function selectSection(secId) {
+    if (secTypeHidden[secId] || !$(secId)) return;
+    currentSec = secId;
+    refreshPages();
+    if (secId === 'sec-salud') loadHealth();
+    window.scrollTo(0, 0);
+  }
   function setSectionVisible(secId, visible) {
-    const el = $(secId); if (el) el.hidden = !visible;
+    secTypeHidden[secId] = !visible;
     const pill = document.querySelector('.secnav a[data-sec="' + secId + '"]');
     if (pill) pill.hidden = !visible;
   }
@@ -837,6 +876,8 @@
     $('npCond').hidden = !$('f_npEnabled').checked;
     $('wdCond').hidden = !$('f_wdEnabled').checked;
     $('pollCond').hidden = !$('f_pollEnabled').checked;
+
+    refreshPages();
   }
 
   // ---------- Recolección ----------
@@ -1172,6 +1213,10 @@
   });
   $('btnFormToJson').addEventListener('click', () => { refreshRawFromForm(); show('ok', 'JSON actualizado desde el formulario.'); });
   $('advanced').addEventListener('toggle', (e) => { if (e.target.open) refreshRawFromForm(); });
+
+  // Menu lateral y links internos a secciones
+  document.querySelectorAll('a[href^="#sec-"]').forEach((a) =>
+    a.addEventListener('click', (e) => { e.preventDefault(); selectSection(a.getAttribute('href').slice(1)); }));
 
   // Arranque: ¿hay sesión vigente? Si no, mostrar login.
   checkSession();
