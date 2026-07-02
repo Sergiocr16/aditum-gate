@@ -543,8 +543,8 @@
         <input type="file" id="importFile" accept=".json,application/json" hidden>
       </div>
       <div class="hint">Exportá la configuración de este equipo como archivo, o importá la de otro
-        para clonarla. Al importar solo se llena el formulario: revisá y presioná Guardar.
-        El deviceId y la revisión de este equipo se conservan.</div>
+        para clonarla. Al importar, la configuración se valida, se aplica de inmediato y el
+        servicio se reinicia. El deviceId y la revisión de este equipo se conservan.</div>
     </div>
 
     <div class="card" id="sec-seguridad">
@@ -1121,7 +1121,8 @@
         cfg.configRevision = loadedRevision || 0;
         populateForm(cfg);
         updateDirty();
-        show('ok', 'Importada al formulario (' + file.name + '). Revisá y presioná Guardar para aplicarla.');
+        show('', 'Importada (' + file.name + '). Aplicando y reiniciando...');
+        save();
       } catch (e) {
         show('err', 'No se pudo importar: ' + e.message);
       }
