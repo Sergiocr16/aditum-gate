@@ -179,20 +179,15 @@ def create_app(settings, gates, hikvision_service, screen):
 
     @app.route("/backup")
     def get_backup():
-        # Snapshot restaurable para que Aditum lo guarde en su BD: config
-        # completa + identidad efectiva (device-id.txt manda sobre la config,
-        # que puede haber llegado generica). Restaurar en un equipo nuevo =
-        # PUT /config con el campo "config" tal cual (o importarlo en /admin).
+        # Devuelve el documento de configuracion EXACTAMENTE en el formato de
+        # exportacion del editor (Respaldo -> Exportar), con la identidad
+        # efectiva (device-id.txt manda sobre una config pushada generica).
+        # Aditum lo guarda tal cual en su BD; restaurar = PUT /config con el
+        # mismo JSON, o importarlo en /admin (aplica y reinicia solo).
         doc = dict(settings.raw)
         if settings.device_id:
             doc["deviceId"] = settings.device_id
-        return jsonify({
-            "deviceId": settings.device_id,
-            "placeName": settings.place_name,
-            "configRevision": settings.config_revision,
-            "source": settings.source.name if settings.source else None,
-            "config": doc,
-        })
+        return jsonify(doc)
 
     @app.route("/config", methods=["PUT"])
     def put_config():

@@ -159,30 +159,30 @@ por variante en [`examples/`](../examples/).
 
 #### `GET /backup` — protegido
 
-Snapshot **restaurable** del equipo, pensado para que Aditum lo guarde en su
-BD (columna sugerida en `gate_access`: `config_backup` clob +
-`backed_up_at`). Si la SD de una Raspberry muere, se restaura descargando el
-respaldo de Aditum e importándolo en el equipo nuevo.
+Devuelve el **documento de configuración completo, EXACTAMENTE en el formato
+de exportación/importación** del editor (sección Respaldo de `/admin`) — sin
+wrapper. Pensado para que Aditum lo guarde tal cual en su BD (columna
+sugerida en `gate_access`: `config_backup` clob + `backed_up_at`) y lo
+ofrezca para descarga: si la SD de una Raspberry muere, ese archivo se
+importa directo en el equipo nuevo.
 
 ```json
-{
-  "deviceId": "GATE-CR-0034",
-  "placeName": "Condominio X",
-  "configRevision": 42,
-  "source": "config-runtime.json",
-  "config": { ...documento completo, con el deviceId efectivo... }
-}
+{ "schemaVersion": 1, "configRevision": 42, "deviceId": "GATE-CR-0034",
+  "placeName": "Condominio X", "api": { ... }, "scannerType": "hid",
+  "scanners": [ ... ], "screen": { ... }, "gpio": { ... },
+  "hikvision": { ... }, "polling": { ... } }
 ```
 
-- A diferencia de `GET /config`, el campo `config` trae **siempre** el
-  `deviceId` efectivo del equipo (`device-id.txt` manda: una config pushada
-  genérica puede venir sin él).
+- A diferencia de `GET /config`, trae **siempre** el `deviceId` efectivo del
+  equipo (`device-id.txt` manda: una config pushada genérica puede venir sin
+  él), y la respuesta es el documento pelado, restaurable sin transformación.
 - **Cuándo respaldar**: tras cada `PUT /config` exitoso y/o un pull diario.
 - **Cómo restaurar en un equipo nuevo**: instalarlo (bootstrap + provisión de
-  token), y hacer `PUT /config` con el campo `config` del respaldo tal cual
-  (si el `deviceId` difiere del nuevo equipo, quitarlo o re-identificar
-  primero). También sirve descargar el JSON y usarlo en la sección
-  **Respaldo → Importar** del editor `/admin`, que aplica y reinicia solo.
+  token) y luego (a) descargar el JSON de Aditum e importarlo en
+  **Respaldo → Importar** del editor `/admin` (aplica y reinicia solo, y
+  conserva la identidad del equipo nuevo), o (b) `PUT /config` con el JSON
+  tal cual (si el `deviceId` difiere del equipo destino, quitarlo del JSON o
+  re-identificar primero).
 - Lo que NO incluye (a propósito): `device-token.txt` (secreto — el token del
   equipo nuevo se provisiona aparte), credenciales del editor y
   `hikvision-cards.json` (se regenera solo: las tarjetas se re-registran
