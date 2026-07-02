@@ -72,6 +72,21 @@ if [ "$WEB_STAMP" != "$(cat web/node_modules/.aditum-stamp 2>/dev/null || true)"
   echo "$WEB_STAMP" > web/node_modules/.aditum-stamp
 fi
 
+# Extras por variante (espejo de bootstrap install_variant_extras): la config
+# puede cambiar a opencv/neopixel DESPUES de instalar; sin esto el proceso
+# queda en crash-loop por import faltante hasta que alguien corra bootstrap.
+SCANNER_TYPE="$(.venv/bin/python3 -c 'import json;print(json.load(open("config-runtime.json")).get("scannerType",""))' 2>/dev/null || echo '')"
+if [ "$SCANNER_TYPE" = opencv ] && ! .venv/bin/python3 -c 'import cv2, pyzbar' >/dev/null 2>&1; then
+  log "Variante opencv sin dependencias: instalando extras (apt + pip)"
+  apt-get install -y -qq python3-opencv libzbar0 uhubctl
+  .venv/bin/pip install -q pyzbar
+fi
+NEOPIXEL="$(.venv/bin/python3 -c 'import json;c=json.load(open("config-runtime.json"));print(1 if c.get("gpio",{}).get("neopixel",{}).get("enabled") else 0)' 2>/dev/null || echo 0)"
+if [ "$NEOPIXEL" = 1 ] && ! .venv/bin/python3 -c 'import neopixel' >/dev/null 2>&1; then
+  log "NeoPixel habilitado sin dependencias: instalando extras"
+  .venv/bin/pip install -q rpi_ws281x adafruit-circuitpython-neopixel adafruit-blinka
+fi
+
 # ------------------------------------------------------------------
 # 3. Units systemd (si el repo trae una version nueva)
 # ------------------------------------------------------------------
