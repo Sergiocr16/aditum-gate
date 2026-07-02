@@ -125,7 +125,8 @@ cambiarla en Seguridad; hash en `admin-credentials.json`). Secciones:
 - **Equipo**: todo se configura eligiendo el tipo (portones / portones +
   lectores / pedestal). El editor fija las políticas simples: GPIO siempre
   modo BOARD con pulso de 1 s, polling siempre 40 s, pantalla implícita en
-  el tipo pedestal.
+  el tipo pedestal. Con lectores de cámara, cada una puede mostrar su
+  cuadro en tiempo real en la pantalla local (`showCameraFeed`).
 - **Identidad**: nombre del lugar y `deviceId`. Cambiar el `deviceId` desde
   una sesión admin re-identifica el equipo (reescribe `device-id.txt`); un
   push del backend con otro `deviceId` se sigue rechazando (409).

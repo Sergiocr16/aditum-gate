@@ -31,7 +31,7 @@
           "doorId": { "type": "string" },
           "deviceName": { "type": "string", "description": "Nombre (o parte) del lector HID en /proc/bus/input/devices" },
           "cameraIndex": { "type": "integer", "minimum": 0, "description": "Indice de /dev/video* para scanners OpenCV" },
-          "showCameraFeed": { "type": "boolean", "default": false }
+          "showCameraFeed": { "type": "boolean", "default": false, "description": "Muestra el cuadro de la camara en tiempo real en la pantalla local (ventana por camara)" }
         }
       }
     },
