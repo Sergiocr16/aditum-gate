@@ -76,9 +76,11 @@ supervisor ni cron de reinicio:
   público es la allowlist `PUBLIC_PATHS` en `auth.py` (`/`, el HTML de
   `/admin` y su flujo de login); **agregar un path ahí es una decisión de
   seguridad** que debe justificarse en el review.
-- Pi sin provisionar (sin `device-token.txt`): el API exige login admin para
-  todo salvo `PUT /token` (provisión TOFU). `GET /status` lo reporta
-  (`provisioned: false`).
+- Pi sin provisionar (sin `device-token.txt`): el API queda **abierto**
+  (compatibilidad: el backend histórico no manda credencial; los portones
+  no pueden dejar de funcionar durante la migración). `GET /status` lo
+  reporta (`provisioned: false`) y se loguea ERROR continuo. Provisionar
+  (`PUT /token` TOFU o `device-token.txt`) activa el enforcement estricto.
 - La identidad (`device-id.txt`) solo la cambia una **sesión admin** via
   `PUT /config` con otro `deviceId`; un push con token y `deviceId` ajeno se
   rechaza 409 (protección contra entry points intercambiados). Las

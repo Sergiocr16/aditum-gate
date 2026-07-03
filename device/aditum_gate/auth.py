@@ -4,11 +4,12 @@ Fail-secure: un before_request global exige el token en TODOS los paths;
 lo publico es una allowlist explicita (PUBLIC_PATHS). Un endpoint nuevo
 queda protegido sin hacer nada.
 
-Modo sin provisionar: si no existe device-token.txt el API NO queda abierto:
-todo responde 401 salvo PUT /token (provision TOFU) y lo que permita una
-sesion admin del editor. Se loguea ERROR con rate-limit y GET /status lo
-delata con provisioned=false. Provisionado el token, el enforcement es por
-token o sesion admin (401 sin credencial).
+Modo sin provisionar: si no existe device-token.txt el API queda abierto
+(compatibilidad: el backend historico no manda credencial y los portones
+deben seguir funcionando durante la migracion de la flota). Se loguea ERROR
+con rate-limit y GET /status lo delata con provisioned=false. Al provisionar
+el token (PUT /token TOFU o device-token.txt) el enforcement pasa a ser
+estricto: 401 sin token valido o sesion admin.
 """
 import hmac
 import logging
@@ -58,13 +59,14 @@ def init_auth(app, settings):
             now = time.monotonic()
             if now - _last_unprovisioned_log >= UNPROVISIONED_LOG_INTERVAL:
                 _last_unprovisioned_log = now
-                log.error("Dispositivo SIN PROVISIONAR: el API exige login admin. "
-                          "Provisionar token via PUT /token (TOFU) o device-token.txt")
-            # Sin token NO se abre el API: solo se permite la provision TOFU
-            # del token. Todo lo demas exige login admin.
-            if request.path == "/token" and request.method == "PUT":
-                return None
-            return jsonify({"error": "unauthorized"}), 401
+                log.error("Dispositivo SIN PROVISIONAR: API abierto (compatibilidad "
+                          "con la flota sin token). Provisionar via PUT /token "
+                          "(TOFU) o device-token.txt para activar el enforcement")
+            # Sin token el API queda abierto (comportamiento historico): el
+            # backend actual no manda credencial y los portones deben seguir
+            # funcionando durante la migracion. GET /status delata el estado
+            # (provisioned=false). Al provisionar, el enforcement es estricto.
+            return None
 
         provided = _extract_token()
         if provided and hmac.compare_digest(provided, expected):

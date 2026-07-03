@@ -19,10 +19,12 @@ remoteiot — ver [Modelo de amenaza](#modelo-de-amenaza)).
 > - [ ] Generar y provisionar un token por dispositivo (ver
 >       [Provisión](#provisión-y-rotación-del-token))
 >
-> Un Pi **sin token provisionado** NO deja el API abierto: exige la sesión
-> del editor en línea para todo, salvo `PUT /token` (provisión TOFU), y se
-> delata en `GET /status` con `"provisioned": false`. La meta es que ningún
-> Pi quede en ese estado.
+> Un Pi **sin token provisionado** deja el API **abierto** (compatibilidad:
+> los portones de la flota siguen funcionando aunque el backend aún no mande
+> el header). Se delata en `GET /status` con `"provisioned": false` y loguea
+> ERROR de forma continua. **Apenas se provisiona el token** (`PUT /token`
+> TOFU o `device-token.txt`) el enforcement pasa a ser estricto: 401 sin
+> credencial. La meta es que ningún Pi quede sin provisionar.
 
 ## Autenticación
 
@@ -273,9 +275,10 @@ Body: `{"token": "<nuevo token>"}` (16–256 caracteres, sin espacios).
 
 Desprovisiona el equipo: borra `device-token.txt` con efecto inmediato →
 `200 {"deprovisioned": true}` (idempotente). El equipo vuelve al estado
-TOFU: `GET /status` reporta `provisioned: false` y `PUT /token` acepta un
-token nuevo sin credencial — **re-provisionar de inmediato**, igual que en
-la instalación. El backend la usa al desvincular o resetear un equipo.
+TOFU: `GET /status` reporta `provisioned: false`, el API queda **abierto**
+(modo compatibilidad) y `PUT /token` acepta un token nuevo sin credencial —
+**re-provisionar de inmediato**, igual que en la instalación. El backend la
+usa al desvincular o resetear un equipo.
 Firmware viejo sin este endpoint responde `405` (con credencial válida) o
 `401` (sin ella).
 
@@ -319,8 +322,9 @@ Si el Pi no tiene Hikvision habilitado → `400`.
 1. *Manual*: el técnico escribe `device-token.txt` en el Pi al instalar.
 2. *Remota (TOFU)*: apenas se registra el Entry Point en el admin, el backend
    genera el token y hace `PUT /token` (el Pi sin provisionar lo acepta).
-   Hacerlo inmediatamente: mientras no haya token, el backend no puede
-   administrar el Pi (todo salvo `PUT /token` exige la sesión del editor).
+   Hacerlo inmediatamente: mientras no haya token el API queda abierto
+   (cualquiera que alcance el puerto puede operarlo); provisionar es lo que
+   activa el enforcement.
 
 **Rotación en dos fases** (responsabilidad del backend — el Pi mantiene un
 solo token vigente): al rotar, guardar `device_token_hash` (viejo) y
