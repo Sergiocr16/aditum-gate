@@ -111,9 +111,10 @@ echo '<token-del-backend>' > device-token.txt && chmod 600 device-token.txt
 
 El token también puede provisionarse remotamente: un Pi sin token acepta
 `PUT /token` sin credencial (TOFU — hacerlo apenas se registra el Entry
-Point). Mientras no haya token, **el resto del API exige la sesión del
-editor en línea** y `GET /status` lo reporta con `provisioned: false`.
-También se puede provisionar desde la sección Seguridad del editor.
+Point). Mientras no haya token el API queda **abierto** (compatibilidad con
+el backend que aún no manda credencial); `GET /status` lo reporta con
+`provisioned: false` y provisionar activa el enforcement estricto. También
+se puede provisionar desde la sección Seguridad del editor.
 
 **Editor en línea**: en el Pi, `http://localhost:8080/admin` (o vía el Entry
 Point remoto). Pide login de administrador local (semilla `admin`/`admin0606`,
@@ -195,7 +196,7 @@ Node/PM2/nginx, procesos online, config válida contra el schema, hardware
 conectado (cámaras USB, lectores HID de la config, GPIO) y endpoints HTTP.
 Exit 0 = sano. Es el primer y último paso de toda instalación o soporte.
 
-Con Claude Code en el equipo, el skill **`/instalar-pi`** orquesta el ciclo
+Con Claude Code en el equipo, el skill **`/instalar-aditum-gate`** orquesta el ciclo
 completo (doctor → bootstrap → reparación dirigida → verificación funcional
 por variante → reporte).
 

@@ -126,7 +126,7 @@ sudo bash scripts/doctor.sh                          # diagnostico integral del 
 Las dependencias Python van **pinneadas** en `device/requirements*.txt`
 (núcleo + extras opencv/neopixel); cambiar un pin ahí redespliega esa
 versión a toda la flota vía self-update (stamp sha256 del conjunto). El
-skill `/instalar-pi` es el runbook de instalación/reparación de un equipo.
+skill `/instalar-aditum-gate` es el runbook de instalación/reparación de un equipo.
 
 **El build de Angular está commiteado** (`web/pedestal-app/dist/`) porque las
 Pis no compilan: todo cambio bajo `web/pedestal-app/src` exige regenerar el

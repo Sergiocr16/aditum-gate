@@ -1,6 +1,6 @@
 ---
-name: instalar-pi
-description: Instala o repara aditum-gate en esta Raspberry Pi y la deja funcionando y verificada (deps pinneadas, servicios, config, diagnostico). Usar cuando el usuario diga "instala este pi", "provisiona esta raspberry", "deja este equipo funcionando", "repara la instalacion", "chequea que este todo instalado" o /instalar-pi.
+name: instalar-aditum-gate
+description: Instala o repara aditum-gate en esta Raspberry Pi y la deja funcionando y verificada (deps pinneadas, servicios, config, diagnostico). Usar cuando el usuario diga "instala este pi", "provisiona esta raspberry", "deja este equipo funcionando", "repara la instalacion", "chequea que este todo instalado" o /instalar-aditum-gate.
 ---
 
 # Instalar / reparar una Raspberry Pi de aditum-gate
