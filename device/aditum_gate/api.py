@@ -91,9 +91,13 @@ def create_app(settings, gates, hikvision_service, screen):
         # Editor local de configuracion (http://localhost:8080/admin).
         # El HTML es publico pero su contenido se tapa con el login; los datos
         # (GET/PUT /config, etc.) exigen sesion admin o token de dispositivo.
-        return send_from_directory(
+        # no-store: el editor se actualiza via self-update y un HTML cacheado
+        # deja al usuario viendo un formulario viejo (p.ej. sin validaciones).
+        resp = send_from_directory(
             os.path.join(os.path.dirname(__file__), "static"), "admin.html"
         )
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     # ------------------------------------------------------------
     # Login de administrador del editor local (sesion por cookie)

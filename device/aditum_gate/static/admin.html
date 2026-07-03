@@ -471,7 +471,12 @@
           <div class="grid">
             <div class="field">
               <label for="f_npPin">Pin de datos <span class="key">pin</span></label>
-              <input type="text" id="f_npPin" value="D18">
+              <select id="f_npPin">
+                <option value="D10">D10 (SPI)</option>
+                <option value="D12">D12 (PWM)</option>
+                <option value="D18" selected>D18 (PWM — estándar)</option>
+                <option value="D21">D21 (PCM)</option>
+              </select>
             </div>
             <div class="field">
               <label for="f_npCount">Cantidad de LEDs <span class="key">count</span></label>
@@ -751,7 +756,16 @@
     gatesState = clone(gpio.gates || []);
     renderGates();
     setChk('f_npEnabled', np.enabled);
-    setVal('f_npPin', np.pin || 'D18');
+    (function () {
+      // Pin heredado fuera de la lista: se agrega para no perderlo al cargar
+      const sel = $('f_npPin'), npPin = np.pin || 'D18';
+      if (!Array.from(sel.options).some(o => o.value === npPin)) {
+        const o = document.createElement('option');
+        o.value = npPin; o.textContent = npPin + ' (no estándar)';
+        sel.appendChild(o);
+      }
+      sel.value = npPin;
+    })();
     setVal('f_npCount', np.count !== undefined ? np.count : 55);
     setChk('f_wdEnabled', wd.enabled);
     setVal('f_wdHost', wd.host || '1.1.1.1');
