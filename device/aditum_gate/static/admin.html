@@ -843,8 +843,13 @@
   function syncScannersFromDOM() {
     const type = $('f_scannerType').value;
     const rows = document.querySelectorAll('#scannersList .scanner-item');
-    scannersState = [...rows].map((row) => {
+    scannersState = [...rows].map((row, i) => {
       const s = { role: row.querySelector('.s-role').value, doorId: row.querySelector('.s-door').value.trim() };
+      // Campos avanzados sin UI (push del backend / respaldo importado):
+      // preservarlos para que guardar desde el editor no los pierda
+      const prev = scannersState[i] || {};
+      if (prev.devicePhys) s.devicePhys = prev.devicePhys;
+      if (prev.strictMarkerMatch) s.strictMarkerMatch = true;
       const sel = row.querySelector('.s-devname-sel');
       const cam = row.querySelector('.s-cam');
       const feed = row.querySelector('.s-feed');

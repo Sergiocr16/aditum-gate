@@ -42,8 +42,10 @@ class Reader:
         self.role = data["role"]  # "entry" | "exit"
         self.door_id = data["doorId"]
         self.device_name = data.get("deviceName")
+        self.device_phys = data.get("devicePhys")
         self.camera_index = data.get("cameraIndex")
         self.show_camera_feed = data.get("showCameraFeed", False)
+        self.strict_marker_match = data.get("strictMarkerMatch", False)
 
 
 class Settings:

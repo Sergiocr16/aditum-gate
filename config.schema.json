@@ -30,8 +30,10 @@
           "role": { "enum": ["entry", "exit"] },
           "doorId": { "type": "string" },
           "deviceName": { "type": "string", "description": "Nombre (o parte) del lector HID en /proc/bus/input/devices" },
+          "devicePhys": { "type": "string", "description": "Puerto fisico USB del lector HID (parte del Phys= en /proc/bus/input/devices); fija que pistola es este lector cuando hay dos identicas" },
           "cameraIndex": { "type": "integer", "minimum": 0, "description": "Indice de /dev/video* para scanners OpenCV" },
-          "showCameraFeed": { "type": "boolean", "default": false, "description": "Muestra el cuadro de la camara en tiempo real en la pantalla local (ventana por camara)" }
+          "showCameraFeed": { "type": "boolean", "default": false, "description": "Muestra el cuadro de la camara en tiempo real en la pantalla local (ventana por camara)" },
+          "strictMarkerMatch": { "type": "boolean", "default": false, "description": "Deniega localmente (sin consultar al backend) si el marcador EXIT del QR no coincide con el rol del lector; semantica del scannerExit.py original" }
         }
       }
     },

@@ -62,7 +62,7 @@ def _write_token_file(token):
         raise
 
 
-def create_app(settings, gates, hikvision_service, screen):
+def create_app(settings, gates, hikvision_service, screen, leds=None):
     app = Flask(__name__)
 
     # Sesion del login admin (cookie firmada HttpOnly). El secreto se persiste
@@ -323,22 +323,29 @@ def create_app(settings, gates, hikvision_service, screen):
         return jsonify({"results": hikvision_service.cleanup_all()})
 
     # ------------------------------------------------------------
-    # Estados de pantalla (compatibilidad con el flujo viejo en que el
-    # backend llamaba al Pi y este reenviaba a Node 3000)
+    # Estados de pantalla y LED (compatibilidad con el flujo viejo en que
+    # el backend llamaba al Pi y este reenviaba a Node 3000; la tira
+    # NeoPixel acompaña cada estado como en los pedestales originales)
     # ------------------------------------------------------------
     @app.route("/code-accepted/<string:name>")
     def code_accepted(name):
         screen.accepted(name=name)
+        if leds:
+            leds.flash_green(seconds=4)
         return jsonify({"message": "Access granted"})
 
     @app.route("/code-denied/<string:name>")
     def code_denied(name):
         screen.denied()
+        if leds:
+            leds.flash_red(seconds=4)
         return jsonify({"message": "Access denied"})
 
     @app.route("/wait-for-response/<string:name>")
     def wait_for_response(name):
         screen.wait_for_response(name=name)
+        if leds:
+            leds.start_blinking()
         return jsonify({"message": "Waiting for response"})
 
     # ------------------------------------------------------------

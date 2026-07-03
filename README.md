@@ -263,6 +263,17 @@ Esperar 2 segundos entre lecturas
 El `deviceName` del lector (para `scanners[].deviceName` en la config) se ve
 en `cat /proc/bus/input/devices`.
 
+Con **dos pistolas del mismo modelo**, la asignación entry/exit es
+determinista: los lectores se ordenan por su puerto físico USB (`Phys=` en
+`/proc/bus/input/devices`) y el primer scanner de la config toma el puerto
+más bajo. Para fijar explícitamente qué pistola es cada lector, usar
+`scanners[].devicePhys` (parte del `Phys=`, p.ej. `usb-0000:01:00.0-1.2`).
+
+`scanners[].strictMarkerMatch` (opcional, default `false`) restaura la
+semántica del `scannerExit.py` original: si el marcador `EXIT` del QR no
+coincide con el rol del lector, se deniega localmente sin consultar al
+backend.
+
 ## Terminales Hikvision
 
 La guía completa de configuración del terminal (IP estática, HTTP Listening,

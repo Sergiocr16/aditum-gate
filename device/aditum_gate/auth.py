@@ -4,11 +4,11 @@ Fail-secure: un before_request global exige el token en TODOS los paths;
 lo publico es una allowlist explicita (PUBLIC_PATHS). Un endpoint nuevo
 queda protegido sin hacer nada.
 
-Modo sin provisionar: si no existe device-token.txt el API queda abierto
-(igual que el comportamiento historico) pero se loguea ERROR con rate-limit
-y GET /status lo delata con provisioned=false. Eso permite actualizar la
-flota antes de provisionar tokens y habilita la provision remota (PUT /token
-TOFU). Provisionado el token, el enforcement es estricto (401).
+Modo sin provisionar: si no existe device-token.txt el API NO queda abierto:
+todo responde 401 salvo PUT /token (provision TOFU) y lo que permita una
+sesion admin del editor. Se loguea ERROR con rate-limit y GET /status lo
+delata con provisioned=false. Provisionado el token, el enforcement es por
+token o sesion admin (401 sin credencial).
 """
 import hmac
 import logging

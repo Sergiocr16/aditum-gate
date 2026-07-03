@@ -62,6 +62,7 @@ class OpenCvScanner(Scanner):
         super().__init__(*args, **kwargs)
         self._capture = None
         self._failed_restarts = 0
+        self._feed_last_code = "Esperando QR..."
         if self.reader.show_camera_feed:
             _ensure_display_env()
 
@@ -100,7 +101,9 @@ class OpenCvScanner(Scanner):
                     log.error("Camara %s irrecuperable tras %s reinicios; "
                               "saliendo para que PM2 reinicie el proceso",
                               self.reader.camera_index, self._failed_restarts)
-                    raise RuntimeError("camara irrecuperable")
+                    # os._exit y no raise: la excepcion solo mataria este
+                    # thread (base.run la atrapa) y PM2 nunca relanzaria.
+                    os._exit(1)
                 return None
             self._failed_restarts = 0
 
@@ -108,7 +111,11 @@ class OpenCvScanner(Scanner):
 
             if self.reader.show_camera_feed:
                 try:
-                    cv2.imshow(f"Aditum QR {self.reader.role}", frame)
+                    # Overlay de diagnostico: el ultimo codigo leido, como
+                    # en los scanners originales
+                    cv2.putText(frame, f"QR: {self._feed_last_code}", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                    cv2.imshow(f"Aditum QR {self.reader.role.capitalize()}", frame)
                     cv2.waitKey(1)
                 except cv2.error:
                     # Sin servidor X (PM2/headless): deshabilitar el feed
@@ -116,5 +123,6 @@ class OpenCvScanner(Scanner):
 
             for barcode in barcodes:
                 data = barcode.data.decode("utf-8")
+                self._feed_last_code = data
                 log.debug("QR detectado en camara %s", self.reader.camera_index)
                 return data

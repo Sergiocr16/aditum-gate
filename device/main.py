@@ -50,7 +50,7 @@ def main():
     if settings.watchdog_enabled:
         NetworkWatchdog(settings).start()
 
-    app = create_app(settings, gates, hikvision_service, screen)
+    app = create_app(settings, gates, hikvision_service, screen, leds)
     app.run(host="0.0.0.0", port=API_PORT)
 
 

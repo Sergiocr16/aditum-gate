@@ -2,8 +2,11 @@
 
 Reemplaza scannerQr.py y scannerQrExit.py: entry y exit son dos instancias
 de esta misma clase, parametrizadas por la config. Soporta dos pistolas del
-mismo modelo (cada instancia reclama un /dev/input/eventX distinto) y
-reconexion en caliente si el lector se desenchufa.
+mismo modelo con asignacion determinista: los lectores se ordenan por su
+puerto fisico USB (Phys=) y cada instancia toma el que le toca por posicion
+en la config (o el fijado por devicePhys); una vez conectado queda anclado
+a ese puerto para reconectarse al mismo aparato. Reconexion en caliente si
+el lector se desenchufa.
 """
 import logging
 import threading
@@ -40,69 +43,139 @@ CAPS_CODES = {
 NON_CHAR_KEYS = {'LSHFT', 'RSHFT', 'CR', 'BKSP', 'TAB', 'ESC', 'LALT', 'RALT', 'LCTRL', 'RCTRL', ' '}
 SHIFT_SCANCODES = {42, 54}
 
-# Paths /dev/input/eventX ya reclamados por otra instancia (dos pistolas
-# del mismo modelo no deben tomar el mismo device)
-_claimed_paths = set()
+# Puertos fisicos (Phys=) ya reclamados por otra instancia (dos pistolas
+# del mismo modelo no deben tomar el mismo aparato)
+_claimed_phys = set()
 _claimed_lock = threading.Lock()
 
+# Iteraciones de espera (2s c/u) antes de soltar el anclaje al puerto
+# fisico y aceptar el lector en otro puerto (lo movieron de enchufe)
+PIN_MISS_LIMIT = 30
 
-def _find_device_paths_by_name(device_name):
-    """Todos los /dev/input/eventX cuyo nombre contenga device_name."""
+
+def _find_devices_by_name(device_name, device_phys=None):
+    """Lectores cuyo nombre contenga device_name: [(phys, path)] ordenado.
+
+    Un aparato fisico puede exponer varios nodos de input (teclado +
+    control): se agrupa por el puerto fisico (Phys= sin el sufijo /inputN)
+    y se toma el eventX mas bajo, que es el del teclado. El orden por phys
+    es estable entre reinicios (depende del enchufe, no de la enumeracion).
+    """
     wanted = (device_name or "").lower()
-    paths = []
+    phys_filter = (device_phys or "").lower()
+    by_phys = {}
     try:
         with open("/proc/bus/input/devices") as f:
             lines = f.readlines()
     except OSError as e:
         log.error("No se pudo leer /proc/bus/input/devices: %s", e)
-        return paths
+        return []
 
     current_name = None
+    current_phys = None
     current_handlers = None
-    for line in lines:
+    for line in lines + [""]:
         line = line.strip()
         if line.startswith("N: Name="):
             current_name = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("P: Phys="):
+            current_phys = line.split("=", 1)[1].strip()
         elif line.startswith("H: Handlers="):
             current_handlers = line.split("=", 1)[1].strip()
         elif line == "":
             if current_name and current_handlers and wanted and wanted in current_name.lower():
                 for token in current_handlers.split():
-                    if token.startswith("event"):
-                        paths.append(f"/dev/input/{token}")
+                    if not token.startswith("event"):
+                        continue
+                    try:
+                        event_n = int(token[len("event"):])
+                    except ValueError:
+                        continue
+                    path = f"/dev/input/{token}"
+                    phys = (current_phys or path).split("/input")[0]
+                    if phys_filter and phys_filter not in phys.lower():
+                        continue
+                    known = by_phys.get(phys)
+                    if known is None or event_n < known[0]:
+                        by_phys[phys] = (event_n, path)
             current_name = None
+            current_phys = None
             current_handlers = None
-    return paths
+    return sorted((phys, item[1]) for phys, item in by_phys.items())
 
 
 class HidScanner(Scanner):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._device = None
-        self._device_path = None
+        self._device_phys = None
+        # Rango entre lectores identicos (mismo deviceName/devicePhys): el
+        # primero de la config toma el puerto fisico mas bajo. Determinista
+        # entre reinicios, a diferencia de "el primer thread que llegue".
+        twins = [r for r in self.settings.scanners
+                 if r.device_name == self.reader.device_name
+                 and r.device_phys == self.reader.device_phys]
+        self._rank = twins.index(self.reader)
+        self._pinned_phys = None  # puerto fisico al que quedo anclado
+        self._ever_pinned = False
+        self._pin_misses = 0
 
     # ------------------------------------------------------------
     # Conexion / reconexion
     # ------------------------------------------------------------
+    def _pick_candidate(self, candidates):
+        """Con que (phys, path) quedarse en esta pasada, o None."""
+        if self._pinned_phys:
+            for phys, path in candidates:
+                if phys == self._pinned_phys:
+                    self._pin_misses = 0
+                    return phys, path
+            # El lector no reaparece en su puerto: tras un rato, aceptar
+            # que lo movieron de enchufe y tomar cualquier lector libre.
+            self._pin_misses += 1
+            if self._pin_misses >= PIN_MISS_LIMIT:
+                log.warning("Lector %s ausente de su puerto %s; se acepta otro puerto",
+                            self.reader.role, self._pinned_phys)
+                self._pinned_phys = None
+                self._pin_misses = 0
+            return None
+        if not self._ever_pinned:
+            # Primera asignacion: por rango sobre la lista completa, para
+            # que entry/exit no dependan de que thread gano la carrera
+            if len(candidates) > self._rank:
+                candidate = candidates[self._rank]
+                if candidate[0] not in _claimed_phys:
+                    return candidate
+            return None
+        # Post-anclaje perdido: cualquier lector libre (disponibilidad
+        # antes que determinismo, ya lo movieron de puerto)
+        free = [c for c in candidates if c[0] not in _claimed_phys]
+        return free[0] if free else None
+
     def _acquire_device(self):
-        """Bloquea hasta reclamar un lector libre que coincida por nombre."""
+        """Bloquea hasta reclamar un lector que coincida por nombre/puerto."""
         announced = False
         while True:
             with _claimed_lock:
-                for path in _find_device_paths_by_name(self.reader.device_name):
-                    if path in _claimed_paths:
-                        continue
+                candidates = _find_devices_by_name(self.reader.device_name,
+                                                   self.reader.device_phys)
+                picked = self._pick_candidate(candidates)
+                if picked:
+                    phys, path = picked
                     try:
                         device = evdev.InputDevice(path)
                         device.grab()  # exclusivo: evita inyeccion en la terminal
+                        _claimed_phys.add(phys)
+                        self._device = device
+                        self._device_phys = phys
+                        self._pinned_phys = phys
+                        self._ever_pinned = True
+                        self._pin_misses = 0
+                        log.info("Lector %s conectado en %s (%s)",
+                                 self.reader.role, path, phys)
+                        return
                     except OSError as e:
                         log.warning("No se pudo abrir %s: %s", path, e)
-                        continue
-                    _claimed_paths.add(path)
-                    self._device = device
-                    self._device_path = path
-                    log.info("Lector %s conectado en %s", self.reader.role, path)
-                    return
             if not announced:
                 log.warning("Lector '%s' (%s) no encontrado; esperando conexion...",
                             self.reader.device_name, self.reader.role)
@@ -111,14 +184,14 @@ class HidScanner(Scanner):
 
     def _release_device(self):
         with _claimed_lock:
-            _claimed_paths.discard(self._device_path)
+            _claimed_phys.discard(self._device_phys)
         if self._device is not None:
             try:
                 self._device.close()
             except OSError:
                 pass
         self._device = None
-        self._device_path = None
+        self._device_phys = None
 
     # ------------------------------------------------------------
     def read_code(self):

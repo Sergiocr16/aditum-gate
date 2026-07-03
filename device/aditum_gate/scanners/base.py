@@ -63,6 +63,17 @@ class Scanner(threading.Thread):
             return
 
         payload = text[len(self.prefix):]
+
+        # Semantica estricta opcional (scannerExit.py original): si el
+        # marcador EXIT del QR no coincide con el rol del lector se deniega
+        # localmente, sin consultar al backend.
+        if self.reader.strict_marker_match and \
+                (self.reader.role == "exit") != ("EXIT" in payload):
+            log.info("Marcador EXIT no coincide con el rol %s: denegado local",
+                     self.reader.role)
+            self.deny()
+            return
+
         self.screen.loading()
         authorized = self.backend.verify(self.reader.role, payload, self.reader.door_id)
         if authorized:

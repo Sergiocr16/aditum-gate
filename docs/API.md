@@ -308,9 +308,9 @@ Si el Pi no tiene Hikvision habilitado → `400`.
 
 | Endpoint | Método | Notas |
 |---|---|---|
-| `/code-accepted/<name>` | GET | Reenvía el estado a la pantalla local |
-| `/code-denied/<name>` | GET | ídem |
-| `/wait-for-response/<name>` | GET | ídem |
+| `/code-accepted/<name>` | GET | Reenvía el estado a la pantalla local y enciende el LED verde 4 s (si hay NeoPixel) |
+| `/code-denied/<name>` | GET | ídem con LED rojo 4 s |
+| `/wait-for-response/<name>` | GET | ídem con LED amarillo parpadeante hasta el veredicto |
 | `/restart` | POST | Reinicia el proceso (PM2 lo relanza) — `{"message": "Restarting"}` |
 
 ## Provisión y rotación del token
