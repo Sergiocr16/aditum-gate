@@ -1,0 +1,3 @@
+# Extras pip de la variante "opencv" (camaras USB).
+# cv2 viene de apt (python3-opencv) y libzbar0/uhubctl tambien son apt.
+pyzbar==0.1.9

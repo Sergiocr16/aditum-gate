@@ -35,6 +35,7 @@ jobs:
         run: |
           bash -n scripts/bootstrap.sh
           bash -n scripts/self-update.sh
+          bash -n scripts/doctor.sh
 
   screen-build-check:
     runs-on: ubuntu-latest

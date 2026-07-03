@@ -170,8 +170,10 @@ El instalador (`scripts/bootstrap.sh`) hace todo y es **idempotente**
    remoteiot/VNC/red.
 3. **Instala lo nuevo**: Node 20 system-wide (NodeSource), PM2 como root con
    `ecosystem.config.js`, venv Python (`.venv/`, sobrevive a Bookworm),
-   dependencias por variante (OpenCV de apt, NeoPixel) y nginx :80 → pantalla
-   (:3000) o API (:8080) según la config.
+   dependencias **pinneadas por versión** (`device/requirements*.txt`: núcleo
+   + extras por variante; cambiar un pin ahí hace que toda la flota lo
+   reinstale en el siguiente self-update) y nginx :80 → pantalla (:3000) o
+   API (:8080) según la config.
 4. **Configura**: lanza el wizard (`scripts/configure.py`), que sugiere como
    defaults los valores detectados en la instalación vieja (doorId,
    deviceName, etc.) y valida el resultado contra el schema.
@@ -180,6 +182,22 @@ El instalador (`scripts/bootstrap.sh`) hace todo y es **idempotente**
 Requisitos previos en una Pi virgen: Raspbian, red, y el acceso remoto de
 siempre (remoteiot con `partners@aditumcr.com`; VNC con X11 vía
 `raspi-config`; `xscreensaver` deshabilitado si hay pantalla).
+
+### Diagnóstico: `scripts/doctor.sh`
+
+```bash
+sudo bash scripts/doctor.sh
+```
+
+Verifica sin cambiar nada que el equipo esté completo y sano: versiones
+pinneadas de Python instaladas, imports por variante (cv2/pyzbar/neopixel),
+Node/PM2/nginx, procesos online, config válida contra el schema, hardware
+conectado (cámaras USB, lectores HID de la config, GPIO) y endpoints HTTP.
+Exit 0 = sano. Es el primer y último paso de toda instalación o soporte.
+
+Con Claude Code en el equipo, el skill **`/instalar-pi`** orquesta el ciclo
+completo (doctor → bootstrap → reparación dirigida → verificación funcional
+por variante → reporte).
 
 ### Modo no interactivo (flotas)
 

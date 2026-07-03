@@ -118,9 +118,15 @@ supervisor ni cron de reinicio:
 ```bash
 python3 -m compileall -q device scripts/validate_configs.py scripts/configure.py
 node --check web/server.js && node --check ecosystem.config.js
-bash -n scripts/bootstrap.sh && bash -n scripts/self-update.sh
+bash -n scripts/bootstrap.sh && bash -n scripts/self-update.sh && bash -n scripts/doctor.sh
 python3 scripts/validate_configs.py                  # configs vs schema (pip install jsonschema)
+sudo bash scripts/doctor.sh                          # diagnostico integral del equipo (25+ checks)
 ```
+
+Las dependencias Python van **pinneadas** en `device/requirements*.txt`
+(núcleo + extras opencv/neopixel); cambiar un pin ahí redespliega esa
+versión a toda la flota vía self-update (stamp sha256 del conjunto). El
+skill `/instalar-pi` es el runbook de instalación/reparación de un equipo.
 
 **El build de Angular está commiteado** (`web/pedestal-app/dist/`) porque las
 Pis no compilan: todo cambio bajo `web/pedestal-app/src` exige regenerar el

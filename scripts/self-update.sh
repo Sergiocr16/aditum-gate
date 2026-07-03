@@ -64,10 +64,21 @@ if grep -q '^include-system-site-packages = false' .venv/pyvenv.cfg 2>/dev/null;
   log "Venv sin system-site-packages: habilitando"
   sed -i 's/^include-system-site-packages = false/include-system-site-packages = true/' .venv/pyvenv.cfg
 fi
-REQ_STAMP="$(stamp device/requirements.txt)"
+# El stamp cubre TODOS los requirements (nucleo + extras por variante):
+# cambiar cualquier version pinneada hace que la flota la reinstale sola.
+SCANNER_TYPE="$(.venv/bin/python3 -c 'import json;print(json.load(open("config-runtime.json")).get("scannerType",""))' 2>/dev/null || echo '')"
+NEOPIXEL="$(.venv/bin/python3 -c 'import json;c=json.load(open("config-runtime.json"));print(1 if c.get("gpio",{}).get("neopixel",{}).get("enabled") else 0)' 2>/dev/null || echo 0)"
+
+REQ_STAMP="$(cat device/requirements*.txt | sha256sum | cut -d' ' -f1)"
 if [ "$REQ_STAMP" != "$(cat .venv/.requirements.sha256 2>/dev/null || true)" ]; then
-  log "requirements.txt cambio: pip install"
+  log "requirements cambiaron: pip install pinneado"
   .venv/bin/pip install -q -r device/requirements.txt
+  if [ "$SCANNER_TYPE" = opencv ]; then
+    .venv/bin/pip install -q -r device/requirements-opencv.txt
+  fi
+  if [ "$NEOPIXEL" = 1 ]; then
+    .venv/bin/pip install -q -r device/requirements-neopixel.txt
+  fi
   echo "$REQ_STAMP" > .venv/.requirements.sha256
 fi
 
@@ -81,16 +92,14 @@ fi
 # Extras por variante (espejo de bootstrap install_variant_extras): la config
 # puede cambiar a opencv/neopixel DESPUES de instalar; sin esto el proceso
 # queda en crash-loop por import faltante hasta que alguien corra bootstrap.
-SCANNER_TYPE="$(.venv/bin/python3 -c 'import json;print(json.load(open("config-runtime.json")).get("scannerType",""))' 2>/dev/null || echo '')"
 if [ "$SCANNER_TYPE" = opencv ] && ! .venv/bin/python3 -c 'import cv2, pyzbar' >/dev/null 2>&1; then
-  log "Variante opencv sin dependencias: instalando extras (apt + pip)"
+  log "Variante opencv sin dependencias: instalando extras (apt + pip pinneado)"
   apt-get install -y -qq python3-opencv libzbar0 uhubctl
-  .venv/bin/pip install -q pyzbar
+  .venv/bin/pip install -q -r device/requirements-opencv.txt
 fi
-NEOPIXEL="$(.venv/bin/python3 -c 'import json;c=json.load(open("config-runtime.json"));print(1 if c.get("gpio",{}).get("neopixel",{}).get("enabled") else 0)' 2>/dev/null || echo 0)"
 if [ "$NEOPIXEL" = 1 ] && ! .venv/bin/python3 -c 'import neopixel' >/dev/null 2>&1; then
-  log "NeoPixel habilitado sin dependencias: instalando extras"
-  .venv/bin/pip install -q rpi_ws281x adafruit-circuitpython-neopixel adafruit-blinka
+  log "NeoPixel habilitado sin dependencias: instalando extras (pip pinneado)"
+  .venv/bin/pip install -q -r device/requirements-neopixel.txt
 fi
 
 # ------------------------------------------------------------------

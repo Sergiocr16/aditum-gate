@@ -1,0 +1,5 @@
+# Extras pip para la tira NeoPixel (pedestales con LED).
+# Se pinnean las directas; Blinka arrastra sus transitivas.
+rpi_ws281x==5.0.0
+adafruit-circuitpython-neopixel==6.4.2
+adafruit-blinka==9.1.0

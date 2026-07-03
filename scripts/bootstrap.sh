@@ -236,13 +236,13 @@ install_variant_extras() {
   neopixel="$(.venv/bin/python3 -c 'import json;c=json.load(open("config-runtime.json"));print(1 if c.get("gpio",{}).get("neopixel",{}).get("enabled") else 0)' 2>/dev/null || echo 0)"
 
   if [ "$scanner_type" = opencv ]; then
-    log "Extras OpenCV (apt python3-opencv + pyzbar)"
+    log "Extras OpenCV (apt python3-opencv + pip pinneado)"
     apt-get install -y -qq python3-opencv libzbar0 uhubctl
-    .venv/bin/pip install -q pyzbar
+    .venv/bin/pip install -q -r device/requirements-opencv.txt
   fi
   if [ "$neopixel" = 1 ]; then
-    log "Extras NeoPixel"
-    .venv/bin/pip install -q rpi_ws281x adafruit-circuitpython-neopixel adafruit-blinka
+    log "Extras NeoPixel (pip pinneado)"
+    .venv/bin/pip install -q -r device/requirements-neopixel.txt
   fi
 }
 
