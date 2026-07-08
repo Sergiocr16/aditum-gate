@@ -16,10 +16,19 @@ except ImportError:
     log.warning("RPi.GPIO no disponible: GPIO en modo simulado (solo desarrollo)")
 
 
+def _levels(gate):
+    """(reposo, activo) segun tipo de rele: NO = HIGH/LOW, NC = LOW/HIGH."""
+    if gate["normallyOpen"]:
+        return GPIO.HIGH, GPIO.LOW
+    return GPIO.LOW, GPIO.HIGH
+
+
 class GateController:
     def __init__(self, settings):
         self.pulse_seconds = settings.pulse_seconds
-        self.gates = {g["id"]: {"id": g["id"], "pin": g["pin"], "status": 0}
+        self.gates = {g["id"]: {"id": g["id"], "pin": g["pin"],
+                                "normallyOpen": g.get("normallyOpen", True),
+                                "status": 0}
                       for g in settings.gates}
         self._lock = threading.Lock()
 
@@ -30,8 +39,11 @@ class GateController:
             # proceso completo: se excluye ese porton y el resto sigue.
             for gate in list(self.gates.values()):
                 try:
-                    GPIO.setup(gate["pin"], GPIO.OUT)
-                    GPIO.output(gate["pin"], GPIO.HIGH)  # relay inactivo
+                    # initial= deja el rele en reposo desde el setup, sin
+                    # glitch de nivel al boot (importante en gates NC). Entre
+                    # power-on y este arranque el pin queda en el estado de
+                    # reset del SoC; eso solo se mitiga con pull externo.
+                    GPIO.setup(gate["pin"], GPIO.OUT, initial=_levels(gate)[0])
                 except (ValueError, RuntimeError) as e:
                     log.error("Porton %s con pin invalido (%s): %s — excluido",
                               gate["id"], gate["pin"], e)
@@ -44,14 +56,15 @@ class GateController:
         return gate
 
     def open_gate(self, gate_id):
-        """Pulso de apertura: LOW durante pulse_seconds y de vuelta a HIGH."""
+        """Pulso de apertura: nivel activo durante pulse_seconds y de vuelta a reposo."""
         gate = self._gate(gate_id)
         with self._lock:
             gate["status"] = 1
             if GPIO:
-                GPIO.output(gate["pin"], GPIO.LOW)
+                idle, active = _levels(gate)
+                GPIO.output(gate["pin"], active)
                 time.sleep(self.pulse_seconds)
-                GPIO.output(gate["pin"], GPIO.HIGH)
+                GPIO.output(gate["pin"], idle)
             gate["status"] = 0
         log.info("Porton %s abierto (pulso %ss)", gate_id, self.pulse_seconds)
         return gate
@@ -61,7 +74,7 @@ class GateController:
         with self._lock:
             gate["status"] = 0
             if GPIO:
-                GPIO.output(gate["pin"], GPIO.HIGH)
+                GPIO.output(gate["pin"], _levels(gate)[0])  # rele a reposo
         log.info("Porton %s cerrado", gate_id)
         return gate
 

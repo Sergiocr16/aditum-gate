@@ -62,7 +62,8 @@
             "additionalProperties": false,
             "properties": {
               "id": { "type": "integer", "minimum": 1 },
-              "pin": { "type": "integer", "minimum": 1 }
+              "pin": { "type": "integer", "minimum": 1 },
+              "normallyOpen": { "type": "boolean", "default": true }
             }
           }
         },

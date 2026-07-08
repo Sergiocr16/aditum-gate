@@ -265,11 +265,16 @@ def wizard(hints_dir=None):
 
     # GPIO y extras
     if not ask_yes_no("\n¿Usar los pines GPIO por defecto de la plantilla?", True):
-        pairs = ask_required("Pares id:pin separados por coma (ej. 1:7,2:11)")
-        config["gpio"]["gates"] = [
-            {"id": int(p.split(":")[0]), "pin": int(p.split(":")[1])}
-            for p in pairs.split(",")
-        ]
+        pairs = ask_required("Pares id:pin separados por coma (ej. 1:7,2:11; "
+                             "agrega :nc si el rele es normalmente cerrado, ej. 3:12:nc)")
+        gates = []
+        for p in pairs.split(","):
+            parts = p.strip().split(":")
+            gate = {"id": int(parts[0]), "pin": int(parts[1])}
+            if len(parts) > 2 and parts[2].lower() == "nc":
+                gate["normallyOpen"] = False
+            gates.append(gate)
+        config["gpio"]["gates"] = gates
     config["gpio"].setdefault("watchdog", {})["enabled"] = \
         ask_yes_no("¿Watchdog de red (reboot si pierde internet)?", True)
     config["gpio"].setdefault("neopixel", {})["enabled"] = \

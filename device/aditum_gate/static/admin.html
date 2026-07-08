@@ -422,7 +422,8 @@
           <label>Portones <span class="key">gates</span></label>
           <p class="hint" style="margin:0 0 10px"><b>id</b>: número del portón en el sistema ·
             <b>pin</b>: número físico del conector (BOARD) que dispara su relé.
-            El pulso de apertura es de 1&nbsp;segundo.</p>
+            El pulso de apertura es de 1&nbsp;segundo ·
+            <b>relé</b>: normalmente abierto (default: reposo en alto, pulso a bajo) o normalmente cerrado (invertido).</p>
           <div id="gatesList"></div>
           <button class="sec sm" id="btnAddGate" type="button">+ Agregar portón</button>
         </div>
@@ -890,9 +891,14 @@
         (GPIO_PINS.includes(g.pin) || g.pin === undefined
           ? '' : '<option value="' + g.pin + '">' + g.pin + ' (no válido)</option>') +
         '</select></div>' +
+        '<div class="field"><label>relé</label><select class="g-no" style="max-width:200px">' +
+        '<option value="1">Normalmente abierto</option>' +
+        '<option value="0">Normalmente cerrado</option>' +
+        '</select></div>' +
         '<div class="field"><button type="button" class="sec sm danger g-del">Quitar</button></div>';
       row.querySelector('.g-id').value = (g.id !== undefined ? g.id : i + 1);
       row.querySelector('.g-pin').value = String(g.pin !== undefined ? g.pin : 7);
+      row.querySelector('.g-no').value = (g.normallyOpen === false ? '0' : '1');
       row.querySelector('.g-del').addEventListener('click', () => { syncGatesFromDOM(); gatesState.splice(i, 1); renderGates(); });
       list.appendChild(row);
     });
@@ -903,6 +909,7 @@
     gatesState = [...rows].map((row) => ({
       id: toInt(row.querySelector('.g-id').value, 1),
       pin: toInt(row.querySelector('.g-pin').value, 7),
+      normallyOpen: row.querySelector('.g-no').value !== '0',
     }));
   }
 
@@ -911,7 +918,7 @@
     const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
     const used = gatesState.map((g) => g.pin);
     const pin = DEFAULT_GATE_PINS.find((p) => !used.includes(p)) || GPIO_PINS.find((p) => !used.includes(p)) || 7;
-    gatesState.push({ id: nextId, pin: pin });
+    gatesState.push({ id: nextId, pin: pin, normallyOpen: true });
     renderGates();
   }
 

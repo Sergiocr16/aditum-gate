@@ -288,10 +288,18 @@ Firmware viejo sin este endpoint responde `405` (con credencial válida) o
 |---|---|---|
 | `/openGate/<id>` | GET | `{"id": 1, "status": 0}` — pulso de apertura (1 s) |
 | `/closeGate/<id>` | GET | `{"id": 1, "status": 0}` |
-| `/gateStatus` | GET | `[{"id":1,"pin":7,"status":0}, ...]` |
+| `/gateStatus` | GET | `[{"id":1,"pin":7,"normallyOpen":true,"status":0}, ...]` |
 | `/gateStatus/<id>` | GET | `{"value": 1}` |
 
 Portón inexistente → `404 {"error": "..."}`.
+
+Cada portón puede configurarse como **normalmente abierto** (default) o
+**normalmente cerrado** vía `gpio.gates[].normallyOpen` en la config (el
+contrato del shape sigue siendo `config.schema.json`). `openGate` pulsa el
+**nivel activo** del relé: LOW si es normalmente abierto, HIGH si
+`normallyOpen: false`; `closeGate` vuelve el relé a reposo en ambos casos.
+`/gateStatus/<id>.value` es el nivel **físico** crudo del pin: en un portón
+normalmente cerrado el reposo lee `0`.
 
 > **Reintentos**: `GET /openGate/<id>` NO es idempotente (cada llamada
 > re-pulsa el relay). Usar timeout de 5 s y **no** reintentar a ciegas.
