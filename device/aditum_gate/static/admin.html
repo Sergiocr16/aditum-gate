@@ -440,7 +440,9 @@
           <div class="hint">Cómo lee los QR este equipo: lector pistola o cámara USB.</div>
         </div>
         <div id="scannersCond">
-          <p class="hint" style="margin:0 0 10px">Hasta 2 lectores. <b>role</b>: entrada (entry) o salida (exit) · <b>doorId</b>: id de la puerta que abre en Aditum. Según el tipo: <b>device name</b> (pistola) o <b>cámara</b> (índice USB).</p>
+          <p class="hint" style="margin:0 0 10px">Hasta 2 lectores. <b>role</b>: entrada (entry) o salida (exit) · <b>doorId</b>: id de la puerta que abre en Aditum. Según el tipo: <b>device name</b> (pistola) o <b>cámara</b> (índice USB).
+            Con dos pistolas idénticas, <b>puerto USB</b> fija cuál es este lector
+            (Automático las asigna por orden de puerto).</p>
           <div id="scannersList"></div>
           <button class="sec sm" id="btnAddScanner" type="button">+ Agregar lector</button>
         </div>
@@ -657,6 +659,7 @@
   // Orden historico de relays (config-default): defaults de portones nuevos
   const DEFAULT_GATE_PINS = [7, 11, 12, 13, 15, 16, 18, 22, 29, 35];
   let detectedCameras = []; // [{index, name}] segun /health
+  let detectedInputs = [];  // [{path, name, phys}] segun /health
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const API_BASE = 'https://caseta.aditumcr.com/api';
@@ -786,6 +789,29 @@
     return t === 'hid' || t === 'opencv';
   }
 
+  function hidPortsFor(name) {
+    const wanted = (name || '').toLowerCase();
+    if (!wanted) return [];
+    const ports = new Set();
+    detectedInputs.forEach((d) => {
+      if (d.phys && (d.name || '').toLowerCase().includes(wanted)) ports.add(d.phys.split('/input')[0]);
+    });
+    return [...ports].sort();
+  }
+
+  // Opciones del select de puerto USB de una fila, conservando la seleccion
+  function fillPhysOptions(row, name, current) {
+    const sel = row.querySelector('.s-phys');
+    if (!sel) return;
+    const cur = current !== undefined ? current : sel.value;
+    const ports = hidPortsFor(name);
+    let opts = '<option value="">Automático (por orden de puerto)</option>';
+    ports.forEach((p) => { opts += '<option value="' + esc(p) + '">' + esc(p) + '</option>'; });
+    if (cur && !ports.includes(cur)) opts += '<option value="' + esc(cur) + '">' + esc(cur) + ' (no detectado)</option>';
+    sel.innerHTML = opts;
+    sel.value = cur;
+  }
+
   function renderScanners() {
     const list = $('scannersList');
     const type = $('f_scannerType').value;
@@ -803,6 +829,7 @@
                   '<option value="__custom__">Otra…</option></select></div>';
         fields += '<div class="field grow s-devname-customwrap" hidden><label>Nombre exacto (parte del <code>Name=</code> en /proc/bus/input/devices)</label>' +
                   '<input type="text" class="s-devname-custom" placeholder="ej. Newtologic  4010E"></div>';
+        fields += '<div class="field grow"><label>Puerto USB <span class="key">devicePhys</span></label><select class="s-phys"></select></div>';
       } else if (type === 'opencv') {
         const camOpts = [0, 1, 2, 3];
         detectedCameras.forEach((c) => { if (!camOpts.includes(c.index)) camOpts.push(c.index); });
@@ -829,7 +856,14 @@
         const dn = s.deviceName || '';
         if (dn && !READER_NAMES.includes(dn)) { sel.value = '__custom__'; customInp.value = dn; customWrap.hidden = false; }
         else { sel.value = dn || READER_NAMES[0]; customWrap.hidden = true; }
-        sel.addEventListener('change', () => { customWrap.hidden = sel.value !== '__custom__'; });
+        fillPhysOptions(row, sel.value === '__custom__' ? customInp.value.trim() : sel.value, s.devicePhys || '');
+        sel.addEventListener('change', () => {
+          customWrap.hidden = sel.value !== '__custom__';
+          fillPhysOptions(row, sel.value === '__custom__' ? customInp.value.trim() : sel.value);
+        });
+        customInp.addEventListener('input', () => {
+          if (sel.value === '__custom__') fillPhysOptions(row, customInp.value.trim());
+        });
       }
       if (type === 'opencv') {
         row.querySelector('.s-cam').value = String(s.cameraIndex !== undefined ? s.cameraIndex : 0);
@@ -857,6 +891,10 @@
       if (type === 'hid' && sel) {
         const v = sel.value === '__custom__' ? row.querySelector('.s-devname-custom').value.trim() : sel.value;
         if (v) s.deviceName = v;
+        // El select de puerto manda: vacio = automatico (sin devicePhys)
+        const phys = row.querySelector('.s-phys');
+        delete s.devicePhys;
+        if (phys && phys.value) s.devicePhys = phys.value;
       }
       if (type === 'opencv') {
         if (cam) s.cameraIndex = toInt(cam.value, 0);
@@ -1407,7 +1445,8 @@
     parts.push('<div class="dsec">Dispositivos de entrada (USB)</div>');
     if (devs.length) {
       parts.push('<div class="tile" style="margin-top:12px"><ul class="hlist" style="margin:0">' +
-        devs.map((d) => '<li><span>' + esc(d.name) + '</span><code>' + esc(d.path) + '</code></li>').join('') +
+        devs.map((d) => '<li><span>' + esc(d.name) + '</span><code>' + esc(d.path) +
+          (d.phys ? ' · ' + esc(d.phys.split('/input')[0]) : '') + '</code></li>').join('') +
         '</ul></div>');
     } else {
       parts.push('<p class="hint">No se detectaron dispositivos de entrada.</p>');
@@ -1442,8 +1481,10 @@
       const h = await r.json();
       renderHealth(h);
       const cams = JSON.stringify(h.cameras || []);
-      if (cams !== JSON.stringify(detectedCameras)) {
+      const inps = JSON.stringify(h.inputDevices || []);
+      if (cams !== JSON.stringify(detectedCameras) || inps !== JSON.stringify(detectedInputs)) {
         detectedCameras = JSON.parse(cams);
+        detectedInputs = JSON.parse(inps);
         if (!formDirty) { syncScannersFromDOM(); renderScanners(); }
       }
       $('healthUpdated').textContent = 'Actualizado ' + new Date().toLocaleTimeString();

@@ -37,11 +37,14 @@ def list_input_devices():
         return devices
 
     current_name = None
+    current_phys = None
     current_handlers = None
     for line in lines + [""]:
         line = line.strip()
         if line.startswith("N: Name="):
             current_name = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("P: Phys="):
+            current_phys = line.split("=", 1)[1].strip()
         elif line.startswith("H: Handlers="):
             current_handlers = line.split("=", 1)[1].strip()
         elif line == "":
@@ -51,8 +54,10 @@ def list_input_devices():
                         devices.append({
                             "path": f"/dev/input/{token}",
                             "name": current_name,
+                            "phys": current_phys or "",
                         })
             current_name = None
+            current_phys = None
             current_handlers = None
     return devices
 
@@ -99,11 +104,19 @@ def readers_status(settings, input_devices):
         entry = {"role": reader.role, "doorId": reader.door_id}
         if settings.scanner_type == "hid":
             wanted = (reader.device_name or "").lower()
+            phys_filter = (reader.device_phys or "").lower()
             matches = [d for d in input_devices
                        if wanted and wanted in d["name"].lower()]
+            # Con devicePhys fijado, conectado = presente en ESE puerto;
+            # ports lista todos los puertos con ese nombre (para el editor)
+            filtered = [d for d in matches if not phys_filter
+                        or phys_filter in d.get("phys", "").lower()]
             entry["deviceName"] = reader.device_name
-            entry["connected"] = bool(matches)
-            entry["paths"] = [d["path"] for d in matches]
+            entry["devicePhys"] = reader.device_phys
+            entry["connected"] = bool(filtered)
+            entry["paths"] = [d["path"] for d in filtered]
+            entry["ports"] = sorted({d["phys"].split("/input")[0]
+                                     for d in matches if d.get("phys")})
         elif settings.scanner_type == "opencv":
             index = reader.camera_index if reader.camera_index is not None else 0
             path = f"/dev/video{index}"

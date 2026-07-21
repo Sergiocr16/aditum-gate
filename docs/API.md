@@ -149,14 +149,16 @@ los lectores configurados, el estado de los procesos PM2 y del server web
   ],
   "pm2Available": true,
   "inputDevices": [
-    {"path": "/dev/input/event4", "name": "Newtologic  4010E"}
+    {"path": "/dev/input/event4", "name": "Newtologic  4010E",
+     "phys": "usb-3f980000.usb-1.2/input0"}
   ],
   "cameras": [
     {"index": 0, "name": "NexiGo N60 FHD Webcam"}
   ],
   "readers": [
     {"role": "entry", "doorId": "34", "deviceName": "Newtologic  4010E",
-     "connected": true, "paths": ["/dev/input/event4"]}
+     "devicePhys": null, "connected": true,
+     "paths": ["/dev/input/event4"], "ports": ["usb-3f980000.usb-1.2"]}
   ],
   "system": {"cpuTempC": 52.1, "uptimeSec": 86400,
              "memAvailableMb": 512, "memTotalMb": 944},
@@ -173,6 +175,13 @@ los lectores configurados, el estado de los procesos PM2 y del server web
 - `cameras` son las webcams USB de captura detectadas (`index` es el
   `cameraIndex` a usar en la config); el editor las sugiere en el
   formulario. Excluye los códecs del SoC.
+- `readers[].ports` son los puertos USB físicos detectados para el nombre
+  del lector (el `Phys=` sin el sufijo `/inputN`, estable entre reinicios).
+  Con dos pistolas idénticas, fijar `scanners[].devicePhys` en la config
+  con uno de esos valores ancla el lector a ese puerto (el editor lo ofrece
+  como "Puerto USB"); sin fijarlo, la asignación es automática por orden de
+  puerto según la posición del lector en `scanners[]`. Con `devicePhys`
+  fijado, `connected`/`paths` reflejan solo ese puerto.
 - `readers[].connected: null` → el equipo no usa lector local
   (`scannerType` hikvision/none).
 - Los campos de `system` pueden venir `null` si esa lectura falló.

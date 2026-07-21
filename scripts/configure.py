@@ -165,6 +165,36 @@ def list_hid_devices():
     return names
 
 
+def list_hid_ports(device_name):
+    """Puertos fisicos USB (Phys= sin /inputN) de los lectores con ese nombre.
+
+    Con dos pistolas identicas hay dos puertos: devicePhys fija cual es
+    cada lector (mismo criterio de matching que scanners/hid.py).
+    """
+    wanted = (device_name or "").lower()
+    ports = set()
+    try:
+        with open("/proc/bus/input/devices") as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+    current_name = None
+    current_phys = None
+    for line in lines + [""]:
+        line = line.strip()
+        if line.startswith("N: Name="):
+            current_name = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("P: Phys="):
+            current_phys = line.split("=", 1)[1].strip()
+        elif line == "":
+            if (current_name and current_phys and wanted
+                    and wanted in current_name.lower()):
+                ports.add(current_phys.split("/input")[0])
+            current_name = None
+            current_phys = None
+    return sorted(ports)
+
+
 def list_cameras():
     import glob
     return sorted(int(p.replace("/dev/video", "")) for p in glob.glob("/dev/video[0-9]*"))
@@ -241,6 +271,16 @@ def wizard(hints_dir=None):
                 else:
                     reader["deviceName"] = ask_required(
                         "Nombre del lector HID (cat /proc/bus/input/devices)", h_name, h_nsrc)
+                ports = list_hid_ports(reader["deviceName"])
+                if len(ports) > 1:
+                    print("Hay varias pistolas con ese nombre; puertos USB detectados:")
+                    for j, port in enumerate(ports, 1):
+                        print(f"  {j}) {port}")
+                    value = ask("Puerto USB de este lector "
+                                "(numero o texto; Enter = automatico por orden)", "")
+                    if value:
+                        reader["devicePhys"] = ports[int(value) - 1] \
+                            if value.isdigit() and 1 <= int(value) <= len(ports) else value
             else:
                 if cameras:
                     print(f"Camaras detectadas: {cameras}")
