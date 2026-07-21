@@ -158,7 +158,9 @@ los lectores configurados, el estado de los procesos PM2 y del server web
   "readers": [
     {"role": "entry", "doorId": "34", "deviceName": "Newtologic  4010E",
      "devicePhys": null, "connected": true,
-     "paths": ["/dev/input/event4"], "ports": ["usb-3f980000.usb-1.2"]}
+     "paths": ["/dev/input/event4"],
+     "devices": [{"port": "usb-3f980000.usb-1.2", "path": "/dev/input/event4"}],
+     "ports": ["usb-3f980000.usb-1.2"]}
   ],
   "system": {"cpuTempC": 52.1, "uptimeSec": 86400,
              "memAvailableMb": 512, "memTotalMb": 944},
@@ -181,7 +183,11 @@ los lectores configurados, el estado de los procesos PM2 y del server web
   con uno de esos valores ancla el lector a ese puerto (el editor lo ofrece
   como "Puerto USB"); sin fijarlo, la asignación es automática por orden de
   puerto según la posición del lector en `scanners[]`. Con `devicePhys`
-  fijado, `connected`/`paths` reflejan solo ese puerto.
+  fijado, `connected`/`paths`/`devices` reflejan solo ese puerto.
+- `readers[].devices` agrupa lo detectado por **pistola física**: una entrada
+  por puerto con su nodo de teclado (el `eventX` más bajo; un aparato expone
+  varios nodos `/inputN`). `paths` sigue esa agrupación — dos rutas ahí
+  significan dos pistolas, no dos nodos de la misma.
 - `readers[].connected: null` → el equipo no usa lector local
   (`scannerType` hikvision/none).
 - Los campos de `system` pueden venir `null` si esa lectura falló.

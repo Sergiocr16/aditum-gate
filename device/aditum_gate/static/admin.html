@@ -1434,7 +1434,10 @@
         const rIcon = r.cameraIndex !== undefined ? 'camera' : 'scan';
         if (r.connected === null) return svcTile(rIcon, '', role, 'sin lector local (Hikvision/portones)', '');
         const k = r.connected ? 'ok' : 'bad';
-        const sub = (r.paths && r.paths.length) ? r.paths.join(', ') : 'no detectado en USB';
+        const sub = (r.devices && r.devices.length)
+          ? r.devices.map((d) => esc(d.path.replace('/dev/input/', '')) + ' · ' + esc(d.port)).join(' — ') +
+            (r.devices.length > 1 ? ' (' + r.devices.length + ' pistolas con este nombre)' : '')
+          : ((r.paths && r.paths.length) ? r.paths.join(', ') : 'no detectado en USB');
         return svcTile(rIcon, k, role + ' · ' + name, sub, r.connected ? 'CONECTADO' : 'FALTA');
       }).join('') + '</div>');
     } else {

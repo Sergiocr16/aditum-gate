@@ -97,6 +97,24 @@ def list_cameras():
     return sorted(by_parent.values(), key=lambda c: c["index"])
 
 
+def _group_by_port(devs):
+    """Un aparato expone varios nodos /inputN (teclado + control): se agrupa
+    por puerto fisico y se toma el eventX mas bajo, que es el del teclado
+    (mismo criterio que scanners/hid.py). Devuelve [{port, path}]."""
+    by_port = {}
+    for d in devs:
+        port = (d.get("phys") or d["path"]).split("/input")[0]
+        try:
+            event_n = int(d["path"].rsplit("event", 1)[1])
+        except (IndexError, ValueError):
+            event_n = 1 << 30
+        known = by_port.get(port)
+        if known is None or event_n < known[0]:
+            by_port[port] = (event_n, d["path"])
+    return [{"port": port, "path": item[1]}
+            for port, item in sorted(by_port.items())]
+
+
 def readers_status(settings, input_devices):
     """Cruza los lectores configurados con el hardware detectado."""
     readers = []
@@ -111,10 +129,12 @@ def readers_status(settings, input_devices):
             # ports lista todos los puertos con ese nombre (para el editor)
             filtered = [d for d in matches if not phys_filter
                         or phys_filter in d.get("phys", "").lower()]
+            groups = _group_by_port(filtered)
             entry["deviceName"] = reader.device_name
             entry["devicePhys"] = reader.device_phys
             entry["connected"] = bool(filtered)
-            entry["paths"] = [d["path"] for d in filtered]
+            entry["paths"] = [g["path"] for g in groups]
+            entry["devices"] = groups
             entry["ports"] = sorted({d["phys"].split("/input")[0]
                                      for d in matches if d.get("phys")})
         elif settings.scanner_type == "opencv":
