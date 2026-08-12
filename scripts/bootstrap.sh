@@ -157,43 +157,14 @@ install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq git curl ca-certificates python3 python3-pip \
-    python3-venv python3-dev build-essential xz-utils
-
-  # Piso de la flota: Bullseye/Python 3.9 (requirements.txt usa markers por
-  # version). Buster o anterior no se soporta: hay que reflashear el OS.
-  python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' || {
-    echo "OS demasiado viejo ($(python3 -V 2>&1), se requiere >= 3.9):"
-    echo "reflashear la SD con Raspberry Pi OS Bookworm y volver a correr."
-    exit 1
-  }
-}
-
-# NodeSource dejo de publicar armhf (solo amd64/arm64): en OS de 32 bits se
-# instala el tarball oficial linux-armv7l de nodejs.org en /usr/local.
-install_node_armhf() {
-  log "Instalando Node 20 system-wide (tarball oficial armv7l)"
-  local base=https://nodejs.org/dist/latest-v20.x shasums file
-  shasums="$(curl -fsSL "$base/SHASUMS256.txt")"
-  file="$(echo "$shasums" | grep -o 'node-v[0-9.]*-linux-armv7l\.tar\.xz' | head -1)"
-  [ -n "$file" ] || { echo "No se encontro tarball armv7l en $base"; exit 1; }
-  curl -fsSL "$base/$file" -o "/tmp/$file"
-  (cd /tmp && echo "$shasums" | grep "$file\$" | sha256sum -c - >/dev/null) \
-    || { echo "Checksum invalido de $file"; exit 1; }
-  tar -xJf "/tmp/$file" -C /usr/local --strip-components=1 \
-    --exclude=CHANGELOG.md --exclude=LICENSE --exclude=README.md
-  rm -f "/tmp/$file"
-  hash -r
+    python3-venv python3-dev build-essential
 }
 
 install_node_pm2() {
   if ! command -v node >/dev/null || [ "$(node -v | sed 's/v\([0-9]*\).*/\1/')" -lt 18 ]; then
-    if [ "$(dpkg --print-architecture)" = armhf ]; then
-      install_node_armhf
-    else
-      log "Instalando Node 20 system-wide (NodeSource)"
-      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-      apt-get install -y -qq nodejs
-    fi
+    log "Instalando Node 20 system-wide (NodeSource)"
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y -qq nodejs
   else
     log "Node $(node -v) ya disponible para root"
   fi
