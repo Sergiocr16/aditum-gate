@@ -158,6 +158,14 @@ install_base_packages() {
   apt-get update -qq
   apt-get install -y -qq git curl ca-certificates python3 python3-pip \
     python3-venv python3-dev build-essential xz-utils
+
+  # Piso de la flota: Bullseye/Python 3.9 (requirements.txt usa markers por
+  # version). Buster o anterior no se soporta: hay que reflashear el OS.
+  python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' || {
+    echo "OS demasiado viejo ($(python3 -V 2>&1), se requiere >= 3.9):"
+    echo "reflashear la SD con Raspberry Pi OS Bookworm y volver a correr."
+    exit 1
+  }
 }
 
 # NodeSource dejo de publicar armhf (solo amd64/arm64): en OS de 32 bits se

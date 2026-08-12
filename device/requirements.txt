@@ -1,10 +1,15 @@
 # Nucleo (todas las variantes) — versiones exactas, probadas en flota
 # (Raspberry Pi OS Bookworm, Python 3.11+; piwheels trae los binarios ARM).
+# Piso soportado: Bullseye/Python 3.9 — los markers de abajo resuelven la
+# ultima version instalable en 3.9 sin tocar lo que corre Bookworm. Al subir
+# un pin, respetar ambas ramas del marker.
 # Cambiar una version aqui hace que toda la flota la reinstale en el
 # siguiente self-update (stamp sha256 de este archivo).
 flask==3.1.3
-requests==2.34.2
-jsonschema==4.26.0
+requests==2.34.2; python_version >= "3.10"
+requests==2.32.5; python_version < "3.10"
+jsonschema==4.26.0; python_version >= "3.10"
+jsonschema==4.25.1; python_version < "3.10"
 
 # Variante "hid" (lectores QR pistola) — liviano, se instala siempre
 evdev==1.9.3
