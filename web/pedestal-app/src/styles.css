@@ -7,7 +7,9 @@ body {
   height: 950px;
   display: flex;
   transform: rotate(270deg);
-  background: #dfe5ea;
+  /* Negro: el area del panel que queda fuera de los 600x950 calibrados
+     debe leerse como marco de la pantalla, no como franja visible */
+  background: black;
   position: absolute;
   top: -175px;
   left: 175px;
