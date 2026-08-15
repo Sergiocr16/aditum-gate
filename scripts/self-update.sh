@@ -119,16 +119,42 @@ if [ "$UNITS_CHANGED" = 1 ]; then
 fi
 
 # ------------------------------------------------------------------
-# 4. Reinicio + health check (solo si hubo update de codigo)
+# 4. Reinicio (solo con update) + health de procesos (en CADA pasada)
 # ------------------------------------------------------------------
+# health = ambos servicios responden: API Flask :8080 y server web :3000
+# (los dos procesos PM2 existen en todas las variantes).
+health() {
+  curl -fsS -m 5 http://localhost:8080/ >/dev/null 2>&1 && \
+  curl -fsS -m 5 http://localhost:3000/api/config >/dev/null 2>&1
+}
+
 if [ "$UPDATED" = 1 ]; then
   pm2 startOrRestart ecosystem.config.js --update-env >/dev/null
   pm2 save >/dev/null
   sleep 8
-  if curl -fsS -m 5 http://localhost:8080/ >/dev/null; then
-    log "Actualizacion aplicada y health OK ($REMOTE)"
-  else
-    log "HEALTHCHECK FAILED tras actualizar a $REMOTE — revisar 'pm2 logs aditum-device'"
-    exit 1
+fi
+
+# Reparacion de procesos: corre haya o no commit nuevo. Sin esto, un
+# proceso que no levanto tras un update (crash-loop que agoto el
+# autorestart de PM2 y quedo "errored", carrera de puerto, etc.) queda
+# caido hasta un reboot manual: el proximo ciclo ve LOCAL==REMOTE y no
+# tocaria nada. El sleep filtra la ventana normal de un restart en curso
+# (config nueva aplicandose, PM2 relanzando).
+if ! health; then
+  sleep 5
+  if ! health; then
+    log "Servicios sin responder: relanzando procesos via PM2"
+    pm2 startOrRestart ecosystem.config.js --update-env >/dev/null
+    pm2 save >/dev/null
+    sleep 10
   fi
+fi
+
+if health; then
+  if [ "$UPDATED" = 1 ]; then
+    log "Actualizacion aplicada y health OK ($REMOTE)"
+  fi
+else
+  log "HEALTHCHECK FAILED — revisar 'pm2 logs aditum-device' y 'pm2 logs aditum-web'"
+  exit 1
 fi
