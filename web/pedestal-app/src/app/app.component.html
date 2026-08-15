@@ -1,72 +1,109 @@
-<div class="body">
-   <ul class="circles">
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-     <li></li>
-   </ul>
-   <div class="border-aditum">
-     <div class="logo">
-       <img src="{{clientLogoUrl}}" alt="" width="200" height="200">
-       <img src="logo.png" alt="" width="180" height="180" class="logo-aditum">
-     </div>
-     <div>
-       <div class="content">
-         <div style="min-height: 300px;">
-            <div *ngIf="state==1 || state==6" class="animate__animated animate__fadeInLeft">
-           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='ENTRY'">PARA INGRESAR</h1>
-           <h1 style="font-size: 80px;margin:2px;" class="roboto-bold nautical-blue-font" *ngIf="doorType=='EXIT'">PARA SALIR</h1>
-           <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">Muestre la pantalla del celular en el lector para ser autorizado</h2>
-            </div>
-            <div *ngIf="state==2" class="animate__animated animate__bounceIn">
-               <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">¡<span *ngIf="doorType=='ENTRY'">Hola</span><span *ngIf="doorType=='EXIT'">Adiós</span>, {{name}}!</h1>
-               <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font" *ngIf="doorType=='ENTRY'">Bienvenido, ingrese por favor.</h2>
-               <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font" *ngIf="doorType=='EXIT'">Puede salir, maneja con cuidado.</h2>
-            </div>
-            <div *ngIf="state==4" class="animate__animated animate__bounceIn">
-              <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">¡Código denegado!</h1>
-              <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">El código es inválido o ya no está vigente.</h2>
-           </div>
-           <div *ngIf="state==3" class="animate__animated animate__bounceIn">
-            <h1 style="font-size: 70px;margin:2px;" class="roboto-bold nautical-blue-font">Por favor espere</h1>
-            <h2 style="font-size: 45px;margin: 0;" class="roboto-regular nautical-blue-font">El oficial está en proceso de autorizarlo.</h2>
-         </div>
-         </div>
-         <div style="min-height: 550px">
-         <div *ngIf="state==6" class="animate__animated animate__bounceInUp"> 
-            <div class="center">
-               <div class="square" style="position: relative;display: flex;align-items: center;justify-content: center;">
-                  <img src="qr-code.jpeg" alt="" height="350">
-                 <div class="scan" style="position: absolute;top:0">
-                 </div>
-               </div>
-             </div>
-         </div>
-         <div *ngIf="state==2" class="animate__animated animate__zoomInDown"> 
-            <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
-               <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
-               <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-           </svg>
+<div class="pantalla">
+  <div class="particulas particulas-fondo" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span>
+  </div>
+
+  <header class="encabezado">
+    <div class="caja-logo-aditum">
+      <img src="logo.png" alt="Aditum">
+    </div>
+    <div class="insignia-puerta">
+      <span class="insignia-flecha">⇥</span>
+      <span *ngIf="doorType=='ENTRY'">ENTRADA</span>
+      <span *ngIf="doorType=='EXIT'">SALIDA</span>
+    </div>
+  </header>
+
+  <div class="caja-logo-cliente" *ngIf="clientLogoUrl">
+    <img [src]="clientLogoUrl" alt="">
+  </div>
+
+  <main class="tarjeta">
+    <div class="particulas particulas-tarjeta" aria-hidden="true">
+      <span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="espacio-logo"></div>
+
+    <section class="escena">
+      <div *ngIf="state==1" class="bloque bloque-idle">
+        <h1 class="titulo titulo-idle" *ngIf="doorType=='ENTRY'">PARA INGRESAR</h1>
+        <h1 class="titulo titulo-idle" *ngIf="doorType=='EXIT'">PARA SALIR</h1>
+        <p class="subtitulo subtitulo-idle">Muestre el código QR de su celular en el lector para ser autorizado</p>
+        <img class="img-bienvenida" src="welcome.jpeg" alt="">
+      </div>
+
+      <div *ngIf="state==6" class="bloque">
+        <h1 class="titulo titulo-escaneo">ESCANEANDO<span class="puntos"><span>.</span><span>.</span><span>.</span></span></h1>
+        <p class="subtitulo">Mantenga el código QR frente al lector, no lo mueva</p>
+        <div class="marco-qr">
+          <span class="esquina esquina-tl"></span>
+          <span class="esquina esquina-tr"></span>
+          <span class="esquina esquina-bl"></span>
+          <span class="esquina esquina-br"></span>
+          <img src="qr-code.jpeg" alt="" width="330" height="330">
+          <div class="barrido">
+            <span class="barrido-luz"></span>
+            <span class="barrido-linea"></span>
           </div>
-        <div *ngIf="state==4" class="animate__animated animate__bounceIn"> 
-          <svg class="xmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
-            <path class="xmark__x" fill="none" d="M37 37 L17 17 M37 17 L17 37"/>
-        </svg>        
-         </div>
-         <div *ngIf="state==1"class="animate__animated animate__fadeInRight" > 
-          <img src="welcome.jpeg" alt="" height="490"  style="margin-top: -40px;">
-         </div>
-         <div *ngIf="state==3"class="animate__animated animate__flipInY" > 
-          <div class="loader"></div>
-         </div>
         </div>
-       </div>
-     </div>
-   </div>
- </div>
+      </div>
+
+      <div *ngIf="state==3" class="bloque bloque-espere">
+        <h1 class="titulo">POR FAVOR ESPERE</h1>
+        <p class="subtitulo">El oficial está en proceso de autorizarlo.</p>
+        <div class="ruleta">
+          <span class="ruleta-base"></span>
+          <span class="ruleta-arco"></span>
+          <span class="ruleta-arco-interno"></span>
+          <span class="ruleta-centro"></span>
+        </div>
+      </div>
+
+      <div *ngIf="state==2" class="bloque">
+        <h1 class="titulo titulo-saludo">¡<span *ngIf="doorType=='ENTRY'">Hola</span><span *ngIf="doorType=='EXIT'">Adiós</span>, {{name}}!</h1>
+        <p class="subtitulo" *ngIf="doorType=='ENTRY'">Bienvenido, ingrese por favor.</p>
+        <p class="subtitulo" *ngIf="doorType=='EXIT'">Puede salir, maneje con cuidado.</p>
+        <div class="sello">
+          <span class="halo halo-verde-a"></span>
+          <span class="halo halo-verde-b"></span>
+          <svg class="sello-ok" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <circle class="trazo-circulo-verde" cx="26" cy="26" r="24" fill="none"/>
+            <path class="trazo-check" fill="none" d="M15 27.5l7.5 7.5 15-16"/>
+          </svg>
+        </div>
+      </div>
+
+      <div *ngIf="state==4" class="bloque">
+        <h1 class="titulo titulo-saludo">¡CÓDIGO DENEGADO!</h1>
+        <p class="subtitulo">El código es inválido o ya no está vigente.</p>
+        <div class="sello sello-sacudida">
+          <span class="halo halo-rojo"></span>
+          <svg class="sello-mal" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <circle class="trazo-circulo-rojo" cx="26" cy="26" r="24" fill="none"/>
+            <path class="trazo-equis" fill="none" d="M34.5 34.5 L17.5 17.5 M34.5 17.5 L17.5 34.5"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <footer class="pie">
+      <div class="conexion">
+        <div class="conexion-linea">
+          <span class="conexion-punto" [class.inactivo]="!connOk"></span>
+          <span class="conexion-texto" [class.alerta]="!connOk">{{connLabel}}</span>
+        </div>
+        <div class="reloj-linea">
+          <span class="reloj">{{time}}</span>
+          <span class="reloj-ampm">{{ampm}}</span>
+        </div>
+      </div>
+      <div class="pie-enlace">
+        <span class="pie-texto">Conocé más de Aditum aquí</span>
+        <span class="pie-flecha">→</span>
+        <img class="pie-qr" src="aditum-link-qr.png" alt="aditumcr.com">
+      </div>
+    </footer>
+  </main>
+</div>

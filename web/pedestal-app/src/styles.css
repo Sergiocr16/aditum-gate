@@ -1,4 +1,4 @@
-/* You can add global styles to this file, and also import other style files */
+/* Estilos globales: layout de kiosko y animaciones compartidas del rediseño */
 
 body {
   margin: 0;
@@ -7,95 +7,52 @@ body {
   height: 950px;
   display: flex;
   transform: rotate(270deg);
-  background: black;
+  background: #dfe5ea;
   position: absolute;
   top: -175px;
   left: 175px;
   overflow: hidden;
-  cursor:none;
+  cursor: none;
+  font-family: "Mulish", sans-serif;
 }
 
-.roboto-thin {
-  font-family: "Roboto", sans-serif;
-  font-weight: 100;
-  font-style: normal;
-}
+/* Animaciones del rediseño (globales para no inflar el CSS del componente) */
+@keyframes riseIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dotBlink { 0%, 20% { opacity: 0; } 40%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes popIn { 0% { opacity: 0; transform: scale(.85); } 60% { transform: scale(1.04); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes scanSweep { 0% { transform: translateY(0); } 100% { transform: translateY(272px); } }
+@keyframes framePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(222, 182, 110, 0); } 50% { box-shadow: 0 0 22px 2px rgba(222, 182, 110, .35); } }
+@keyframes drift { 0% { transform: translate3d(0, 0, 0); opacity: 0; } 10% { opacity: .8; } 90% { opacity: .5; } 100% { transform: translate3d(30px, -1020px, 0); opacity: 0; } }
+@keyframes driftL { 0% { transform: translate3d(0, 0, 0); opacity: 0; } 10% { opacity: .7; } 90% { opacity: .4; } 100% { transform: translate3d(-40px, -1020px, 0); opacity: 0; } }
+@keyframes spin { to { transform: rotate(1turn); } }
+@keyframes drawStroke { 100% { stroke-dashoffset: 0; } }
+@keyframes fillGreen { 100% { box-shadow: inset 0 0 0 130px #0ba360; } }
+@keyframes fillRed { 100% { box-shadow: inset 0 0 0 130px #d64550; } }
+@keyframes bump { 0%, 100% { transform: none; } 50% { transform: scale3d(1.08, 1.08, 1); } }
+@keyframes halo { 0% { transform: scale(.85); opacity: .55; } 100% { transform: scale(1.45); opacity: 0; } }
+@keyframes shakeX { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-9px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
+@keyframes innerPulse { 0%, 100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.25); opacity: .5; } }
+@keyframes pulseDot { 0%, 100% { box-shadow: 0 0 0 0 rgba(74, 205, 138, .55); } 60% { box-shadow: 0 0 0 8px rgba(74, 205, 138, 0); } }
+@keyframes pulseDotRed { 0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, .55); opacity: 1; } 50% { box-shadow: 0 0 0 8px rgba(192, 57, 43, 0); opacity: .5; } }
 
-.roboto-light {
-  font-family: "Roboto", sans-serif;
-  font-weight: 300;
-  font-style: normal;
-}
+/* Particulas decorativas que flotan hacia arriba (fondo y tarjeta) */
+.particulas { position: absolute; inset: 0; pointer-events: none; }
+.particulas span { position: absolute; bottom: -20px; border-radius: 50%; }
 
-.roboto-regular {
-  font-family: "Roboto", sans-serif;
-  font-weight: 400;
-  font-style: normal;
-}
+.particulas-fondo span:nth-child(1) { left: 8%;  width: 5px; height: 5px; background: rgba(222, 183, 110, .7);  animation: drift 14s linear infinite; }
+.particulas-fondo span:nth-child(2) { left: 18%; width: 3px; height: 3px; background: rgba(255, 255, 255, .5);  animation: driftL 18s 3s linear infinite; }
+.particulas-fondo span:nth-child(3) { left: 30%; width: 6px; height: 6px; background: rgba(222, 183, 110, .55); animation: drift 20s 6s linear infinite; }
+.particulas-fondo span:nth-child(4) { left: 42%; width: 4px; height: 4px; background: rgba(255, 255, 255, .4);  animation: driftL 15s 1s linear infinite; }
+.particulas-fondo span:nth-child(5) { left: 55%; width: 3px; height: 3px; background: rgba(222, 183, 110, .6);  animation: drift 17s 8s linear infinite; }
+.particulas-fondo span:nth-child(6) { left: 66%; width: 5px; height: 5px; background: rgba(222, 183, 110, .5);  animation: driftL 13s 4s linear infinite; }
+.particulas-fondo span:nth-child(7) { left: 76%; width: 4px; height: 4px; background: rgba(255, 255, 255, .45); animation: drift 19s 2s linear infinite; }
+.particulas-fondo span:nth-child(8) { left: 88%; width: 6px; height: 6px; background: rgba(222, 183, 110, .6);  animation: driftL 16s 7s linear infinite; }
 
-.roboto-medium {
-  font-family: "Roboto", sans-serif;
-  font-weight: 500;
-  font-style: normal;
-}
-
-.roboto-bold {
-  font-family: "Roboto", sans-serif;
-  font-weight: 700;
-  font-style: normal;
-}
-
-.roboto-black {
-  font-family: "Roboto", sans-serif;
-  font-weight: 900;
-  font-style: normal;
-}
-
-.roboto-thin-italic {
-  font-family: "Roboto", sans-serif;
-  font-weight: 100;
-  font-style: italic;
-}
-
-.roboto-light-italic {
-  font-family: "Roboto", sans-serif;
-  font-weight: 300;
-  font-style: italic;
-}
-
-.roboto-regular-italic {
-  font-family: "Roboto", sans-serif;
-  font-weight: 400;
-  font-style: italic;
-}
-
-.roboto-medium-italic {
-  font-family: "Roboto", sans-serif;
-  font-weight: 500;
-  font-style: italic;
-}
-
-.roboto-bold-italic {
-  font-family: "Roboto", sans-serif;
-  font-weight: 700;
-  font-style: italic;
-}
-
-.roboto-black-italic {
-  font-family: "Roboto", sans-serif;
-  font-weight: 900;
-  font-style: italic;
-}
-
-
-.rusty-golden{
-  color:#caba9f!important
-
-}
-.nautical-blue{
-  color:#001e2f!important
-
-}
-.papaia-fresh{
-  color:#deb66e!important
-}
+.particulas-tarjeta span { bottom: -16px; }
+.particulas-tarjeta span:nth-child(1) { left: 10%; width: 5px; height: 5px; background: rgba(222, 183, 110, .4);  animation: drift 16s 2s linear infinite; }
+.particulas-tarjeta span:nth-child(2) { left: 24%; width: 3px; height: 3px; background: rgba(10, 31, 51, .18);   animation: driftL 20s 5s linear infinite; }
+.particulas-tarjeta span:nth-child(3) { left: 40%; width: 4px; height: 4px; background: rgba(222, 183, 110, .35); animation: drift 18s 9s linear infinite; }
+.particulas-tarjeta span:nth-child(4) { left: 58%; width: 3px; height: 3px; background: rgba(222, 183, 110, .45); animation: driftL 14s 1s linear infinite; }
+.particulas-tarjeta span:nth-child(5) { left: 72%; width: 5px; height: 5px; background: rgba(10, 31, 51, .15);   animation: drift 21s 7s linear infinite; }
+.particulas-tarjeta span:nth-child(6) { left: 87%; width: 4px; height: 4px; background: rgba(222, 183, 110, .4);  animation: driftL 17s 4s linear infinite; }
