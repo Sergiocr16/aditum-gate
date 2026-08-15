@@ -59,9 +59,16 @@ if (fs.existsSync(ANGULAR_DIST)) {
         'correr "npm run build" en web/pedestal-app');
 }
 
+// Al arrancar este server (deploy por self-update, reinicio de PM2) la
+// pantalla conectada sigue corriendo el bundle viejo en memoria: se le
+// pide recargar para que tome el build nuevo. El delay da tiempo a que
+// el WebSocket de la pantalla se reconecte (reintenta cada 3 s).
+const RELOAD_ON_BOOT_MS = 8000;
+
 const server = app.listen(PORT, () => {
     console.log(`Servidor de pantalla en puerto ${PORT}`);
     superviseKiosk();
+    setTimeout(() => broadcastState({ state: 'reload' }), RELOAD_ON_BOOT_MS);
 });
 
 // ------------------------------------------------------------------
@@ -70,8 +77,14 @@ const server = app.listen(PORT, () => {
 const wss = new WebSocket.Server({ server });
 let clients = [];
 
+// Ultimo heartbeat de lectores del proceso device (null hasta el primero)
+let readerStatus = null;
+
 wss.on('connection', (ws) => {
     clients.push(ws);
+    if (readerStatus !== null) {
+        ws.send(JSON.stringify({ readerOk: readerStatus }));
+    }
     ws.on('close', () => {
         clients = clients.filter((client) => client !== ws);
     });
@@ -124,6 +137,22 @@ app.post('/api/wait-for-response', (req, res) => {
 app.post('/api/success-exit', (req, res) => {
     broadcastState({ state: 5 });
     res.json({ message: 'Success exit', state: 5 });
+});
+
+// El proceso device avisa que arranco (POST /restart del admin, config
+// nueva): se recarga la pantalla para que tome build y config frescos
+app.post('/api/reload', (req, res) => {
+    broadcastState({ state: 'reload' });
+    res.json({ message: 'Pantalla recargada' });
+});
+
+// Heartbeat de lectores (device/aditum_gate/screen.py, cada 15 s): la
+// pantalla muestra el indicador "Lector QR activo" del pie con esto. El
+// mensaje WS { readerOk } es aparte de los de estado { state }.
+app.post('/api/reader-status', (req, res) => {
+    readerStatus = !!(req.body && req.body.ok);
+    broadcastState({ readerOk: readerStatus });
+    res.json({ message: 'Estado del lector', readerOk: readerStatus });
 });
 
 // ------------------------------------------------------------------

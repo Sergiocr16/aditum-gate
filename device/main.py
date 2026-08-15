@@ -16,7 +16,7 @@ from aditum_gate.hikvision import HikvisionService
 from aditum_gate.leds import LedStrip
 from aditum_gate.log import setup_logging
 from aditum_gate.scanners import build_scanners
-from aditum_gate.screen import ScreenClient
+from aditum_gate.screen import ReaderHeartbeat, ScreenClient
 from aditum_gate.settings import load_settings
 from aditum_gate.watchdog import NetworkWatchdog
 
@@ -36,6 +36,9 @@ def main():
 
     gates = GateController(settings)
     screen = ScreenClient(settings)
+    if settings.has_screen:
+        screen.reload()
+        ReaderHeartbeat(settings, screen).start()
     leds = LedStrip(settings)
     backend = AditumBackend(settings)
 
