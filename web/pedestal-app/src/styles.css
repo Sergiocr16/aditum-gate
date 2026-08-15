@@ -1,22 +1,28 @@
 /* Estilos globales: layout de kiosko y animaciones compartidas del rediseño */
 
+/* El panel esta montado en vertical: la app se dibuja en portrait
+   (ancho = alto fisico) y se rota 270 para llenar el framebuffer
+   completo, sea cual sea su resolucion. El offset centra la caja
+   rotada: top=(alto-ancho)/2, left=(ancho-alto)/2. */
 body {
   margin: 0;
   padding: 0;
-  width: 600px;
-  height: 950px;
+  width: 100vh;
+  height: 100vw;
   display: flex;
   transform: rotate(270deg);
-  /* Negro: el area del panel que queda fuera de los 600x950 calibrados
-     debe leerse como marco de la pantalla, no como franja visible */
   background: black;
   position: absolute;
-  top: -175px;
-  left: 175px;
+  top: calc((100vh - 100vw) / 2);
+  left: calc((100vw - 100vh) / 2);
   overflow: hidden;
   cursor: none;
   font-family: "Mulish", sans-serif;
 }
+
+/* El host de Angular llena el body para que .pantalla (100%) tome las
+   dimensiones reales del panel */
+app-root { flex: 1; min-width: 0; }
 
 /* Animaciones del rediseño (globales para no inflar el CSS del componente) */
 @keyframes riseIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }

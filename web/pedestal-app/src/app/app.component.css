@@ -1,8 +1,8 @@
 /* Rediseño pantalla pedestal 600x950 (las @keyframes y particulas viven en styles.css) */
 
 .pantalla {
-  width: 600px;
-  height: 950px;
+  width: 100%;
+  height: 100%;
   position: relative;
   overflow: hidden;
   background: linear-gradient(180deg, #f2f4f7 0%, #e9edf1 55%, #dfe5ea 100%);
