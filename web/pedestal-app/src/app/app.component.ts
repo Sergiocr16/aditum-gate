@@ -7,6 +7,16 @@ import { CommonModule } from '@angular/common';
 // (el dispositivo manda uno cada 15 s; ver device/aditum_gate/screen.py)
 const READER_STALE_MS = 60000;
 
+// El reloj muestra SIEMPRE la hora de Costa Rica (UTC-6), sin importar la
+// zona horaria configurada en el equipo
+const CR_TIME = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Costa_Rica',
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: true,
+});
+
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
@@ -69,12 +79,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private tick() {
-    const d = new Date();
-    let h = d.getHours();
-    this.ampm = h >= 12 ? 'pm' : 'am';
-    h = h % 12 || 12;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    this.time = `${h}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const parts = CR_TIME.formatToParts(new Date());
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    this.time = `${get('hour')}:${get('minute')}:${get('second')}`;
+    this.ampm = get('dayPeriod').toLowerCase();
     this.updateConnStatus();
   }
 
