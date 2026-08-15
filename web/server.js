@@ -167,7 +167,9 @@ const KIOSK_URL = 'http://localhost:3000';
 const KIOSK_PATTERN = '[c]hromium.*localhost:3000';
 const KIOSK_CHECK_MS = 15000;
 const KIOSK_FLAGS = '--start-fullscreen --disable-session-crashed-bubble ' +
-    '--noerrdialogs --no-first-run --incognito';
+    '--noerrdialogs --no-first-run --incognito ' +
+    // El traductor reescribe el DOM y congela la app Angular
+    '--disable-features=Translate';
 let kioskLaunching = false;
 
 function desktopUser() {
