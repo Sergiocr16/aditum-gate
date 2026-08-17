@@ -1,9 +1,21 @@
-# Site nginx de aditum-gate (generado por scripts/bootstrap.sh — no editar
-# a mano: se reescribe en cada bootstrap).
+# Site nginx de aditum-gate (generado por scripts/bootstrap.sh y regenerado
+# por scripts/self-update.sh en cada pasada — no editar a mano).
 # __UPSTREAM_PORT__ = 3000 (pantalla pedestal) | 8080 (API del dispositivo)
 server {
   listen 80;
   server_name _;
+
+  # Upstream caido (crash, reinicio por config nueva, deploy, boot): en vez
+  # del "502 Bad Gateway" pelado, un 503 honesto con Retry-After y una
+  # pagina que reintenta sola hasta que el servicio vuelva.
+  error_page 502 503 504 =503 /aditum-unavailable.html;
+  location = /aditum-unavailable.html {
+    internal;
+    root /var/www/aditum-gate;
+    add_header Retry-After 5 always;
+    add_header Cache-Control "no-store" always;
+  }
+
   location / {
     proxy_pass http://localhost:__UPSTREAM_PORT__;
     proxy_http_version 1.1;

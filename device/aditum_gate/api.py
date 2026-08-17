@@ -23,6 +23,13 @@ log = logging.getLogger("aditum.api")
 
 RESTART_RESPONSE_GRACE = 1.0  # segundos para que la respuesta HTTP salga antes del exit
 
+# Atomicidad de PUT /config: el chequeo de deviceId y la reescritura de
+# device-id.txt deben ser inseparables del apply (el server es threaded);
+# sin esto un push del backend puede evaluar la identidad vieja, esperar
+# el lock interno de apply_config y aplicarse DESPUES de que una sesion
+# admin re-identifico el equipo, saltandose el 409 anti-intercambio.
+_PUT_CONFIG_LOCK = threading.Lock()
+
 TOKEN_MIN_LEN = 16
 TOKEN_MAX_LEN = 256
 
@@ -203,34 +210,35 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
         # no se aplica. deviceId vacio/ausente = config generica, se acepta.
         # Excepcion: la sesion admin del editor local si puede re-identificar
         # el equipo (reescribe device-id.txt); un push con token no.
-        body_device_id = new_config.get("deviceId") or ""
-        wants_new_id = (isinstance(body_device_id, str)
-                        and body_device_id != settings.device_id)
-        rewrite_id = False
-        if wants_new_id and body_device_id:
-            if admin_auth.is_admin_logged_in():
-                if len(body_device_id) > 128 or any(c.isspace() for c in body_device_id):
+        with _PUT_CONFIG_LOCK:
+            body_device_id = new_config.get("deviceId") or ""
+            wants_new_id = (isinstance(body_device_id, str)
+                            and body_device_id != settings.device_id)
+            rewrite_id = False
+            if wants_new_id and body_device_id:
+                if admin_auth.is_admin_logged_in():
+                    if len(body_device_id) > 128 or any(c.isspace() for c in body_device_id):
+                        return jsonify({
+                            "error": "invalid config",
+                            "details": ["deviceId: maximo 128 caracteres, sin espacios"],
+                        }), 400
+                    rewrite_id = True
+                elif settings.device_id:
                     return jsonify({
-                        "error": "invalid config",
-                        "details": ["deviceId: maximo 128 caracteres, sin espacios"],
-                    }), 400
-                rewrite_id = True
-            elif settings.device_id:
-                return jsonify({
-                    "error": "deviceId mismatch",
-                    "expected": settings.device_id,
-                }), 409
+                        "error": "deviceId mismatch",
+                        "expected": settings.device_id,
+                    }), 409
 
-        result = apply_config(new_config, settings)
-        if result.get("error"):
-            http_status = 400 if result["error"] == "invalid config" else 409
-            return jsonify(result), http_status
+            result = apply_config(new_config, settings)
+            if result.get("error"):
+                http_status = 400 if result["error"] == "invalid config" else 409
+                return jsonify(result), http_status
 
-        if rewrite_id:
-            _write_device_id_file(body_device_id)
-            log.warning("deviceId re-identificado via sesion admin: %r -> %r",
-                        settings.device_id, body_device_id)
-            settings.device_id = body_device_id
+            if rewrite_id:
+                _write_device_id_file(body_device_id)
+                log.warning("deviceId re-identificado via sesion admin: %r -> %r",
+                            settings.device_id, body_device_id)
+                settings.device_id = body_device_id
 
         if result["willRestart"]:
             # La respuesta debe salir antes del exit (mismo patron que /restart)

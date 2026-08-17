@@ -13,14 +13,22 @@ const path = require('path');
 
 module.exports = {
   apps: [
+    // Politica anti-502: PM2 no se rinde nunca. Con el default
+    // (max_restarts=16, min_uptime=1s) un crash-loop deja el proceso
+    // "errored" y el equipo muerto detras de nginx hasta la pasada de
+    // reparacion del timer (15 min). Backoff exponencial con tope 15 s:
+    // un loop permanente reintenta suave; uno transitorio se cura solo.
     {
       name: 'aditum-device',
       script: 'device/main.py',
       cwd: __dirname,
       interpreter: path.join(__dirname, '.venv', 'bin', 'python3'),
       autorestart: true,
-      restart_delay: 3000,
+      min_uptime: 10000,
+      max_restarts: 1000000,
+      exp_backoff_restart_delay: 500,
       kill_timeout: 5000,
+      max_memory_restart: '500M',
       env: { PYTHONUNBUFFERED: '1' },
     },
     {
@@ -28,7 +36,10 @@ module.exports = {
       script: 'web/server.js',
       cwd: __dirname,
       autorestart: true,
-      restart_delay: 3000,
+      min_uptime: 10000,
+      max_restarts: 1000000,
+      exp_backoff_restart_delay: 500,
+      max_memory_restart: '300M',
     },
   ],
 };

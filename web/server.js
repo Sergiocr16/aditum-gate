@@ -80,8 +80,20 @@ let clients = [];
 // Ultimo heartbeat de lectores del proceso device (null hasta el primero)
 let readerStatus = null;
 
+// Un 'error' de WebSocket sin handler (cliente que corta feo, frame
+// invalido) es una excepcion no capturada que tumba el proceso entero:
+// siempre registrar el handler.
+wss.on('error', (error) => {
+    console.error(`WSS: ${error.message}`);
+    // ws re-emite aqui los errores del HTTP server subyacente: un fallo
+    // de listen (EADDRINUSE) es fatal — salir para que PM2 relance con
+    // backoff, en vez de quedar online-zombie sin escuchar en :3000.
+    if (error.syscall === 'listen') process.exit(1);
+});
+
 wss.on('connection', (ws) => {
     clients.push(ws);
+    ws.on('error', (error) => console.error(`WS cliente: ${error.message}`));
     if (readerStatus !== null) {
         ws.send(JSON.stringify({ readerOk: readerStatus }));
     }

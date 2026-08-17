@@ -54,7 +54,11 @@ def main():
         NetworkWatchdog(settings).start()
 
     app = create_app(settings, gates, hikvision_service, screen, leds)
-    app.run(host="0.0.0.0", port=API_PORT)
+    # threaded=True explicito: es el default de Flask >=1.0, pero el API
+    # DEPENDE de atender requests concurrentes (un pulso de porton de 1 s
+    # o un ISAPI a Hikvision no pueden bloquear el health check) — se
+    # pinnea para que un cambio de default aguas arriba no lo degrade.
+    app.run(host="0.0.0.0", port=API_PORT, threaded=True)
 
 
 if __name__ == "__main__":

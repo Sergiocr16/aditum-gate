@@ -174,7 +174,10 @@ El instalador (`scripts/bootstrap.sh`) hace todo y es **idempotente**
    dependencias **pinneadas por versión** (`device/requirements*.txt`: núcleo
    + extras por variante; cambiar un pin ahí hace que toda la flota lo
    reinstale en el siguiente self-update) y nginx :80 → pantalla (:3000) o
-   API (:8080) según la config.
+   API (:8080) según la config, con página de espera con auto-reintento
+   cuando el proceso está reiniciando (nunca un "502 Bad Gateway" pelado;
+   el site se regenera en cada self-update si la config o el template
+   cambian).
 4. **Configura**: lanza el wizard (`scripts/configure.py`), que sugiere como
    defaults los valores detectados en la instalación vieja (doorId,
    deviceName, etc.) y valida el resultado contra el schema.

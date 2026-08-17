@@ -17,6 +17,11 @@ class LedStrip:
     def __init__(self, settings):
         self.pixels = None
         self._blink_stop = None  # Event del parpadeo activo (o None)
+        # RLock (start_blinking llama stop_blinking): serializa el
+        # check-then-act sobre _blink_stop entre handlers concurrentes;
+        # sin el, dos start_blinking simultaneos dejan un thread blink
+        # huerfano sin Event referenciado, imparable hasta reiniciar.
+        self._blink_lock = threading.RLock()
         if not settings.neopixel_enabled:
             return
         try:
@@ -55,9 +60,10 @@ class LedStrip:
         """Parpadeo 1s on / 1s off hasta stop_blinking (espera del backend)."""
         if self.pixels is None:
             return
-        self.stop_blinking(restore=False)
-        stop = threading.Event()
-        self._blink_stop = stop
+        with self._blink_lock:
+            self.stop_blinking(restore=False)
+            stop = threading.Event()
+            self._blink_stop = stop
 
         def blink():
             while not stop.is_set():
@@ -74,11 +80,12 @@ class LedStrip:
         threading.Thread(target=blink, daemon=True).start()
 
     def stop_blinking(self, restore=True):
-        stop = self._blink_stop
+        with self._blink_lock:
+            stop = self._blink_stop
+            self._blink_stop = None
         if stop is not None:
             stop.restore = restore
             stop.set()
-            self._blink_stop = None
 
     def turn_off(self):
         self.stop_blinking(restore=False)

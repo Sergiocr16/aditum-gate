@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aditum — reiniciando</title>
+<!-- Pagina de espera que sirve nginx cuando el proceso local esta caido o
+     reiniciando (502/504 del upstream se convierten en 503 + Retry-After).
+     Se instala en /var/www/aditum-gate/ via bootstrap.sh y self-update.sh.
+     Autosuficiente: cero assets externos. Reintenta sola hasta que el
+     servicio vuelva. -->
+<noscript><meta http-equiv="refresh" content="8"></noscript>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #000; color: #e8e8e8; text-align: center;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .spin {
+    width: 44px; height: 44px; margin: 0 auto 18px; border-radius: 50%;
+    border: 4px solid #2a2a2a; border-top-color: #e8e8e8;
+    animation: r 1s linear infinite;
+  }
+  @keyframes r { to { transform: rotate(360deg); } }
+  h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 6px; }
+  p { font-size: .9rem; color: #9a9a9a; margin: 0; }
+</style>
+</head>
+<body>
+<div>
+  <div class="spin"></div>
+  <h1>Reiniciando el servicio…</h1>
+  <p>Esta página se recargará sola en unos segundos.</p>
+</div>
+<script>
+  // Sondea la raiz (publica en ambos upstreams); cualquier respuesta < 500
+  // significa que el servicio volvio y se recarga la URL original.
+  (function retry() {
+    fetch('/', { cache: 'no-store' }).then(function (r) {
+      if (r.status < 500) { location.reload(); } else { setTimeout(retry, 3000); }
+    }).catch(function () { setTimeout(retry, 3000); });
+  })();
+</script>
+</body>
+</html>

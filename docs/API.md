@@ -270,6 +270,12 @@ pollear `GET /` hasta obtener 200, luego `GET /status` y confirmar que
 cargar y el Pi cayó al default — alertar). Serializar los pushes: **un
 `PUT /config` en vuelo por dispositivo a la vez**.
 
+Durante esa ventana (y cualquier otro reinicio del proceso), si el Entry
+Point pasa por el nginx `:80` del Pi la respuesta es **`503` con header
+`Retry-After: 5`** (una página HTML de espera, no JSON): tratar 502/503/504
+del Pi como transitorio y reintentar con backoff, nunca como fallo
+definitivo del dispositivo.
+
 ```bash
 curl -X PUT http://<entry-point>/config \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \

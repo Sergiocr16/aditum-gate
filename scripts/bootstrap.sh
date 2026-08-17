@@ -255,6 +255,14 @@ configure_nginx() {
   port=8080; [ "$has_screen" = 1 ] && port=3000
   log "nginx :80 -> localhost:$port"
 
+  # Pagina de espera con auto-reintento (la sirve nginx cuando el upstream
+  # esta caido, en vez del 502 pelado). Fuera del repo: /home/pi puede ser
+  # 700 en Bookworm y www-data no podria leerla. install -d con modo
+  # explicito: mkdir -p heredaria el umask de la shell del operador y un
+  # umask 077 dejaria el dir ilegible para www-data (403 en vez de 503).
+  install -d -m 755 /var/www/aditum-gate
+  install -m 644 scripts/nginx/aditum-unavailable.html /var/www/aditum-gate/
+
   sed "s/__UPSTREAM_PORT__/$port/" scripts/nginx/express-aditum-gate.conf.template \
     > /etc/nginx/sites-available/express-aditum-gate
   ln -sf /etc/nginx/sites-available/express-aditum-gate /etc/nginx/sites-enabled/express-aditum-gate

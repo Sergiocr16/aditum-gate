@@ -119,7 +119,73 @@ if [ "$UNITS_CHANGED" = 1 ]; then
 fi
 
 # ------------------------------------------------------------------
-# 4. Reinicio (solo con update) + health de procesos (en CADA pasada)
+# 4. nginx: site + pagina de espera (en CADA pasada)
+# ------------------------------------------------------------------
+# El puerto del proxy depende de screen.hasScreen, que puede cambiar por
+# push de config: se recalcula siempre, no solo en bootstrap. Tambien
+# repara un nginx caido o un symlink ausente y propaga cambios del
+# template/pagina sin re-bootstrap. Best-effort A PROPOSITO: se invoca
+# con || para que ningun fallo aqui aborte el update antes de la
+# reparacion de procesos de la seccion 5, que es la critica.
+nginx_refresh() {
+  command -v nginx >/dev/null || return 0
+  local has_screen port site enabled rendered previous changed=0
+  has_screen="$(.venv/bin/python3 -c 'import json;print(1 if json.load(open("config-runtime.json")).get("screen",{}).get("hasScreen") else 0)' 2>/dev/null || echo 0)"
+  port=8080; [ "$has_screen" = 1 ] && port=3000
+  site=/etc/nginx/sites-available/express-aditum-gate
+  enabled=/etc/nginx/sites-enabled/express-aditum-gate
+
+  # install -d con modo explicito: mkdir -p heredaria el umask y un 077
+  # dejaria el dir ilegible para www-data (403 en vez de la pagina).
+  install -d -m 755 /var/www/aditum-gate
+  # La pagina es un archivo estatico: nginx la lee por request, no
+  # requiere reload (por eso no marca changed).
+  if ! cmp -s scripts/nginx/aditum-unavailable.html /var/www/aditum-gate/aditum-unavailable.html; then
+    install -m 644 scripts/nginx/aditum-unavailable.html /var/www/aditum-gate/ || \
+      log "AVISO: no se pudo instalar la pagina de espera"
+  fi
+
+  rendered="$(sed "s/__UPSTREAM_PORT__/$port/" scripts/nginx/express-aditum-gate.conf.template)" || return 0
+  previous="$(cat "$site" 2>/dev/null || true)"
+  if [ "$rendered" != "$previous" ]; then
+    log "Site nginx desactualizado: regenerando (:80 -> localhost:$port)"
+    printf '%s\n' "$rendered" > "$site"
+    changed=1
+  fi
+  # El symlink se verifica aparte del contenido: un enlace ausente con el
+  # site al dia dejaria :80 muerto y ninguna pasada lo repondria.
+  if [ "$(readlink "$enabled" 2>/dev/null || true)" != "$site" ]; then
+    log "Symlink de sites-enabled ausente o incorrecto: reponiendo"
+    ln -sf "$site" "$enabled"
+    changed=1
+  fi
+
+  if [ "$changed" = 1 ]; then
+    if nginx -t >/dev/null 2>&1; then
+      systemctl reload nginx || log "AVISO: reload de nginx fallo"
+    else
+      # Nunca dejar instalado un site que no valida: nginx corriendo lo
+      # sobrevive (config vieja en memoria) pero al proximo reboot no
+      # arrancaria y el equipo quedaria sin acceso remoto. Restaurar el
+      # anterior ademas hace que cada pasada reintente y re-avise.
+      log "AVISO: nginx -t fallo con el site regenerado; restaurando el anterior"
+      if [ -n "$previous" ]; then
+        printf '%s\n' "$previous" > "$site"
+      else
+        rm -f "$site" "$enabled"
+      fi
+    fi
+  fi
+  systemctl is-active --quiet nginx || {
+    log "nginx caido: arrancando"
+    systemctl restart nginx || log "AVISO: nginx no arranca (revisar journalctl -u nginx)"
+  }
+  return 0
+}
+nginx_refresh || log "AVISO: seccion nginx fallo (no fatal)"
+
+# ------------------------------------------------------------------
+# 5. Reinicio (solo con update) + health de procesos (en CADA pasada)
 # ------------------------------------------------------------------
 # health = ambos servicios responden: API Flask :8080 y server web :3000
 # (los dos procesos PM2 existen en todas las variantes).

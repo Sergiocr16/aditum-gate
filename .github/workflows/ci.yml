@@ -37,6 +37,19 @@ jobs:
           bash -n scripts/self-update.sh
           bash -n scripts/doctor.sh
 
+      # El template llega a toda la flota via self-update; un render que no
+      # pasa nginx -t alli se restaura y reintenta cada 15 min para siempre,
+      # asi que el lugar para atrapar un template roto es aca.
+      - name: Sintaxis nginx (template renderizado en ambas variantes)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nginx
+          for port in 3000 8080; do
+            sed "s/__UPSTREAM_PORT__/$port/" scripts/nginx/express-aditum-gate.conf.template \
+              > /tmp/aditum-site.conf
+            printf 'events {}\nhttp { include /tmp/aditum-site.conf; }\n' > /tmp/aditum-nginx.conf
+            sudo nginx -t -c /tmp/aditum-nginx.conf
+          done
+
   screen-build-check:
     runs-on: ubuntu-latest
     steps:
