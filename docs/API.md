@@ -5,6 +5,13 @@ para que el backend de Aditum (aditum-jh) lo administre. La URL base de cada
 dispositivo es su **Entry Point** registrado en Aditum (la URL del túnel
 remoteiot — ver [Modelo de amenaza](#modelo-de-amenaza)).
 
+El nginx `:80` de cada Pi enruta las rutas de este API a Flask `:8080` en
+**todas las variantes** — en los pedestales el resto de la URL (`/`) sirve
+la pantalla. O sea: una sola URL de túnel por equipo alcanza para el Entry
+Point, el editor `/admin` y ver la pantalla; no hace falta un mapeo aparte
+al `:8080`. (Excepción: `GET /` en pedestales responde la pantalla, no el
+health del API — para health por túnel usar `GET /status` o `GET /health`.)
+
 > **⚠️ Breaking change / checklist de migración para aditum-jh**
 >
 > Todos los endpoints (salvo `GET /`) ahora exigen el **token del
@@ -265,7 +272,8 @@ se acepta, se reescribe `device-id.txt` y el equipo queda re-identificado
 
 **Contrato post-restart**: con `willRestart: true` el Pi se reinicia ~1 s
 después de responder y queda inaccesible **5–15 s**. El backend debe:
-pollear `GET /` hasta obtener 200, luego `GET /status` y confirmar que
+pollear `GET /status` hasta obtener 200 (no `GET /`: en pedestales esa
+ruta la responde la pantalla, no el API) y confirmar que
 `configRevision` es la nueva (si no lo es, la config cacheada falló al
 cargar y el Pi cayó al default — alertar). Serializar los pushes: **un
 `PUT /config` en vuelo por dispositivo a la vez**.
