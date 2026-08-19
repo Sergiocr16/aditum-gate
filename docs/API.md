@@ -414,10 +414,33 @@ token del dispositivo, con backoff de 5 s a 5 min; Aditum deduplica por
 eventos confirmados se purgan a los `anpr.purgeDays` días.
 
 Es el **único** endpoint público además de `/` y el editor: la cámara no sabe
-mandar bearer. Se acota filtrando la IP de origen (`anpr.allowedCameraIps`, o
-cualquier IP privada de la LAN si está vacío), y por lo que hace: solo
-encolar. Un heartbeat o un evento sin placa responde `200 {"ignored": true}`
-para que la cámara no reintente.
+mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
+por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
+`200 {"ignored": true}` para que la cámara no reintente.
+
+**Configuración en el editor local** (`/admin` → Hikvision → *Cámaras ANPR*),
+que se guarda en `anpr.cameras` del documento de configuración:
+
+```json
+"anpr": {
+  "enabled": true,
+  "purgeDays": 7,
+  "cameras": [{ "ip": "192.168.68.64", "gateId": 7, "name": "Entrada principal" }]
+}
+```
+
+Cada cámara declarada cumple **dos** funciones: es la allowlist de quién puede
+postear en `/anpr-event`, y dice a qué **portón** pertenecen sus lecturas. Ese
+`gateId` viaja en el evento y el backend lo valida contra los gates de este
+mismo dispositivo (si no cuadra lo descarta), así la bitácora registra la
+puerta correcta. Con la lista vacía se acepta cualquier IP privada de la LAN y
+las lecturas quedan sin portón — es el estado de un equipo recién instalado.
+
+> **No hace falta ningún token de la cámara.** La autenticación Pi→Aditum es el
+> token de dispositivo que ya está provisionado (`PUT /token`), y la URL de
+> destino es la `api.baseUrl` que el equipo ya tiene configurada. El token AES
+> `ANPR*{companyId}*{gateId}` del flujo legacy desaparece: existía solo porque
+> la cámara le hablaba directo al servidor.
 
 > El filtro por IP depende de que nginx pase la IP real: el `location =
 > /anpr-event` del template setea `X-Forwarded-For $remote_addr` — con

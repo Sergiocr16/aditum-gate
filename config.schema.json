@@ -102,10 +102,19 @@
       "description": "ANPR local-first (TAR-1034/1035): endpoints de placas hacia las camaras y cola offline de eventos",
       "properties": {
         "enabled": { "type": "boolean", "default": true },
-        "allowedCameraIps": {
+        "cameras": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "IPs de camaras autorizadas a postear en /anpr-event; vacio = cualquier IP privada de la LAN"
+          "description": "Camaras ANPR del sitio. Doble funcion: allowlist de quien puede postear en /anpr-event, y a que porton pertenece cada lectura. Vacio = cualquier IP privada de la LAN y sin porton asignado",
+          "items": {
+            "type": "object",
+            "required": ["ip"],
+            "additionalProperties": false,
+            "properties": {
+              "ip": { "type": "string", "description": "IP de la camara en la LAN del condominio" },
+              "gateId": { "type": "integer", "minimum": 1, "description": "Porton (gate.id de Aditum) al que pertenecen las lecturas de esta camara" },
+              "name": { "type": "string", "description": "Etiqueta libre para identificarla en el editor" }
+            }
+          }
         },
         "purgeDays": { "type": "integer", "minimum": 1, "default": 7, "description": "Dias que se conservan los eventos ya confirmados por Aditum antes de purgarlos" }
       }

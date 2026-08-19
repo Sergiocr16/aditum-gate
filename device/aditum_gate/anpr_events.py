@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS anpr_event (
     confidence    INTEGER,
     camera_name   TEXT,
     source_ip     TEXT,
+    gate_id       INTEGER,
     status        TEXT NOT NULL DEFAULT 'pending',
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT,
@@ -123,6 +124,11 @@ class AnprEventStore:
         self._lock = threading.Lock()
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # Equipos que ya corrieron una version anterior de la cola: la
+            # tabla existe sin gate_id y el CREATE IF NOT EXISTS no la toca.
+            columns = {r["name"] for r in conn.execute("PRAGMA table_info(anpr_event)")}
+            if "gate_id" not in columns:
+                conn.execute("ALTER TABLE anpr_event ADD COLUMN gate_id INTEGER")
 
     def _connect(self):
         conn = sqlite3.connect(self.path, timeout=10)
@@ -130,18 +136,19 @@ class AnprEventStore:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def enqueue(self, event, source_ip=None):
+    def enqueue(self, event, source_ip=None, gate_id=None):
         """Inserta el evento; devuelve True si es nuevo, False si el
         event_uid ya estaba (reintento de la camara → idempotente)."""
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO anpr_event "
                 "(event_uid, license_plate, captured_at, received_at,"
-                " confidence, camera_name, source_ip) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " confidence, camera_name, source_ip, gate_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (event["eventUid"], event["licensePlate"], event["capturedAt"],
                  datetime.now().astimezone().isoformat(timespec="seconds"),
-                 event["confidenceLevel"], event["cameraName"], source_ip))
+                 event["confidenceLevel"], event["cameraName"], source_ip,
+                 gate_id))
             return cursor.rowcount == 1
 
     def next_pending(self):
@@ -186,7 +193,8 @@ class AnprEventStore:
             ).fetchone()[0]
             last = conn.execute(
                 "SELECT event_uid, license_plate, captured_at, status, attempts,"
-                " last_error FROM anpr_event ORDER BY id DESC LIMIT 5").fetchall()
+                " last_error, gate_id, source_ip FROM anpr_event "
+                "ORDER BY id DESC LIMIT 5").fetchall()
             return {
                 "pending": pending,
                 "sent": sent,
@@ -218,6 +226,9 @@ class AnprEventForwarder(threading.Thread):
             "capturedAt": row["captured_at"],
             "confidenceLevel": row["confidence"],
             "cameraName": row["camera_name"],
+            # Opcional para el backend: lo valida contra los gates de este
+            # dispositivo y, si no cuadra, lo descarta (queda null).
+            "gateId": row["gate_id"],
         }
         try:
             resp = httpclient.request(

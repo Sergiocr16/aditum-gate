@@ -351,11 +351,12 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         return request.remote_addr or ""
 
     def _camera_ip_allowed(ip):
-        # Best-effort (TAR-1035): allowlist explicita de la config si existe;
-        # si no, cualquier IP privada de la LAN del condominio.
-        allowed = settings.anpr_allowed_camera_ips
-        if allowed:
-            return ip in allowed
+        # Best-effort (TAR-1035): si hay camaras declaradas en la config,
+        # solo esas; si no hay ninguna, cualquier IP privada de la LAN del
+        # condominio (equipo recien instalado, todavia sin mapear).
+        declared = settings.anpr_camera_allowed(ip)
+        if declared is not None:
+            return declared
         try:
             return ipaddress.ip_address(ip).is_private
         except ValueError:
@@ -459,9 +460,11 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         event = parse_event_xml(xml_bytes)
         if event is None:
             return jsonify({"ignored": True})
-        queued = anpr_store.enqueue(event, source_ip=source_ip)
-        log.info("Evento ANPR %s: placa=%s capturado=%s (%s)",
+        gate_id = settings.anpr_gate_id_for(source_ip)
+        queued = anpr_store.enqueue(event, source_ip=source_ip, gate_id=gate_id)
+        log.info("Evento ANPR %s: placa=%s capturado=%s porton=%s (%s)",
                  event["eventUid"], event["licensePlate"], event["capturedAt"],
+                 gate_id if gate_id is not None else "sin mapear",
                  "encolado" if queued else "duplicado ignorado")
         return jsonify({"queued": queued, "eventUid": event["eventUid"]})
 

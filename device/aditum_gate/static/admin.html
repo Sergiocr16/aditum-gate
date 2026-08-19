@@ -541,6 +541,31 @@
         <input type="number" id="f_hikHour" min="0" max="23" value="2">
         <div class="hint">Hora a la que se ejecuta la limpieza diaria en los terminales.</div>
       </div>
+
+      <hr style="margin:22px 0; border:0; border-top:1px solid var(--line)">
+
+      <h2 style="margin-top:0">Cámaras ANPR (placas)</h2>
+      <label class="check"><input type="checkbox" id="f_anprEnabled"> Lectura de placas habilitada</label>
+      <div class="cond" id="anprCond" style="margin-top:16px">
+        <div class="field">
+          <label>Cámaras <span class="key">anpr.cameras</span></label>
+          <p class="hint" style="margin:0 0 10px">
+            En la cámara: <b>Event → Alarm Setting → Alarm Server</b> apuntando a
+            <b>este equipo</b> — Destination = la IP del Pi en la LAN, URL = <code>/anpr-event</code>,
+            Protocol = HTTP, Port = 80. Acá se declara la <b>IP de la cámara</b> (solo esas pueden
+            enviar lecturas) y el <b>portón</b> al que pertenecen, para que la bitácora de Aditum
+            registre la puerta correcta. Sin cámaras declaradas se acepta cualquier IP de la red
+            local y las lecturas quedan sin portón asignado.
+          </p>
+          <div id="anprCamsList"></div>
+          <button class="sec sm" id="btnAddAnprCam" type="button">+ Agregar cámara</button>
+        </div>
+        <div class="field" style="margin-top:16px; max-width:220px">
+          <label for="f_anprPurge">Días que se guardan las lecturas enviadas <span class="key">purgeDays</span></label>
+          <input type="number" id="f_anprPurge" min="1" max="90" value="7">
+          <div class="hint">Las lecturas ya confirmadas por Aditum se borran del equipo pasado ese tiempo. Las pendientes nunca se borran.</div>
+        </div>
+      </div>
     </div>
 
     <div class="card" id="sec-respaldo">
@@ -779,6 +804,13 @@
     setChk('f_hikEnabled', hik.enabled);
     setVal('f_hikHour', hik.nightlyCleanupHour !== undefined ? hik.nightlyCleanupHour : 2);
 
+    // ANPR (placas)
+    const anpr = cfg.anpr || {};
+    setChk('f_anprEnabled', anpr.enabled !== false);
+    setVal('f_anprPurge', anpr.purgeDays !== undefined ? anpr.purgeDays : 7);
+    anprCamsState = clone(anpr.cameras || []);
+    renderAnprCams();
+
     applyConditionalVisibility();
     renderScanners();
   }
@@ -951,6 +983,63 @@
     }));
   }
 
+  // ---------- Camaras ANPR ----------
+  let anprCamsState = [];
+
+  function renderAnprCams() {
+    const list = $('anprCamsList');
+    list.innerHTML = '';
+    anprCamsState.forEach((cam, i) => {
+      const row = document.createElement('div');
+      row.className = 'list-item anpr-cam-item';
+      row.innerHTML =
+        '<div class="field"><label>IP de la cámara</label>' +
+        '<input type="text" class="c-ip" placeholder="192.168.1.64" style="max-width:180px"></div>' +
+        '<div class="field"><label>portón</label>' +
+        '<select class="c-gate" style="max-width:170px"></select></div>' +
+        '<div class="field"><label>nombre <span class="muted">(opcional)</span></label>' +
+        '<input type="text" class="c-name" placeholder="Entrada principal" style="max-width:200px"></div>' +
+        '<div class="field"><button type="button" class="sec sm danger c-del">Quitar</button></div>';
+      // El desplegable ofrece los portones configurados en este equipo: el
+      // backend descarta un gateId que no sea de este dispositivo.
+      syncGatesFromDOM();
+      const sel = row.querySelector('.c-gate');
+      sel.innerHTML = '<option value="">— sin asignar —</option>' +
+        gatesState.map((g) => '<option value="' + g.id + '">Portón ' + g.id + '</option>').join('');
+      if (cam.gateId !== undefined && cam.gateId !== null
+          && !gatesState.some((g) => g.id === cam.gateId)) {
+        sel.innerHTML += '<option value="' + cam.gateId + '">Portón ' + cam.gateId + ' (no configurado acá)</option>';
+      }
+      row.querySelector('.c-ip').value = cam.ip || '';
+      sel.value = (cam.gateId === undefined || cam.gateId === null) ? '' : String(cam.gateId);
+      row.querySelector('.c-name').value = cam.name || '';
+      row.querySelector('.c-del').addEventListener('click', () => {
+        syncAnprCamsFromDOM(); anprCamsState.splice(i, 1); renderAnprCams();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function syncAnprCamsFromDOM() {
+    const rows = document.querySelectorAll('#anprCamsList .anpr-cam-item');
+    anprCamsState = [...rows].map((row) => {
+      const cam = { ip: row.querySelector('.c-ip').value.trim() };
+      const gate = row.querySelector('.c-gate').value;
+      if (gate !== '') cam.gateId = toInt(gate, 0);
+      const name = row.querySelector('.c-name').value.trim();
+      if (name) cam.name = name;
+      return cam;
+    }).filter((cam) => cam.ip);
+  }
+
+  function addAnprCam() {
+    syncAnprCamsFromDOM();
+    syncGatesFromDOM();
+    const firstGate = gatesState.length ? gatesState[0].id : undefined;
+    anprCamsState.push(firstGate !== undefined ? { ip: '', gateId: firstGate } : { ip: '' });
+    renderAnprCams();
+  }
+
   function addGate() {
     syncGatesFromDOM();
     const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
@@ -1067,6 +1156,7 @@
     // Conds internos
     $('npCond').hidden = !$('f_npEnabled').checked;
     $('wdCond').hidden = !$('f_wdEnabled').checked;
+    $('anprCond').hidden = !$('f_anprEnabled').checked;
 
     refreshPages();
   }
@@ -1129,6 +1219,13 @@
       nightlyCleanupHour: toInt($('f_hikHour').value, 2),
     };
 
+    syncAnprCamsFromDOM();
+    cfg.anpr = {
+      enabled: $('f_anprEnabled').checked,
+      cameras: clone(anprCamsState),
+      purgeDays: toInt($('f_anprPurge').value, 7),
+    };
+
     // Poller pull de respaldo: fijo, sin opciones en la UI
     cfg.polling = { enabled: true, intervalSeconds: 40 };
 
@@ -1154,6 +1251,14 @@
     if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('El equipo controla portones pero no agregaste ninguno');
     if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
     if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
+    const camIps = [];
+    (cfg.anpr.cameras || []).forEach((cam, i) => {
+      if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(cam.ip || ''))
+        errs.push('Cámara ANPR ' + (i + 1) + ': IP inválida (ej. 192.168.1.64)');
+      if (camIps.includes(cam.ip)) errs.push('Cámara ANPR ' + (i + 1) + ': la IP ' + cam.ip + ' está repetida');
+      camIps.push(cam.ip);
+    });
+    if (cfg.anpr.purgeDays < 1 || cfg.anpr.purgeDays > 90) errs.push('anpr.purgeDays debe estar entre 1 y 90');
     return errs;
   }
 
@@ -1541,7 +1646,8 @@
 
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
-  ['f_npEnabled', 'f_wdEnabled', 'f_hikEnabled'].forEach((id) =>
+  $('btnAddAnprCam').addEventListener('click', addAnprCam);
+  ['f_npEnabled', 'f_wdEnabled', 'f_hikEnabled', 'f_anprEnabled'].forEach((id) =>
     $(id).addEventListener('change', applyConditionalVisibility));
 
 
