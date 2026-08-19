@@ -19,12 +19,13 @@ Contrato con el backend (CONTRACT.md de TAR-1033 en aditum-jh):
     requestId, action, cameraId, plateNormalized e ip.
 
 ISAPI usado (guia oficial "ANPR Camera Integration Solution for 7 series"):
-  - GET/PUT /ISAPI/Traffic/channels/<ch>/licensePlateAuditData?fileType=xml
-      exporta/importa la lista completa (read-modify-write para individual,
-      replace para full sync). El import puede responder errorCode
+  - GET/PUT /ISAPI/Traffic/channels/<ch>/licensePlateAuditData?fileType=csv
+      exporta/importa la lista completa como archivo CSV (UTF-8 con BOM, CRLF;
+      columnas No.,Placa,Grupo,FechaInicio,FechaFin,CardID). Es un import por
+      ARCHIVO ("Opaque Data" en la doc), NO un PUT de XML: el firmware rechaza
+      con "Device Error" un XML de lista. Se hace read-modify-write para la
+      placa individual y replace para el full sync. El import responde
       "overLimit" = lista llena, que se reporta explicito (LIST_FULL).
-  - POST /ISAPI/Traffic/channels/<ch>/searchLPListAudit
-      consulta paginada de la lista (verificacion).
   - GET /ISAPI/Traffic/capabilities → plateListNum (capacidad maxima).
 
 NOTA timeouts: el backend corta la conexion a los 5 s (deviceRestTemplate).
@@ -33,7 +34,8 @@ automaticos que multiplican la latencia): cada llamada ISAPI va directa con
 timeouts cortos y un solo intento — si la camara no responde, se devuelve
 504 rapido y el backend reintenta en su proximo ciclo.
 """
-import copy
+import csv
+import io
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -52,6 +54,17 @@ ISAPI_SYNC_TIMEOUT = (2, 4)
 
 DEFAULT_CHANNEL = 1
 
+# Grupo del CSV de Hikvision: 0 = lista negra, 1 = lista blanca (allowlist).
+# El feature autoriza placas del condominio, asi que siempre se escribe "1".
+ALLOW_LIST_GROUP = "1"
+# Vigencia: las placas del condominio no expiran en la practica, pero la camara
+# exige un rango de fechas (YYYY-MM-DD). Inicio = hoy; fin = hoy + estos anios.
+# Las entradas ya presentes conservan sus fechas al reescribir la lista.
+VALIDITY_YEARS = 20
+
+# Columnas del CSV export/import (orden fijo del header del firmware).
+_COL_NO, _COL_PLATE, _COL_GROUP, _COL_START, _COL_END, _COL_CARD = range(6)
+
 # Normalizacion espejo de LicensePlateUtil (aditum-jh): mayusculas + solo
 # [A-Z0-9]. Se usa SOLO para comparar contra entradas legadas cargadas a
 # mano en la camara; el valor que manda el backend ya viene normalizado y
@@ -69,25 +82,6 @@ def normalize_plate(plate):
 def _local(tag):
     """Nombre local de un tag XML, ignorando namespace."""
     return tag.split("}")[-1] if "}" in tag else tag
-
-
-def _find_all(root, name):
-    return [e for e in root.iter() if _local(e.tag) == name]
-
-
-def _find_child_text(element, name):
-    for child in element:
-        if _local(child.tag) == name:
-            return (child.text or "").strip()
-    return ""
-
-
-def _set_child_text(element, name, value):
-    for child in element:
-        if _local(child.tag) == name:
-            child.text = value
-            return True
-    return False
 
 
 class AnprCameraError(Exception):
@@ -123,34 +117,48 @@ class AnprCameraClient:
 
     def _list_url(self, ip):
         return (f"http://{ip}/ISAPI/Traffic/channels/{self.channel}"
-                f"/licensePlateAuditData?fileType=xml")
+                f"/licensePlateAuditData?fileType=csv")
 
-    def get_plate_list(self, ip, user, password):
-        """Devuelve el arbol XML de la lista actual de la camara."""
+    def get_plate_rows(self, ip, user, password):
+        """Exporta la lista y la devuelve como (header, rows).
+
+        `header` es la fila de titulos tal cual la emite el firmware (se reusa
+        al reimportar, es device-dependant); `rows` es una lista de filas, cada
+        una una lista de campos en el orden _COL_*."""
         resp = self._request("GET", self._list_url(ip), user, password)
         if resp.status_code == 401:
             raise AnprCameraError("CAMERA_AUTH", "digest auth rechazada")
         if resp.status_code != 200:
             raise AnprCameraError("CAMERA_ERROR", f"http_{resp.status_code} en export")
-        try:
-            return ET.fromstring(resp.content)
-        except ET.ParseError as e:
-            raise AnprCameraError("CAMERA_ERROR", f"export XML invalido: {e}")
+        # El firmware emite UTF-8 con BOM; utf-8-sig lo descarta.
+        text = resp.content.decode("utf-8-sig", "replace")
+        parsed = [row for row in csv.reader(io.StringIO(text)) if row]
+        if not parsed:
+            raise AnprCameraError("CAMERA_ERROR", "export CSV sin header")
+        return parsed[0], parsed[1:]
 
-    def put_plate_list(self, ip, user, password, tree, timeout=ISAPI_TIMEOUT):
-        """Importa (reemplaza) la lista completa. Detecta overLimit explicito."""
-        body = ET.tostring(tree, encoding="utf-8", xml_declaration=True)
+    def put_plate_rows(self, ip, user, password, header, rows, timeout=ISAPI_TIMEOUT):
+        """Importa (reemplaza) la lista completa desde filas CSV.
+
+        Reconstruye el archivo con el mismo formato que exporta la camara
+        (BOM + CRLF) y detecta overLimit explicito (lista llena)."""
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\r\n")
+        writer.writerow(header)
+        writer.writerows(rows)
+        body = ("﻿" + buf.getvalue()).encode("utf-8")  # BOM que espera el firmware
         resp = self._request("PUT", self._list_url(ip), user, password,
                              timeout=timeout, data=body,
-                             headers={"Content-Type": "application/xml"})
+                             headers={"Content-Type": "text/csv"})
         if resp.status_code == 401:
             raise AnprCameraError("CAMERA_AUTH", "digest auth rechazada")
         text = resp.text or ""
-        # El firmware responde ImportResult/ResponseStatus; "overLimit" es el
-        # unico error que el proyecto exige distinguir (lista llena).
+        # El firmware responde ResponseStatus (ok) o ImportResult; "overLimit"
+        # es el unico error que el proyecto exige distinguir (lista llena).
         if "overLimit" in text:
             raise AnprCameraError("LIST_FULL", "la camara reporto overLimit")
-        if resp.status_code != 200 or "importFail" in text or "importErrorData" in text:
+        if (resp.status_code != 200 or "importFail" in text
+                or "importErrorData" in text or "<existError>true" in text):
             raise AnprCameraError("CAMERA_ERROR", f"http_{resp.status_code} en import")
         return True
 
@@ -171,94 +179,66 @@ class AnprCameraClient:
         return None
 
     # ------------------------------------------------------------------
-    # Manipulacion del XML de la lista (namespace-agnostica: se preserva
-    # el arbol tal como lo exporto el firmware y solo se tocan entradas)
+    # Manipulacion de las filas CSV. Se preserva el header tal como lo
+    # exporto el firmware y solo se agregan/quitan filas de datos.
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _entries(tree):
-        return _find_all(tree, "LicensePlateInfo")
+    def _row_plate(row):
+        """Placa normalizada de una fila CSV, o None si la fila no la trae."""
+        if len(row) <= _COL_PLATE:
+            return None
+        return normalize_plate(row[_COL_PLATE])
 
     @staticmethod
-    def _entry_parent(tree):
-        """Elemento que contiene las LicensePlateInfo (LicensePlateInfoList),
-        o el root si el firmware las cuelga directo."""
-        for e in tree.iter():
-            if _local(e.tag) == "LicensePlateInfoList":
-                return e
-        return tree
+    def _new_row(plate_normalized):
+        """Fila nueva de allowlist para `plate_normalized`, vigente desde hoy y
+        por VALIDITY_YEARS (sin expiracion practica). El No. se renumera antes
+        de importar."""
+        today = datetime.now()
+        try:
+            end = today.replace(year=today.year + VALIDITY_YEARS)
+        except ValueError:  # 29-feb en anio destino no bisiesto -> 28-feb
+            end = today.replace(year=today.year + VALIDITY_YEARS, day=28)
+        return ["", plate_normalized, ALLOW_LIST_GROUP,
+                today.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), ""]
 
     @staticmethod
-    def _entry_plate(entry):
-        return normalize_plate(_find_child_text(entry, "LicensePlate"))
-
-    @classmethod
-    def _build_entry(cls, tree, plate_normalized):
-        """Crea una LicensePlateInfo nueva. Clona la estructura de una entrada
-        existente (se adapta al firmware); si la lista esta vacia usa la forma
-        canonica de la guia de la serie 7."""
-        entries = cls._entries(tree)
-        if entries:
-            entry = copy.deepcopy(entries[0])
-            _set_child_text(entry, "LicensePlate", plate_normalized)
-            _set_child_text(entry, "id", "")
-            _set_child_text(entry, "createTime",
-                            datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-            return entry
-        ns = ""
-        root_tag = tree.tag if isinstance(tree.tag, str) else ""
-        if "}" in root_tag:
-            ns = root_tag.split("}")[0] + "}"
-        entry = ET.Element(f"{ns}LicensePlateInfo")
-        for name, value in (
-            ("id", ""),
-            ("LicensePlate", plate_normalized),
-            ("type", "whitelist"),
-            ("createTime", datetime.now().strftime("%Y-%m-%dT%H:%M:%S")),
-        ):
-            child = ET.SubElement(entry, f"{ns}{name}")
-            child.text = value
-        return entry
-
-    @classmethod
-    def _renumber(cls, tree):
-        for i, entry in enumerate(cls._entries(tree), start=1):
-            _set_child_text(entry, "id", str(i))
+    def _renumber(rows):
+        for i, row in enumerate(rows, start=1):
+            row[_COL_NO] = str(i)
 
     def probe(self, ip, user, password):
-        """Diagnostico de SOLO LECTURA: confirma IP, credenciales y soporte ISAPI
+        """Diagnostico de SOLO LECTURA: confirma IP, credenciales y soporte
         de lista de placas, sin modificar nada en la camara."""
-        tree = self.get_plate_list(ip, user, password)
-        plates = [self._entry_plate(e) for e in self._entries(tree)]
+        _header, rows = self.get_plate_rows(ip, user, password)
+        plates = [p for p in (self._row_plate(r) for r in rows) if p]
         return {
-            "plates": len([p for p in plates if p]),
+            "plates": len(plates),
             "capacity": self.plate_capacity(ip, user, password),
-            "sample": [p for p in plates if p][:5],
+            "sample": plates[:5],
         }
 
     def apply_plate(self, ip, user, password, action, plate_normalized):
         """ADD/DELETE idempotente de UNA placa via read-modify-write.
         Devuelve el detail del contrato."""
-        tree = self.get_plate_list(ip, user, password)
-        parent = self._entry_parent(tree)
-        existing = [e for e in self._entries(tree)
-                    if self._entry_plate(e) == plate_normalized]
+        header, rows = self.get_plate_rows(ip, user, password)
+        present = any(self._row_plate(r) == plate_normalized for r in rows)
 
         if action == "ADD":
-            if existing:
+            if present:
                 return "already_present_noop"
-            parent.append(self._build_entry(tree, plate_normalized))
-            self._renumber(tree)
-            self.put_plate_list(ip, user, password, tree)
+            rows.append(self._new_row(plate_normalized))
+            self._renumber(rows)
+            self.put_plate_rows(ip, user, password, header, rows)
             return "created"
 
         # DELETE
-        if not existing:
+        if not present:
             return "not_found_noop"
-        for entry in existing:
-            parent.remove(entry)
-        self._renumber(tree)
-        self.put_plate_list(ip, user, password, tree)
+        rows = [r for r in rows if self._row_plate(r) != plate_normalized]
+        self._renumber(rows)
+        self.put_plate_rows(ip, user, password, header, rows)
         return "deleted"
 
     def replace_plates(self, ip, user, password, plates_normalized):
@@ -268,20 +248,17 @@ class AnprCameraClient:
             raise AnprCameraError(
                 "LIST_FULL",
                 f"{len(plates_normalized)} placas > capacidad {capacity}")
-        tree = self.get_plate_list(ip, user, password)
-        parent = self._entry_parent(tree)
-        template_tree = tree  # las entradas viejas sirven de plantilla
-        for entry in list(self._entries(tree)):
-            parent.remove(entry)
-        seen = set()
+        # Solo se reusa el header del export; las filas viejas se descartan.
+        header, _rows = self.get_plate_rows(ip, user, password)
+        rows, seen = [], set()
         for plate in plates_normalized:
             if not plate or plate in seen:
                 continue
             seen.add(plate)
-            parent.append(self._build_entry(template_tree, plate))
-            template_tree = tree
-        self._renumber(tree)
-        self.put_plate_list(ip, user, password, tree, timeout=ISAPI_SYNC_TIMEOUT)
+            rows.append(self._new_row(plate))
+        self._renumber(rows)
+        self.put_plate_rows(ip, user, password, header, rows,
+                            timeout=ISAPI_SYNC_TIMEOUT)
         return len(seen)
 
 
