@@ -25,7 +25,11 @@ log = logging.getLogger("aditum.auth")
 # seguridad: debe quedar evidente en el code review.
 # /admin es solo el HTML estatico del editor local (su contenido se tapa con
 # el login); /admin/login y /admin/session son el flujo de autenticacion.
-PUBLIC_PATHS = {"/", "/admin", "/admin/login", "/admin/logout", "/admin/session"}
+# /anpr-event lo postea la camara Hikvision (no sabe mandar bearer): el
+# endpoint filtra por IP de origen (best-effort) y solo ENCOLA lecturas —
+# no abre portones ni toca configuracion (ver api.py, TAR-1035).
+PUBLIC_PATHS = {"/", "/admin", "/admin/login", "/admin/logout", "/admin/session",
+                "/anpr-event"}
 
 UNPROVISIONED_LOG_INTERVAL = 60  # segundos entre logs de "sin provisionar"
 _last_unprovisioned_log = 0.0
