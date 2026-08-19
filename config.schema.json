@@ -96,6 +96,20 @@
         "nightlyCleanupHour": { "type": "integer", "minimum": 0, "maximum": 23, "default": 2 }
       }
     },
+    "anpr": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "ANPR local-first (TAR-1034/1035): endpoints de placas hacia las camaras y cola offline de eventos",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "allowedCameraIps": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IPs de camaras autorizadas a postear en /anpr-event; vacio = cualquier IP privada de la LAN"
+        },
+        "purgeDays": { "type": "integer", "minimum": 1, "default": 7, "description": "Dias que se conservan los eventos ya confirmados por Aditum antes de purgarlos" }
+      }
+    },
     "polling": {
       "type": "object",
       "additionalProperties": false,
