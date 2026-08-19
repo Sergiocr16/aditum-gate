@@ -105,25 +105,6 @@ class Settings:
         anpr = data.get("anpr", {})
         self.anpr_enabled = anpr.get("enabled", True)
         self.anpr_purge_days = anpr.get("purgeDays", 7)
-        # Camaras ANPR de este sitio: [{ip, gateId}]. Cumple DOS funciones:
-        # (1) allowlist de quien puede postear en /anpr-event, y (2) a que
-        # porton pertenece cada lectura (el backend valida ese gateId contra
-        # los gates del dispositivo; sin el, la bitacora queda sin puerta).
-        # Lista vacia = cualquier IP privada de la LAN y sin gateId, que es
-        # el comportamiento con el que arranca un equipo recien instalado.
-        self.anpr_cameras = anpr.get("cameras", [])
-
-    def anpr_camera_allowed(self, ip):
-        if not self.anpr_cameras:
-            return None  # sin allowlist configurada: decide el llamador
-        return any((c.get("ip") or "").strip() == ip for c in self.anpr_cameras)
-
-    def anpr_gate_id_for(self, ip):
-        for camera in self.anpr_cameras:
-            if (camera.get("ip") or "").strip() == ip:
-                gate_id = camera.get("gateId")
-                return gate_id if isinstance(gate_id, int) else None
-        return None
 
 
 def load_settings():

@@ -418,35 +418,28 @@ mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
 por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
 `200 {"ignored": true}` para que la cámara no reintente.
 
-**Configuración en el editor local** (`/admin` → **ANPR**), que se guarda en la
-sección `anpr` del documento de configuración. Esa pantalla concentra las dos
-patas del flujo: la **URL de Aditum** a la que se envían las lecturas
+**Configuración en el editor local** (`/admin` → **ANPR**). Esa pantalla concentra
+las dos patas del flujo: la **URL de Aditum** a la que se envían las lecturas
 (`api.baseUrl`, editable), la **URL que hay que configurarle a la cámara**
-(`http://<IP del equipo>/anpr-event`, calculada y copiable), las cámaras del
-sitio, la retención, y el estado en vivo de la cola. El token del dispositivo
-se asigna en *Seguridad* — si falta, la pantalla lo advierte, porque las
-lecturas se encolarían sin poder enviarse.
+(`http://<IP del equipo>/anpr-event`, calculada y copiable), la retención y el
+estado en vivo de la cola. El token del dispositivo se asigna en *Seguridad* —
+si falta, la pantalla lo advierte, porque las lecturas se encolarían sin poder
+enviarse.
 
 ```json
-"anpr": {
-  "enabled": true,
-  "purgeDays": 7,          // 0 = borrar la lectura apenas Aditum la confirma
-  "cameras": [{ "ip": "192.168.68.64", "gateId": 7, "name": "Entrada principal" }]
-}
+"anpr": { "enabled": true, "purgeDays": 7 }
 ```
 
-Cada cámara declarada cumple **dos** funciones: es la allowlist de quién puede
-postear en `/anpr-event`, y dice a qué **portón** pertenecen sus lecturas. Ese
-`gateId` viaja en el evento y el backend lo valida contra los gates de este
-mismo dispositivo (si no cuadra lo descarta), así la bitácora registra la
-puerta correcta. Con la lista vacía se acepta cualquier IP privada de la LAN y
-las lecturas quedan sin portón — es el estado de un equipo recién instalado.
+`purgeDays` en `0` borra la lectura apenas Aditum la confirma. Lo **pendiente no
+se borra nunca**: se reintenta hasta que Aditum responda OK.
 
-> **No hace falta ningún token de la cámara.** La autenticación Pi→Aditum es el
-> token de dispositivo que ya está provisionado (`PUT /token`), y la URL de
-> destino es la `api.baseUrl` que el equipo ya tiene configurada. El token AES
-> `ANPR*{companyId}*{gateId}` del flujo legacy desaparece: existía solo porque
-> la cámara le hablaba directo al servidor.
+> **La dirección y las credenciales de las cámaras NO se configuran en el Pi.**
+> Viven en Aditum (*Acceso y ANPR* → Cámaras ANPR, tabla `anpr_camera`) y llegan
+> en el payload de cada `/update-plate` y `/sync-plates`. Duplicarlas en cada
+> equipo sería una segunda fuente de verdad que se desincroniza en cuanto alguien
+> cambia una IP. Por eso el filtro de `/anpr-event` es la LAN privada y no una
+> lista local: lo que autoriza de verdad no es la IP, es que el endpoint solo
+> encola.
 
 > El filtro por IP depende de que nginx pase la IP real: el `location =
 > /anpr-event` del template setea `X-Forwarded-For $remote_addr` — con
