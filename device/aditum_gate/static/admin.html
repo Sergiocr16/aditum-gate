@@ -203,6 +203,7 @@
   /* ---------- Chips ---------- */
   .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
   .txt-warn{ color:var(--warn); font-weight:700; }
+  .txt-ok{ color:var(--ok); }
   .txt-bad{ color:var(--err); }
   .hsub{ font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
          color:var(--mut); margin:18px 0 6px; }
@@ -555,6 +556,42 @@
           <div class="hint">Apenas Aditum confirma una lectura, sale de la cola. Con <b>0</b> se borra
             en el acto; con más días queda como evidencia para revisar. <b>Lo pendiente no se borra
             nunca</b>: se reintenta hasta que Aditum lo confirme.</div>
+        </div>
+
+        <div class="field" style="margin-top:24px">
+          <label>Probar la conexión con una cámara</label>
+          <p class="hint" style="margin:0 0 10px">Habla directo con la cámara desde este equipo, sin pasar
+            por Aditum: sirve para validar la instalación. Las credenciales se usan solo para la prueba,
+            <b>no se guardan</b> (en operación normal llegan desde Aditum en cada envío).</p>
+          <div class="row">
+            <div class="field" style="flex:1; min-width:150px">
+              <label for="f_testIp">IP de la cámara</label>
+              <input type="text" id="f_testIp" placeholder="192.168.68.64">
+            </div>
+            <div class="field" style="flex:1; min-width:120px">
+              <label for="f_testUser">Usuario</label>
+              <input type="text" id="f_testUser" placeholder="admin" value="admin">
+            </div>
+            <div class="field" style="flex:1; min-width:120px">
+              <label for="f_testPass">Contraseña</label>
+              <input type="password" id="f_testPass" placeholder="••••••••">
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field" style="flex:1; min-width:150px">
+              <label for="f_testPlate">Placa de prueba</label>
+              <input type="text" id="f_testPlate" placeholder="ABC123">
+            </div>
+            <div class="field" style="align-self:flex-end">
+              <div class="row">
+                <button class="sec sm" id="btnAnprCheck" type="button">Probar conexión</button>
+                <button class="sec sm" id="btnAnprAdd" type="button">Agregar placa</button>
+                <button class="sec sm danger" id="btnAnprDel" type="button">Quitar placa</button>
+              </div>
+            </div>
+          </div>
+          <div id="anprTestBody"><p class="hint">«Probar conexión» solo lee la lista de la cámara y no cambia nada.
+            «Agregar»/«Quitar» sí la modifican: usá una placa de prueba y acordate de quitarla al terminar.</p></div>
         </div>
 
         <div class="field" style="margin-top:22px">
@@ -1035,6 +1072,65 @@
     } else {
       tok.textContent = '';
     }
+  }
+
+  async function runAnprTest(action) {
+    const body = $('anprTestBody');
+    const ip = txt($('f_testIp'));
+    if (!ip) { body.innerHTML = '<p class="hint txt-bad">Ingresá la IP de la cámara.</p>'; return; }
+    const payload = {
+      ip: ip,
+      user: txt($('f_testUser')) || 'admin',
+      password: $('f_testPass').value || '',
+      action: action,
+      plate: txt($('f_testPlate')),
+    };
+    if (action !== 'CHECK' && !payload.plate) {
+      body.innerHTML = '<p class="hint txt-bad">Ingresá la placa de prueba.</p>'; return;
+    }
+    body.innerHTML = '<p class="hint">Hablando con la cámara…</p>';
+    try {
+      const r = await fetch('/anpr-test', Object.assign(fetchOpts(), {
+        method: 'POST', headers: headers(), body: JSON.stringify(payload),
+      }));
+      const d = await r.json();
+      if (!r.ok || d.ok === false) {
+        body.innerHTML = '<p class="hint txt-bad">' + esc(anprTestError(d)) + '</p>';
+        return;
+      }
+      if (action === 'CHECK') {
+        body.innerHTML = '<p class="hint"><b class="txt-ok">Conexión OK.</b> La cámara tiene ' +
+          d.plates + ' placa(s)' + (d.capacity ? ' de un máximo de ' + d.capacity : '') + '.' +
+          (d.sample && d.sample.length ? ' Ejemplos: ' + esc(d.sample.join(', ')) + '.' : '') + '</p>';
+      } else {
+        body.innerHTML = '<p class="hint"><b class="txt-ok">Listo.</b> Placa ' + esc(d.plateNormalized) +
+          ': ' + esc(anprTestDetail(d.detail)) + '</p>';
+      }
+    } catch (e) {
+      body.innerHTML = '<p class="hint txt-bad">No se pudo ejecutar la prueba: ' + esc(String(e.message || e)) + '</p>';
+    }
+  }
+
+  // Los códigos del contrato, en castellano de instalación
+  function anprTestError(d) {
+    const map = {
+      CAMERA_UNREACHABLE: 'No se llegó a la cámara. Revisá la IP, el cable de red y que esté encendida.',
+      CAMERA_TIMEOUT: 'La cámara no respondió a tiempo. Puede estar saturada o mal comunicada.',
+      CAMERA_AUTH: 'Usuario o contraseña incorrectos.',
+      LIST_FULL: 'La lista de placas de la cámara está llena.',
+      CAMERA_ERROR: 'La cámara respondió con un error. ¿Tiene habilitado el reconocimiento de placas?',
+    };
+    return map[d.error] || (d.error || 'Error') + (d.message ? ': ' + d.message : '');
+  }
+
+  function anprTestDetail(detail) {
+    const map = {
+      created: 'agregada a la cámara.',
+      deleted: 'quitada de la cámara.',
+      already_present_noop: 'ya estaba en la cámara (no se duplicó).',
+      not_found_noop: 'no estaba en la cámara (nada que quitar).',
+    };
+    return map[detail] || detail;
   }
 
   async function loadAnprStatus() {
@@ -1665,6 +1761,9 @@
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
   $('btnAnprStatus').addEventListener('click', loadAnprStatus);
+  $('btnAnprCheck').addEventListener('click', () => runAnprTest('CHECK'));
+  $('btnAnprAdd').addEventListener('click', () => runAnprTest('ADD'));
+  $('btnAnprDel').addEventListener('click', () => runAnprTest('DELETE'));
   $('f_apiBase').addEventListener('input', refreshAnprUrls);
   $('btnCopyAnprUrl').addEventListener('click', async () => {
     const url = $('anprCamUrl').value;

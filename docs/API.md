@@ -358,6 +358,7 @@ pero contra la lista de placas (ISAPI `licensePlateAuditData`).
 | `/sync-plates` | POST | token | Reemplazo COMPLETO de la lista de la cámara (TAR-1037) |
 | `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola: no abre portones ni toca configuración |
 | `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
+| `/anpr-test` | POST | token | **Diagnóstico de instalación**: habla directo con una cámara sin pasar por Aditum |
 
 Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en los dos
 primeros y `404` en los dos últimos.
@@ -432,6 +433,27 @@ enviarse.
 
 `purgeDays` en `0` borra la lectura apenas Aditum la confirma. Lo **pendiente no
 se borra nunca**: se reintenta hasta que Aditum responda OK.
+
+**`POST /anpr-test`** — para validar la instalación en sitio, desde `/admin` →
+**ANPR** → *Probar la conexión con una cámara*:
+
+```json
+{ "ip": "192.168.68.64", "user": "admin", "password": "…",
+  "action": "CHECK" | "ADD" | "DELETE", "plate": "ABC-123" }
+```
+
+`CHECK` es de **solo lectura**: confirma IP, credenciales y soporte ISAPI, y
+devuelve cuántas placas tiene la cámara, su capacidad y una muestra. `ADD` y
+`DELETE` sí modifican la lista (idempotentes, mismos `detail` que
+`/update-plate`); la placa se normaliza igual que en producción, así que
+tecleando `sjb-123` se manda `SJB123`. Los errores se devuelven con el mismo
+código del contrato (`CAMERA_AUTH`, `CAMERA_UNREACHABLE`, `LIST_FULL`…), que el
+editor traduce a lenguaje de instalación.
+
+Las credenciales se reciben **solo para la prueba**: no se guardan ni se
+loguean. El `ip` debe ser de la red privada — sin ese guard el endpoint
+convertiría al Pi en un proxy para golpear cualquier host de internet con las
+credenciales que le pasen (SSRF). Acepta puerto (`192.168.1.64:8000`).
 
 > **La dirección y las credenciales de las cámaras NO se configuran en el Pi.**
 > Viven en Aditum (*Acceso y ANPR* → Cámaras ANPR, tabla `anpr_camera`) y llegan

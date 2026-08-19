@@ -17,7 +17,7 @@ import ipaddress
 from flask import Flask, jsonify, request, send_from_directory
 
 from . import admin_auth, health
-from .anpr import http_status_for
+from .anpr import AnprCameraError, http_status_for, normalize_plate
 from .anpr_events import parse_event_xml
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
@@ -466,6 +466,54 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                  event["eventUid"], event["licensePlate"], event["capturedAt"],
                  source_ip, "encolado" if queued else "duplicado ignorado")
         return jsonify({"queued": queued, "eventUid": event["eventUid"]})
+
+    @app.route("/anpr-test", methods=["POST"])
+    def anpr_test():
+        # Diagnostico de instalacion (protegido por el before_request global):
+        # prueba la conexion Pi -> camara sin pasar por Aditum. Las credenciales
+        # se reciben aca SOLO para la prueba: no se guardan ni se loguean, igual
+        # que las que manda el backend en cada despacho.
+        if anpr_service is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 400
+        data = request.get_json(silent=True) or {}
+        ip = (data.get("ip") or "").strip()
+        action = (data.get("action") or "CHECK").upper()
+        if not ip:
+            return jsonify({"error": "ip requerida"}), 400
+        # La camara vive en la LAN del condominio. Sin este guard el endpoint
+        # convierte al Pi en un proxy para golpear cualquier host de internet
+        # con las credenciales que le pasen (SSRF). Se valida solo el host:
+        # la IP puede venir con puerto (192.168.1.64:8000), que es como se
+        # configura una camara detras de un NAT o en un puerto no estandar.
+        host = ip.rsplit(":", 1)[0] if ip.count(":") == 1 else ip
+        try:
+            if not ipaddress.ip_address(host).is_private:
+                return jsonify({"error": "la IP debe ser de la red local"}), 400
+        except ValueError:
+            return jsonify({"error": "IP invalida"}), 400
+        if action not in ("CHECK", "ADD", "DELETE"):
+            return jsonify({"error": "action debe ser CHECK, ADD o DELETE"}), 400
+
+        user = data.get("user") or "admin"
+        password = data.get("password") or ""
+        client = anpr_service.client
+        try:
+            if action == "CHECK":
+                result = client.probe(ip, user, password)
+                log.info("anpr-test CHECK %s -> %s placas", ip, result["plates"])
+                return jsonify(dict(result, ok=True, action=action))
+            plate = normalize_plate(data.get("plate"))
+            if not plate:
+                return jsonify({"error": "placa requerida para ADD/DELETE"}), 400
+            detail = client.apply_plate(ip, user, password, action, plate)
+            log.info("anpr-test %s %s en %s -> %s", action, plate, ip, detail)
+            return jsonify({"ok": True, "action": action, "plateNormalized": plate,
+                            "detail": detail})
+        except AnprCameraError as e:
+            log.warning("anpr-test %s en %s fallo: %s", action, ip, e.code)
+            # message puede nombrar la IP, nunca usuario ni contrasena
+            return jsonify({"ok": False, "action": action, "error": e.code,
+                            "message": e.message}), http_status_for(e.code)
 
     @app.route("/anpr-status")
     def anpr_status():

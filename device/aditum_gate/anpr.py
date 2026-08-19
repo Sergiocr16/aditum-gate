@@ -59,7 +59,7 @@ DEFAULT_CHANNEL = 1
 _NON_ALNUM = re.compile(r"[^A-Za-z0-9]")
 
 
-def _normalize(plate):
+def normalize_plate(plate):
     if plate is None:
         return None
     cleaned = _NON_ALNUM.sub("", plate).upper()
@@ -190,7 +190,7 @@ class AnprCameraClient:
 
     @staticmethod
     def _entry_plate(entry):
-        return _normalize(_find_child_text(entry, "LicensePlate"))
+        return normalize_plate(_find_child_text(entry, "LicensePlate"))
 
     @classmethod
     def _build_entry(cls, tree, plate_normalized):
@@ -224,6 +224,17 @@ class AnprCameraClient:
     def _renumber(cls, tree):
         for i, entry in enumerate(cls._entries(tree), start=1):
             _set_child_text(entry, "id", str(i))
+
+    def probe(self, ip, user, password):
+        """Diagnostico de SOLO LECTURA: confirma IP, credenciales y soporte ISAPI
+        de lista de placas, sin modificar nada en la camara."""
+        tree = self.get_plate_list(ip, user, password)
+        plates = [self._entry_plate(e) for e in self._entries(tree)]
+        return {
+            "plates": len([p for p in plates if p]),
+            "capacity": self.plate_capacity(ip, user, password),
+            "sample": [p for p in plates if p][:5],
+        }
 
     def apply_plate(self, ip, user, password, action, plate_normalized):
         """ADD/DELETE idempotente de UNA placa via read-modify-write.
