@@ -202,6 +202,8 @@
 
   /* ---------- Chips ---------- */
   .chips{ display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+  .txt-warn{ color:var(--warn); font-weight:700; }
+  .txt-bad{ color:var(--err); }
   .hsub{ font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
          color:var(--mut); margin:18px 0 6px; }
   .hlist{ margin:4px 0 0; padding:0; list-style:none; font-size:13px; }
@@ -379,6 +381,7 @@
       <a href="#sec-identidad" data-sec="sec-identidad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6.2 15a3 3 0 0 1 5.6 0"/><path d="M15 10h3"/><path d="M15 14h3"/></svg>Identidad</a>
       <a href="#sec-tipo" data-sec="sec-tipo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2"/><path d="M15 2v2"/><path d="M9 20v2"/><path d="M15 20v2"/><path d="M2 9h2"/><path d="M2 15h2"/><path d="M20 9h2"/><path d="M20 15h2"/></svg>Equipo</a>
       <a href="#sec-hikvision" data-sec="sec-hikvision"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>Hikvision</a>
+      <a href="#sec-anpr" data-sec="sec-anpr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="8" width="20" height="9" rx="2"/><path d="M6 12h1.5"/><path d="M10 12h1.5"/><path d="M14 12h1.5"/><path d="M18 12h.01"/></svg>ANPR</a>
       <a href="#sec-red" data-sec="sec-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>Red</a>
       <a href="#sec-respaldo" data-sec="sec-respaldo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>Respaldo</a>
       <a href="#sec-seguridad" data-sec="sec-seguridad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>Seguridad</a>
@@ -515,6 +518,63 @@
       </div>
     </div>
 
+    <div class="card" id="sec-anpr">
+      <h2>Hikvision ANPR (lectura de placas)</h2>
+      <p class="hint" style="margin-top:0">La lista de placas autorizadas vive <b>dentro de la cámara</b>:
+        ella reconoce la placa y abre el portón sola, sin depender de internet. Este equipo hace de
+        puente en las dos direcciones — Aditum le manda los cambios de placas, y las lecturas se
+        encolan acá y se reenvían a Aditum para la bitácora.</p>
+      <label class="check"><input type="checkbox" id="f_anprEnabled"> Lectura de placas habilitada</label>
+
+      <div class="cond" id="anprCond" style="margin-top:20px">
+
+        <div class="field">
+          <label for="f_apiBase">URL de Aditum <span class="muted">(a dónde se envían las lecturas)</span> <span class="key">api.baseUrl</span></label>
+          <input type="text" id="f_apiBase" placeholder="https://caseta.aditumcr.com/api">
+          <div class="hint">Base del API. Las lecturas se envían a <code id="anprPostUrl" class="key"></code>,
+            autenticadas con el <b>token de este equipo</b> (se asigna en la sección <b>Seguridad</b>).
+            <span id="anprTokenState"></span></div>
+        </div>
+
+        <div class="field" style="margin-top:18px">
+          <label>URL para configurar en la cámara <span class="muted">(solo lectura)</span></label>
+          <div class="row">
+            <input type="text" id="anprCamUrl" readonly style="flex:1; min-width:240px">
+            <button class="sec sm" id="btnCopyAnprUrl" type="button">Copiar</button>
+          </div>
+          <div class="hint">En la cámara: <b>Event → Alarm Setting → Alarm Server → Add</b>.
+            Destination = la IP de este equipo, URL = <code>/anpr-event</code>, Protocol = <b>HTTP</b>,
+            Port = <b>80</b>, ANR habilitado. No lleva token: el evento no sale de la red local.</div>
+        </div>
+
+        <div class="field" style="margin-top:22px">
+          <label>Cámaras de este sitio <span class="key">anpr.cameras</span></label>
+          <p class="hint" style="margin:0 0 10px">Solo las cámaras declaradas acá pueden enviar lecturas,
+            y el <b>portón</b> que elijas es el que Aditum registra en la bitácora. Si la lista queda
+            vacía se acepta cualquier cámara de la red local y las lecturas quedan sin portón.</p>
+          <div id="anprCamsList"></div>
+          <button class="sec sm" id="btnAddAnprCam" type="button">+ Agregar cámara</button>
+        </div>
+
+        <div class="field" style="margin-top:20px; max-width:260px">
+          <label for="f_anprPurge">Guardar lecturas ya enviadas <span class="muted">(días)</span> <span class="key">purgeDays</span></label>
+          <input type="number" id="f_anprPurge" min="0" max="90" value="7">
+          <div class="hint">Apenas Aditum confirma una lectura, sale de la cola. Con <b>0</b> se borra
+            en el acto; con más días queda como evidencia para revisar. <b>Lo pendiente no se borra
+            nunca</b>: se reintenta hasta que Aditum lo confirme.</div>
+        </div>
+
+        <div class="field" style="margin-top:22px">
+          <div class="row" style="justify-content:space-between; align-items:center">
+            <label style="margin:0">Estado de la cola</label>
+            <button class="sec sm" id="btnAnprStatus" type="button">Actualizar</button>
+          </div>
+          <div id="anprStatusBody"><p class="hint">Sin consultar.</p></div>
+        </div>
+
+      </div>
+    </div>
+
     <div class="card" id="sec-red">
       <h2>Red / Watchdog</h2>
       <label class="check"><input type="checkbox" id="f_wdEnabled"> Watchdog de red (reinicia si pierde la red)</label>
@@ -540,31 +600,6 @@
         <label for="f_hikHour">Hora de limpieza nocturna <span class="muted">(0–23)</span> <span class="key">nightlyCleanupHour</span></label>
         <input type="number" id="f_hikHour" min="0" max="23" value="2">
         <div class="hint">Hora a la que se ejecuta la limpieza diaria en los terminales.</div>
-      </div>
-
-      <hr style="margin:22px 0; border:0; border-top:1px solid var(--line)">
-
-      <h2 style="margin-top:0">Cámaras ANPR (placas)</h2>
-      <label class="check"><input type="checkbox" id="f_anprEnabled"> Lectura de placas habilitada</label>
-      <div class="cond" id="anprCond" style="margin-top:16px">
-        <div class="field">
-          <label>Cámaras <span class="key">anpr.cameras</span></label>
-          <p class="hint" style="margin:0 0 10px">
-            En la cámara: <b>Event → Alarm Setting → Alarm Server</b> apuntando a
-            <b>este equipo</b> — Destination = la IP del Pi en la LAN, URL = <code>/anpr-event</code>,
-            Protocol = HTTP, Port = 80. Acá se declara la <b>IP de la cámara</b> (solo esas pueden
-            enviar lecturas) y el <b>portón</b> al que pertenecen, para que la bitácora de Aditum
-            registre la puerta correcta. Sin cámaras declaradas se acepta cualquier IP de la red
-            local y las lecturas quedan sin portón asignado.
-          </p>
-          <div id="anprCamsList"></div>
-          <button class="sec sm" id="btnAddAnprCam" type="button">+ Agregar cámara</button>
-        </div>
-        <div class="field" style="margin-top:16px; max-width:220px">
-          <label for="f_anprPurge">Días que se guardan las lecturas enviadas <span class="key">purgeDays</span></label>
-          <input type="number" id="f_anprPurge" min="1" max="90" value="7">
-          <div class="hint">Las lecturas ya confirmadas por Aditum se borran del equipo pasado ese tiempo. Las pendientes nunca se borran.</div>
-        </div>
       </div>
     </div>
 
@@ -683,11 +718,12 @@
                      24, 26, 29, 31, 32, 33, 35, 36, 37, 38, 40];
   // Orden historico de relays (config-default): defaults de portones nuevos
   const DEFAULT_GATE_PINS = [7, 11, 12, 13, 15, 16, 18, 22, 29, 35];
+  let statusInfo = {};      // ultimo GET /status (lanIp, provisioned, ...)
   let detectedCameras = []; // [{index, name}] segun /health
   let detectedInputs = [];  // [{path, name, phys}] segun /health
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  const API_BASE = 'https://caseta.aditumcr.com/api';
+  const API_BASE_DEFAULT = 'https://caseta.aditumcr.com/api';
   const deviceType = () => $('f_deviceType').value;
   function deriveDeviceType(cfg) {
     if (cfg.screen && cfg.screen.hasScreen) return 'pedestal';
@@ -728,6 +764,7 @@
       const st = await stResp.json();
       const cfg = await cfgResp.json();
 
+      statusInfo = st;  // lo lee la seccion ANPR para armar las URLs
       deviceIdFromStatus = st.deviceId || '';
       $('hdrWho').innerHTML = esc(st.deviceId || 'sin identidad') +
         (st.placeName ? ' <span class="place">· ' + esc(st.placeName) + '</span>' : '');
@@ -806,10 +843,12 @@
 
     // ANPR (placas)
     const anpr = cfg.anpr || {};
+    setVal('f_apiBase', (cfg.api && cfg.api.baseUrl) || API_BASE_DEFAULT);
     setChk('f_anprEnabled', anpr.enabled !== false);
     setVal('f_anprPurge', anpr.purgeDays !== undefined ? anpr.purgeDays : 7);
     anprCamsState = clone(anpr.cameras || []);
     renderAnprCams();
+    refreshAnprUrls();
 
     applyConditionalVisibility();
     renderScanners();
@@ -1040,6 +1079,59 @@
     renderAnprCams();
   }
 
+  // URLs de las dos patas del flujo, armadas con lo que el equipo ya sabe:
+  // hacia Aditum sale de api.baseUrl; hacia la camara, de la IP en la LAN.
+  function refreshAnprUrls() {
+    const base = (txt($('f_apiBase')) || API_BASE_DEFAULT).replace(/\/+$/, '');
+    $('anprPostUrl').textContent = base + '/aditum-gate/anpr-events';
+
+    const ip = (statusInfo && statusInfo.lanIp) || '';
+    const camUrl = $('anprCamUrl');
+    if (ip) {
+      camUrl.value = 'http://' + ip + '/anpr-event';
+    } else {
+      // Sin IP detectada no se inventa una: se dice que falta.
+      camUrl.value = '';
+      camUrl.placeholder = 'No se pudo detectar la IP de este equipo en la red';
+    }
+
+    const tok = $('anprTokenState');
+    if (statusInfo && statusInfo.provisioned === false) {
+      tok.innerHTML = ' <b class="txt-warn">Este equipo todavía no tiene token: las lecturas se van a encolar pero no se van a enviar hasta asignarlo en Seguridad.</b>';
+    } else {
+      tok.textContent = '';
+    }
+  }
+
+  async function loadAnprStatus() {
+    const body = $('anprStatusBody');
+    body.innerHTML = '<p class="hint">Consultando…</p>';
+    try {
+      const r = await fetch('/anpr-status', fetchOpts());
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const recent = d.recent || [];
+      let html = '<div class="chips" style="margin:8px 0">' +
+        '<span class="chip">Pendientes de enviar: <b>' + d.pending + '</b></span>' +
+        '<span class="chip">Ya confirmadas: <b>' + d.sent + '</b></span></div>';
+      if (!recent.length) {
+        html += '<p class="hint">Todavía no llegó ninguna lectura a este equipo.</p>';
+      } else {
+        html += '<table class="tbl"><thead><tr><th>Placa</th><th>Capturada</th>' +
+          '<th>Portón</th><th>Estado</th></tr></thead><tbody>' +
+          recent.map((e) => '<tr><td>' + esc(e.license_plate) + '</td>' +
+            '<td>' + esc(e.captured_at) + '</td>' +
+            '<td>' + (e.gate_id === null || e.gate_id === undefined ? '—' : e.gate_id) + '</td>' +
+            '<td>' + (e.status === 'sent' ? 'Enviada'
+              : 'Pendiente' + (e.attempts ? ' (' + e.attempts + ' intentos: ' + esc(e.last_error || '') + ')' : '')) +
+            '</td></tr>').join('') + '</tbody></table>';
+      }
+      body.innerHTML = html;
+    } catch (e) {
+      body.innerHTML = '<p class="hint txt-bad">No se pudo consultar la cola: ' + esc(String(e.message || e)) + '</p>';
+    }
+  }
+
   function addGate() {
     syncGatesFromDOM();
     const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
@@ -1176,7 +1268,8 @@
     const isPedestal = (t === 'pedestal');
     const hikOn = hasGates && $('f_hikEnabled').checked;
 
-    cfg.api = { baseUrl: API_BASE, verifierStyle: $('f_verifierStyle').value };
+    cfg.api = { baseUrl: txt($('f_apiBase')) || API_BASE_DEFAULT,
+                verifierStyle: $('f_verifierStyle').value };
 
     if (hasReaders) {
       cfg.scannerType = ($('f_scannerType').value === 'opencv') ? 'opencv' : 'hid';
@@ -1258,7 +1351,7 @@
       if (camIps.includes(cam.ip)) errs.push('Cámara ANPR ' + (i + 1) + ': la IP ' + cam.ip + ' está repetida');
       camIps.push(cam.ip);
     });
-    if (cfg.anpr.purgeDays < 1 || cfg.anpr.purgeDays > 90) errs.push('anpr.purgeDays debe estar entre 1 y 90');
+    if (cfg.anpr.purgeDays < 0 || cfg.anpr.purgeDays > 90) errs.push('Los días de retención de lecturas deben estar entre 0 y 90');
     return errs;
   }
 
@@ -1647,6 +1740,21 @@
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
   $('btnAddAnprCam').addEventListener('click', addAnprCam);
+  $('btnAnprStatus').addEventListener('click', loadAnprStatus);
+  $('f_apiBase').addEventListener('input', refreshAnprUrls);
+  $('btnCopyAnprUrl').addEventListener('click', async () => {
+    const url = $('anprCamUrl').value;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      const b = $('btnCopyAnprUrl');
+      b.textContent = 'Copiada';
+      setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
+    } catch (e) {
+      // Sin permiso de portapapeles (http sin localhost): seleccionar y listo
+      $('anprCamUrl').select();
+    }
+  });
   ['f_npEnabled', 'f_wdEnabled', 'f_hikEnabled', 'f_anprEnabled'].forEach((id) =>
     $(id).addEventListener('change', applyConditionalVisibility));
 

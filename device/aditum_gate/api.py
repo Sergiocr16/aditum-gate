@@ -178,6 +178,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             "gates": [g["id"] for g in gates.status_all()],
             "hikvisionEnabled": settings.hikvision_enabled,
             "pollingEnabled": settings.polling_enabled,
+            "anprEnabled": settings.anpr_enabled,
+            # Para armar la URL que se le configura a la camara ANPR
+            "lanIp": health.lan_ipv4(),
         })
 
     @app.route("/health")

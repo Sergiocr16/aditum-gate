@@ -17,7 +17,9 @@ Decisiones clave:
   - Reenvio uno-por-uno en orden de llegada (id autoincremental) con backoff
     5s → 5min. Sin token de dispositivo no se reenvia (quedan encolados).
   - Purga: los eventos ya confirmados por Aditum se borran despues de
-    `purgeDays` dias (unica excepcion al no-DELETE: es una cola, no historial).
+    `purgeDays` dias, o al instante si `purgeDays` es 0 (unica excepcion al
+    no-DELETE: es una cola, no historial). Lo PENDIENTE no se borra nunca:
+    se reintenta hasta que Aditum lo confirme.
 """
 import logging
 import sqlite3
@@ -165,6 +167,10 @@ class AnprEventStore:
                 "WHERE id=?",
                 (datetime.now().astimezone().isoformat(timespec="seconds"), event_id))
 
+    def delete(self, event_id):
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM anpr_event WHERE id=?", (event_id,))
+
     def mark_attempt(self, event_id, error):
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -251,7 +257,13 @@ class AnprEventForwarder(threading.Thread):
                 continue
             ok, error = self._forward(row)
             if ok:
-                self.store.mark_sent(row["id"])
+                # Confirmado por Aditum: sale de la cola. Con purgeDays > 0 se
+                # conserva un rato como evidencia (lo que muestra /anpr-status
+                # y sirve para auditar un cutover); con 0 se borra al instante.
+                if self.settings.anpr_purge_days == 0:
+                    self.store.delete(row["id"])
+                else:
+                    self.store.mark_sent(row["id"])
                 log.info("Evento ANPR %s reenviado (placa %s, capturado %s)",
                          row["event_uid"], row["license_plate"],
                          row["captured_at"])

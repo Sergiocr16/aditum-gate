@@ -116,7 +116,7 @@
             }
           }
         },
-        "purgeDays": { "type": "integer", "minimum": 1, "default": 7, "description": "Dias que se conservan los eventos ya confirmados por Aditum antes de purgarlos" }
+        "purgeDays": { "type": "integer", "minimum": 0, "maximum": 90, "default": 7, "description": "Dias que se conservan las lecturas ya confirmadas por Aditum antes de borrarlas. 0 = borrarlas apenas Aditum confirma (la cola queda solo con lo pendiente)" }
       }
     },
     "polling": {

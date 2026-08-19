@@ -7,6 +7,7 @@ Cada bloque falla de forma aislada: un error en uno no tumba el reporte.
 """
 import json
 import logging
+import socket
 import os
 import subprocess
 import time
@@ -238,6 +239,26 @@ def services_status(settings):
                 svc["online"] = web["online"]
 
     return {"services": services, "pm2Available": pm2 is not None}
+
+
+def lan_ipv4():
+    """IP del equipo en la LAN del condominio.
+
+    Es el dato que hay que escribirle a la camara en su Alarm Server, asi que
+    el editor lo muestra ya armado. Se resuelve abriendo un socket UDP a una
+    IP externa (no manda un solo paquete: solo fuerza al kernel a elegir la
+    interfaz de salida y su direccion) — sobrevive a que el equipo tenga
+    varias interfaces (eth0/wlan0) y no depende de parsear `ip addr`.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        return ip if not ip.startswith("127.") else None
+    except OSError:
+        return None
+    finally:
+        sock.close()
 
 
 def system_status():

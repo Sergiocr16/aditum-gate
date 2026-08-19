@@ -357,7 +357,7 @@ pero contra la lista de placas (ISAPI `licensePlateAuditData`).
 | `/update-plate` | POST | token | Alta o baja de UNA placa. Contrato de `AnprPlateSyncDispatchService` (TAR-1033) |
 | `/sync-plates` | POST | token | Reemplazo COMPLETO de la lista de la cámara (TAR-1037) |
 | `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola: no abre portones ni toca configuración |
-| `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos (soporte y piloto) |
+| `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
 
 Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en los dos
 primeros y `404` en los dos últimos.
@@ -418,13 +418,19 @@ mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
 por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
 `200 {"ignored": true}` para que la cámara no reintente.
 
-**Configuración en el editor local** (`/admin` → Hikvision → *Cámaras ANPR*),
-que se guarda en `anpr.cameras` del documento de configuración:
+**Configuración en el editor local** (`/admin` → **ANPR**), que se guarda en la
+sección `anpr` del documento de configuración. Esa pantalla concentra las dos
+patas del flujo: la **URL de Aditum** a la que se envían las lecturas
+(`api.baseUrl`, editable), la **URL que hay que configurarle a la cámara**
+(`http://<IP del equipo>/anpr-event`, calculada y copiable), las cámaras del
+sitio, la retención, y el estado en vivo de la cola. El token del dispositivo
+se asigna en *Seguridad* — si falta, la pantalla lo advierte, porque las
+lecturas se encolarían sin poder enviarse.
 
 ```json
 "anpr": {
   "enabled": true,
-  "purgeDays": 7,
+  "purgeDays": 7,          // 0 = borrar la lectura apenas Aditum la confirma
   "cameras": [{ "ip": "192.168.68.64", "gateId": 7, "name": "Entrada principal" }]
 }
 ```
