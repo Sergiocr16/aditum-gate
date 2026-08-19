@@ -419,6 +419,29 @@ cualquier IP privada de la LAN si está vacío), y por lo que hace: solo
 encolar. Un heartbeat o un evento sin placa responde `200 {"ignored": true}`
 para que la cámara no reintente.
 
+> El filtro por IP depende de que nginx pase la IP real: el `location =
+> /anpr-event` del template setea `X-Forwarded-For $remote_addr` — con
+> `$proxy_add_x_forwarded_for` una cámara podría anteponer una IP falsa a la
+> real y saltarse el filtro. Sin ese header, Flask vería `127.0.0.1` en todos
+> los eventos (filtro inútil con allowlist vacía, y `403` a todo con
+> allowlist configurada).
+
+**Configuración de la cámara** (`Event → Alarm Setting → Alarm Server`) — el
+cutover del piloto es exactamente este cambio, y el rollback es revertirlo:
+
+| Campo | Antes (flujo legacy) | Ahora (local-first) |
+|---|---|---|
+| Destination IP or Host Name | `caseta.aditumcr.com` | **IP local del Pi** (ej. `192.168.68.100`) |
+| URL | `/api/aditum-gate-plate-reading/{TOKEN_AES}` | `/anpr-event` |
+| Protocol Type | `HTTPS` | `HTTP` |
+| Port No. | `443` | `80` |
+| ANR | ✅ | ✅ (dejarlo: cubre que el Pi esté caído; la cola del Pi cubre que lo esté internet) |
+
+Ya no hace falta token AES en la URL: el evento no viaja por internet, y el
+que lo reenvía a Aditum es el Pi con su token de dispositivo. El endpoint
+legacy `/api/aditum-gate-plate-reading/{token}` queda intacto en el backend
+durante toda la transición, así que una cámara sin migrar sigue funcionando.
+
 ### Pantalla (compatibilidad) y mantenimiento
 
 | Endpoint | Método | Notas |
