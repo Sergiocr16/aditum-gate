@@ -108,34 +108,19 @@
 .bloque-espere { gap: 22px; }
 .bloque-fallo { gap: 12px; }
 
-.consejos {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  max-width: 560px;
-  text-align: left;
+/* El consejo de brillo es el que mas resuelve el fallo: va destacado */
+.subtitulo-brillo {
+  font-size: 27px;
+  font-weight: 800;
+  color: #0a1f33;
+  background: rgba(222, 182, 110, .28);
+  border: 2px solid rgba(185, 138, 47, .45);
+  border-radius: 999px;
+  padding: 8px 22px;
 }
-.consejos li {
-  position: relative;
-  padding-left: 30px;
-  font-size: 21px;
-  font-weight: 700;
-  color: #3c4652;
-  text-wrap: pretty;
-}
-.consejos li::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 11px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #deb66e;
-}
+
+/* Ultima linea del aviso: el respaldo, un escalon por debajo */
+.subtitulo-respaldo { font-size: 22px; color: #66707c; }
 .sello-chico { width: 150px; height: 150px; margin-top: 4px; }
 .sello-chico svg { width: 150px; height: 150px; }
 

@@ -90,13 +90,9 @@
       <!-- Estado local: el dispositivo se quedo sin responder (ver LIMITE_MS) -->
       <div *ngIf="state==7" class="bloque bloque-fallo">
         <h1 class="titulo titulo-saludo">NO SE PUDO VERIFICAR</h1>
-        <p class="subtitulo">No recibimos respuesta a tiempo. Intente de nuevo:</p>
-        <ul class="consejos">
-          <li>Vuelva a mostrar el código QR frente al lector, sin moverlo.</li>
-          <li>Revise que el código siga vigente y sea el de esta visita.</li>
-          <li>Suba el brillo de la pantalla del celular y limpie el lente.</li>
-          <li>Si vuelve a fallar, comuníquese con el oficial de seguridad.</li>
-        </ul>
+        <p class="subtitulo">Vuelva a mostrar el código QR frente al lector, sin moverlo.</p>
+        <p class="subtitulo subtitulo-brillo">{{ consejoBrillo }}</p>
+        <p class="subtitulo subtitulo-respaldo">Si vuelve a fallar, llame al oficial de seguridad.</p>
         <div class="sello sello-chico">
           <span class="halo halo-ambar"></span>
           <svg class="sello-alerta" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">

@@ -12,13 +12,23 @@ const READER_STALE_MS = 60000;
 // y se vuelve al reposo. Pasa cuando el backend autoriza pero nunca llama
 // de vuelta al Pi (red caida, entry point mal configurado).
 const LIMITE_MS: { [state: number]: number } = {
-  6: 20000,  // ESCANEANDO (verify contra el backend + su callback)
+  6: 8000,   // ESCANEANDO (verify contra el backend + su callback)
   3: 90000,  // POR FAVOR ESPERE (el oficial autoriza a mano)
 };
 
 // Estado local (el dispositivo nunca lo manda) para el aviso de fallo
 const ESTADO_FALLO = 7;
-const FALLO_MS = 8000;
+const FALLO_MS = 12000;
+
+// De dia el reflejo del sol tapa el QR y hay que subir el brillo del
+// celular; de noche un brillo alto satura al lector y hay que bajarlo.
+const CR_HORA = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Costa_Rica',
+  hour: 'numeric',
+  hourCycle: 'h23',
+});
+const DIA_DESDE = 6;
+const DIA_HASTA = 18;
 
 // El reloj muestra SIEMPRE la hora de Costa Rica (UTC-6), sin importar la
 // zona horaria configurada en el equipo
@@ -48,6 +58,9 @@ export class AppComponent implements OnInit, OnDestroy {
   ampm: string = '';
   connOk: boolean = true;
   connLabel: string = 'Lector QR activo';
+
+  // Consejo de brillo del aviso de fallo (depende de la hora, ver CR_HORA)
+  consejoBrillo: string = '';
 
   private wsConnected = true;
   private readerOk = true;
@@ -98,6 +111,9 @@ export class AppComponent implements OnInit, OnDestroy {
     this.stateTimer = undefined;
     this.state = state;
     this.name = name;
+    if (state === ESTADO_FALLO) {
+      this.consejoBrillo = this.consejoBrilloActual();
+    }
 
     const limite = LIMITE_MS[state];
     if (limite) {
@@ -105,6 +121,14 @@ export class AppComponent implements OnInit, OnDestroy {
     } else if (state === ESTADO_FALLO) {
       this.stateTimer = setTimeout(() => this.setState(1), FALLO_MS);
     }
+  }
+
+  /** Subir o bajar el brillo del celular segun sea de dia o de noche. */
+  private consejoBrilloActual(): string {
+    const hora = Number(CR_HORA.format(new Date()));
+    return hora >= DIA_DESDE && hora < DIA_HASTA
+      ? 'Suba el brillo del celular.'
+      : 'Baje el brillo del celular.';
   }
 
   private tick() {
