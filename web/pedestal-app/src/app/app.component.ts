@@ -7,6 +7,19 @@ import { CommonModule } from '@angular/common';
 // (el dispositivo manda uno cada 15 s; ver device/aditum_gate/screen.py)
 const READER_STALE_MS = 60000;
 
+// La pantalla nunca se queda pegada: si el dispositivo no reemplaza un
+// estado transitorio dentro de estos lapsos, se muestra el aviso de fallo
+// y se vuelve al reposo. Pasa cuando el backend autoriza pero nunca llama
+// de vuelta al Pi (red caida, entry point mal configurado).
+const LIMITE_MS: { [state: number]: number } = {
+  6: 20000,  // ESCANEANDO (verify contra el backend + su callback)
+  3: 90000,  // POR FAVOR ESPERE (el oficial autoriza a mano)
+};
+
+// Estado local (el dispositivo nunca lo manda) para el aviso de fallo
+const ESTADO_FALLO = 7;
+const FALLO_MS = 8000;
+
 // El reloj muestra SIEMPRE la hora de Costa Rica (UTC-6), sin importar la
 // zona horaria configurada en el equipo
 const CR_TIME = new Intl.DateTimeFormat('en-US', {
@@ -40,6 +53,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private readerOk = true;
   private readerStatusAt = 0;
   private clockInterval?: ReturnType<typeof setInterval>;
+  private stateTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private webSocketService: WebSocketService,
@@ -53,8 +67,7 @@ export class AppComponent implements OnInit, OnDestroy {
     });
 
     this.webSocketService.gateEntry$.subscribe((data: GateEntryDTO) => {
-      this.state = data.state ?? 1;
-      this.name = data.name ?? '';
+      this.setState(data.state ?? 1, data.name ?? '');
     });
 
     this.webSocketService.connected$.subscribe((connected) => {
@@ -76,6 +89,22 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     clearInterval(this.clockInterval);
+    clearTimeout(this.stateTimer);
+  }
+
+  /** Cambia de estado y arma el temporizador que evita quedarse pegado. */
+  private setState(state: number, name = '') {
+    clearTimeout(this.stateTimer);
+    this.stateTimer = undefined;
+    this.state = state;
+    this.name = name;
+
+    const limite = LIMITE_MS[state];
+    if (limite) {
+      this.stateTimer = setTimeout(() => this.setState(ESTADO_FALLO), limite);
+    } else if (state === ESTADO_FALLO) {
+      this.stateTimer = setTimeout(() => this.setState(1), FALLO_MS);
+    }
   }
 
   private tick() {
