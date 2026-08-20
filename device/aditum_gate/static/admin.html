@@ -530,8 +530,8 @@
       <div class="cond" id="anprCond" style="margin-top:20px">
 
         <div class="field">
-          <label for="f_apiBase">URL de Aditum <span class="muted">(a dónde se envían las lecturas)</span> <span class="key">api.baseUrl</span></label>
-          <input type="text" id="f_apiBase" placeholder="https://caseta.aditumcr.com/api">
+          <label for="f_apiBase">URL de Aditum <span class="muted">(a dónde se envían las lecturas · solo lectura)</span> <span class="key">api.baseUrl</span></label>
+          <input type="text" id="f_apiBase" placeholder="https://caseta.aditumcr.com/api" readonly title="Fija: siempre la API de Aditum. Se administra desde el backend." style="opacity:.65; cursor:not-allowed">
           <div class="hint">Base del API. Las lecturas se envían a <code id="anprPostUrl" class="key"></code>,
             autenticadas con el <b>token de este equipo</b> (se asigna en la sección <b>Seguridad</b>).
             <span id="anprTokenState"></span></div>
