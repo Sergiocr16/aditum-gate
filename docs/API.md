@@ -406,6 +406,20 @@ debe fallar en silencio.
 > el bearer. En los logs del Pi solo quedan `requestId`, `action`, `cameraId`,
 > `plateNormalized` e `ip`.
 
+**Qué hace el reenvío con cada respuesta de Aditum** (contrato de TAR-1036):
+
+| Respuesta | Acción |
+|---|---|
+| `200` `RECORDED` o `DUPLICATE` | Éxito — sale de la cola (un duplicado significa que Aditum ya lo tenía) |
+| `400` | **Terminal**: el payload nunca va a ser aceptado (placa ilegible, fecha impresentable). Se marca `failed` con el `reason` y se sigue con el siguiente |
+| `401` | Reintenta — puede ser una rotación de token en curso |
+| `5xx`, timeout, red caída | Reintenta con backoff |
+
+El 400 **tiene** que ser terminal: el reenvío es estrictamente en orden, así que un solo evento
+rechazado para siempre trancaría la cola entera y ninguna lectura posterior llegaría nunca. Las
+descartadas no se borran —quedan visibles en `/anpr-status` y en el editor con su motivo— pero
+salen de la fila de pendientes.
+
 **`POST /anpr-event`** — la cámara postea su `EventNotificationAlert`
 (multipart con el XML + jpgs, o XML crudo). El Pi extrae placa, fecha de
 captura, confianza y `UUID`, y lo encola en SQLite (`anpr-events.db`). Un

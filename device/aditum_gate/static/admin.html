@@ -1143,7 +1143,9 @@
       const recent = d.recent || [];
       let html = '<div class="chips" style="margin:8px 0">' +
         '<span class="chip">Pendientes de enviar: <b>' + d.pending + '</b></span>' +
-        '<span class="chip">Ya confirmadas: <b>' + d.sent + '</b></span></div>';
+        '<span class="chip">Ya confirmadas: <b>' + d.sent + '</b></span>' +
+        (d.failed ? '<span class="chip bad">Descartadas por Aditum: <b>' + d.failed + '</b></span>' : '') +
+        '</div>';
       if (!recent.length) {
         html += '<p class="hint">Todavía no llegó ninguna lectura a este equipo.</p>';
       } else {
@@ -1153,6 +1155,7 @@
             '<td>' + esc(e.captured_at) + '</td>' +
             '<td>' + esc(e.source_ip || '—') + '</td>' +
             '<td>' + (e.status === 'sent' ? 'Enviada'
+              : e.status === 'failed' ? '<span class="txt-bad">Descartada: ' + esc(e.last_error || '') + '</span>'
               : 'Pendiente' + (e.attempts ? ' (' + e.attempts + ' intentos: ' + esc(e.last_error || '') + ')' : '')) +
             '</td></tr>').join('') + '</tbody></table>';
       }

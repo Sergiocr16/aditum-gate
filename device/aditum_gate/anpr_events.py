@@ -16,6 +16,12 @@ Decisiones clave:
     propio receivedAt, por si el reloj de la Pi derrapo en un corte largo.
   - Reenvio uno-por-uno en orden de llegada (id autoincremental) con backoff
     5s → 5min. Sin token de dispositivo no se reenvia (quedan encolados).
+  - Un 400 de Aditum es TERMINAL: el payload nunca va a ser aceptado (placa
+    ilegible, fecha impresentable...). Se marca 'failed' y se sigue con el
+    siguiente. Reintentarlo seria bloquear la cola ENTERA para siempre: el
+    reenvio es estrictamente en orden, asi que la fila mas vieja tranca a
+    todas las de atras. Todo lo demas (401 por rotacion de token, 5xx, red
+    caida) SI se reintenta indefinidamente: un evento valido no se pierde.
   - Purga: los eventos ya confirmados por Aditum se borran despues de
     `purgeDays` dias, o al instante si `purgeDays` es 0 (unica excepcion al
     no-DELETE: es una cola, no historial). Lo PENDIENTE no se borra nunca:
@@ -164,6 +170,15 @@ class AnprEventStore:
         with self._lock, self._connect() as conn:
             conn.execute("DELETE FROM anpr_event WHERE id=?", (event_id,))
 
+    def mark_failed(self, event_id, error):
+        """Terminal: Aditum lo rechazo definitivamente. Sale de la cola de
+        pendientes para no tapar a los que vienen atras, pero NO se borra:
+        queda como evidencia para diagnosticar."""
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE anpr_event SET status='failed', attempts=attempts+1, "
+                "last_error=? WHERE id=?", (str(error)[:200], event_id))
+
     def mark_attempt(self, event_id, error):
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -190,6 +205,9 @@ class AnprEventStore:
             sent = conn.execute(
                 "SELECT COUNT(*) FROM anpr_event WHERE status='sent'"
             ).fetchone()[0]
+            failed = conn.execute(
+                "SELECT COUNT(*) FROM anpr_event WHERE status='failed'"
+            ).fetchone()[0]
             last = conn.execute(
                 "SELECT event_uid, license_plate, captured_at, status, attempts,"
                 " last_error, source_ip FROM anpr_event "
@@ -197,6 +215,7 @@ class AnprEventStore:
             return {
                 "pending": pending,
                 "sent": sent,
+                "failed": failed,
                 "recent": [dict(r) for r in last],
             }
 
@@ -215,10 +234,11 @@ class AnprEventForwarder(threading.Thread):
         return f"{self.settings.api_base_url}/aditum-gate/anpr-events"
 
     def _forward(self, row):
+        """Devuelve (ok, error, permanent). permanent=True => no reintentar."""
         # El token se lee por evento: PUT /token lo rota en memoria.
         token = self.settings.device_token
         if not token:
-            return False, "sin token de dispositivo"
+            return False, "sin token de dispositivo", False
         payload = {
             "eventUid": row["event_uid"],
             "licensePlate": row["license_plate"],
@@ -232,10 +252,22 @@ class AnprEventForwarder(threading.Thread):
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=FORWARD_TIMEOUT)
         except Exception as e:  # red caida: se reintenta con backoff
-            return False, str(e)[:120]
+            return False, str(e)[:120], False
         if resp.ok:
-            return True, None
-        return False, f"http_{resp.status_code}"
+            # 200 cubre RECORDED y DUPLICATE: los dos son exito. Un duplicado
+            # significa que Aditum ya lo tenia (reintento tras timeout).
+            return True, None, False
+        if resp.status_code == 400:
+            # Aditum explica el motivo con un enum corto y seguro de guardar
+            # (MISSING_LICENSE_PLATE, UNPARSEABLE_CAPTURED_AT...). No se guarda
+            # el cuerpo completo.
+            reason = ""
+            try:
+                reason = (resp.json() or {}).get("reason") or ""
+            except ValueError:
+                pass
+            return False, f"http_400 {reason}".strip(), True
+        return False, f"http_{resp.status_code}", False
 
     def run(self):
         log.info("Forwarder ANPR iniciado → %s", self._events_url())
@@ -245,7 +277,16 @@ class AnprEventForwarder(threading.Thread):
             if row is None:
                 time.sleep(IDLE_POLL)
                 continue
-            ok, error = self._forward(row)
+            ok, error, permanent = self._forward(row)
+            if not ok and permanent:
+                # Descartar y SEGUIR: no dormir ni aplicar backoff, el proximo
+                # evento no tiene la culpa del payload de este.
+                self.store.mark_failed(row["id"], error)
+                log.error("Evento ANPR %s DESCARTADO por Aditum (%s): placa %s "
+                          "capturada %s. No se reintenta.",
+                          row["event_uid"], error, row["license_plate"],
+                          row["captured_at"])
+                continue
             if ok:
                 # Confirmado por Aditum: sale de la cola. Con purgeDays > 0 se
                 # conserva un rato como evidencia (lo que muestra /anpr-status
