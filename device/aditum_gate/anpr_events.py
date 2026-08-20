@@ -8,6 +8,9 @@ dispositivo. El backend deduplica por eventUid, asi que reintentar tras un
 timeout nunca duplica bitacora.
 
 Decisiones clave:
+  - Solo se encolan lecturas del ALLOW LIST: el evento trae <vehicleListName>
+    y se descartan blackList/otherList (y las placas 'unknown' ilegibles). El
+    gate lo abre la camara localmente; la bitacora es solo de autorizadas.
   - eventUid: se usa el <UUID> que emite la propia camara cuando viene (estable
     ante reintentos del lado camara); si falta, uuid4 generado aqui. Siempre
     minusculas hex+guiones → seguro ante el UNIQUE case-insensitive de MySQL.
@@ -99,6 +102,15 @@ def parse_event_xml(xml_bytes):
 
     plate = _text_of(root, "licensePlate") or _text_of(root, "originalLicensePlate")
     if not plate or plate.strip().lower() in _NO_PLATE_SENTINELS:
+        return None
+
+    # Solo van a la bitacora las lecturas que la camara matcheo contra el ALLOW
+    # LIST. El evento trae <vehicleListName>: whiteList (autorizada), blackList
+    # (vetada) u otherList (no esta en ninguna lista); se descarta lo que no sea
+    # whiteList. Si el firmware no reporta el campo, no se filtra (fallback
+    # seguro: nunca descartar una autorizada por falta del dato).
+    vehicle_list = (_text_of(root, "vehicleListName") or "").strip().lower()
+    if vehicle_list and vehicle_list != "whitelist":
         return None
 
     camera_uuid = (_text_of(root, "UUID") or "").strip().lower()
