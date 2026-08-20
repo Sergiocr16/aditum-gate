@@ -29,13 +29,20 @@ elif [ -z "$token" ]; then
 fi
 [ -n "$token" ] || { echo "Sin token: nada que hacer"; exit 1; }
 
+# Probar ANTES de guardar: un token vencido pisando al bueno deja el equipo
+# sin actualizaciones, que es justo lo que este mecanismo evita.
+if ! github_token_check "$token" "$REPO_URL"; then
+  echo "FALLO: ese token no pudo leer $REPO_URL (no se cambio nada)" >&2
+  echo "Revisar que tenga acceso de lectura al repo y que no haya expirado." >&2
+  exit 1
+fi
+
 github_token_save "$token"
 echo "Token guardado en $GH_TOKEN_FILE (root, 600)"
 
 if github_repo_reachable "$REPO_URL"; then
-  echo "OK: el repo $REPO_URL se puede leer con este token"
+  echo "OK: el repo $REPO_URL se puede leer con la credencial instalada"
 else
-  echo "FALLO: el token no pudo leer $REPO_URL" >&2
-  echo "Revisar que sea un token con acceso de lectura al repo y que no haya expirado." >&2
+  echo "FALLO: la credencial quedo instalada pero el repo no se pudo leer" >&2
   exit 1
 fi

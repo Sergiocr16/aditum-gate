@@ -78,6 +78,7 @@ Reglas:
 | `/backup` | GET | T/S | Config en formato exportable (respaldo) |
 | `/token` | PUT | especial | Provisión TOFU / rotación |
 | `/token` | DELETE | T/S | Desprovisionar el equipo |
+| `/github-token` | PUT | T/S | Token con el que el equipo lee el repo |
 | `/gateStatus[/<id>]` | GET | T/S | Estado de portones |
 | `/openGate/<id>`, `/closeGate/<id>` | GET | T/S | Pulso de apertura/cierre |
 | `/update-card`, `/cleanup-cards` | POST | T/S | Tarjetas Hikvision |
@@ -129,10 +130,13 @@ usa (usa el token).
   "hasScreen": true,
   "gates": [1, 2],
   "hikvisionEnabled": false,
-  "pollingEnabled": false
+  "pollingEnabled": false,
+  "githubToken": true
 }
 ```
 - `provisioned: false` → mostrar badge **"SIN TOKEN"** en el admin.
+- `githubToken: false` → el equipo no puede leer el repo si es privado: no
+  se va a actualizar más. Mandarle el token con `PUT /github-token`.
 - `configSource: "config-default.json"` → el Pi está operando en modo
   fallback (nunca recibió config); mostrarlo como alerta.
 - `schemaVersion` es la versión de schema que **soporta el código** del Pi;
@@ -310,6 +314,34 @@ TOFU: `GET /status` reporta `provisioned: false`, el API queda **abierto**
 usa al desvincular o resetear un equipo.
 Firmware viejo sin este endpoint responde `405` (con credencial válida) o
 `401` (sin ella).
+
+#### `PUT /github-token` — protegido
+
+Instala en el equipo el token con el que **lee el repo de código** (el
+auto-update es pull-based: sin token y con el repo privado, el equipo se
+queda congelado en la versión que tenga). Pensado para que aditum-jh lo
+mande a la flota desde su variable de entorno, en vez de entrar equipo por
+equipo.
+
+Body: `{"token": "<token de GitHub>"}` (20–512 caracteres, sin espacios).
+
+- OK: `200 {"saved": true, "replaced": <bool>, "repoReadable": true}`.
+  `replaced` indica si el equipo ya tenía uno.
+- Token que no puede leer el repo: `400 {"error": "token rejected", ...}` y
+  **no se cambia nada** — se valida contra GitHub *antes* de guardar, para
+  que un token vencido no deje al equipo sin actualizaciones.
+- Formato inválido: `400 {"error": "invalid token", "details": [...]}`.
+- Firmware viejo sin este endpoint: `405` / `404`.
+
+Es de una sola vía: **no existe `GET /github-token`**, el token no se
+devuelve en ninguna respuesta ni se escribe en los logs. Se guarda en
+`/etc/aditum-gate/github-token` (root `600`, fuera del árbol de git).
+`GET /status` solo reporta su presencia (`githubToken: true|false`).
+
+Debe usarse un token de **solo lectura** del repo (fine-grained,
+`Contents: Read-only`, con vencimiento): es lo único que el equipo necesita.
+Al rotarlo en GitHub hay que reenviarlo a la flota; los equipos que queden
+con el viejo lo delatan en `GET /status` y en `scripts/doctor.sh`.
 
 ### Portones
 

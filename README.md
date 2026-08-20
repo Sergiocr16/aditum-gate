@@ -215,11 +215,23 @@ fuera del árbol de git para que `git clean -fd` no lo borre. De ahí
 el credential helper de git a nivel `--system` (quien clona y actualiza es
 root: bootstrap y el timer).
 
+Dos vías para ponerlo en un equipo ya instalado — las dos validan el token
+contra GitHub **antes** de guardarlo, así un token vencido no deja al equipo
+sin actualizaciones:
+
 ```bash
-# Poner o rotar el token en un equipo ya instalado (lo pide por teclado
-# y lo valida con un ls-remote antes de darlo por bueno):
+# 1. En sitio o por el túnel, un comando (lo pide por teclado):
 sudo bash scripts/set-github-token.sh
+
+# 2. Desde aditum-jh, que lo tiene como variable de entorno, sin entrar al
+#    equipo (ver PUT /github-token en docs/API.md):
+curl -X PUT https://<entry-point>/github-token \
+  -H "Authorization: Bearer <token del dispositivo>" \
+  -H 'Content-Type: application/json' -d '{"token":"<token de GitHub>"}'
 ```
+
+`GET /status` reporta `githubToken: true|false`, así que el backend puede
+listar qué equipos de la flota todavía no lo tienen.
 
 `scripts/self-update.sh` re-aplica la credencial en cada pasada (self-heal) y
 `scripts/doctor.sh` verifica que el token esté y que el repo remoto se pueda

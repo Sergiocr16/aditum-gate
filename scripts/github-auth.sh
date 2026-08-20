@@ -54,6 +54,25 @@ github_repo_reachable() {
     git ls-remote --exit-code "$url" HEAD >/dev/null 2>&1
 }
 
+# ¿Sirve ESTE token, sin tocar todavia lo que el equipo tiene guardado?
+# Se prueba con un archivo de credencial temporal (600) en vez de meter el
+# token en la URL: la linea de comando de git la ve cualquiera con `ps`.
+# Ojo: con el repo aun publico cualquier token pasa (GitHub lo sirve igual).
+github_token_check() {
+  local token="$1" url="$2" probe rc=0
+  [ -n "$token" ] || return 1
+  install -d -m 700 "$(dirname "$GH_CRED_FILE")"
+  probe="$(mktemp "$(dirname "$GH_CRED_FILE")/.probe.XXXXXX")" || return 1
+  chmod 600 "$probe"
+  printf 'https://%s:%s@github.com\n' "$GH_CRED_USER" "$token" > "$probe"
+  GIT_TERMINAL_PROMPT=0 git \
+    -c "credential.https://github.com.helper=store --file=$probe" \
+    -c "credential.https://github.com.username=$GH_CRED_USER" \
+    ls-remote --exit-code "$url" HEAD >/dev/null 2>&1 || rc=1
+  rm -f "$probe"
+  return $rc
+}
+
 # Pide el token por teclado. Vale incluso bajo `curl ... | sudo bash`,
 # porque lee de /dev/tty y no del stdin (que es el script). Sin TTY
 # (systemd, ssh no interactivo) devuelve 1 sin colgarse.

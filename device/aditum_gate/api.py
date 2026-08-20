@@ -14,7 +14,7 @@ from datetime import timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import admin_auth, health
+from . import admin_auth, github_token, health
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
@@ -173,6 +173,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
             "gates": [g["id"] for g in gates.status_all()],
             "hikvisionEnabled": settings.hikvision_enabled,
             "pollingEnabled": settings.polling_enabled,
+            # Solo presencia: si es false y el repo es privado, este equipo
+            # ya no se actualiza (ver PUT /github-token)
+            "githubToken": github_token.is_present(),
         })
 
     @app.route("/health")
@@ -276,6 +279,26 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
         settings.device_token = ""  # efecto inmediato (auth lo lee por request)
         log.warning("Token de dispositivo ELIMINADO: equipo sin provisionar (TOFU abierto)")
         return jsonify({"deprovisioned": True})
+
+    @app.route("/github-token", methods=["PUT"])
+    def put_github_token():
+        # Instala el token con el que ESTE equipo lee el repo (self-update).
+        # Lo manda el backend, que lo tiene como variable de entorno, para no
+        # tener que entrar equipo por equipo. Protegido por el before_request
+        # global (token del dispositivo o sesion admin) y de una sola via: no
+        # existe GET, el token nunca se devuelve ni se loguea.
+        data = request.get_json(silent=True) or {}
+        token = data.get("token", "")
+        problem = github_token.validate(token)
+        if problem:
+            return jsonify({"error": "invalid token", "details": [problem]}), 400
+
+        replaced = github_token.is_present()
+        ok, detail = github_token.save(token)
+        if not ok:
+            # No se toco lo que el equipo tenia: el setter valida antes
+            return jsonify({"error": "token rejected", "details": [detail]}), 400
+        return jsonify({"saved": True, "replaced": replaced, "repoReadable": True})
 
     # ------------------------------------------------------------
     # Portones (GPIO)

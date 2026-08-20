@@ -164,7 +164,10 @@ actualizar también `config-default.json`, los `examples/` y, si aplica,
   `scripts/github-auth.sh` lo convierte en credential helper `--system` y
   bootstrap/self-update/doctor lo usan. Nunca commitear un token: GitHub
   revoca solos los que detecta y quedan en el historial para siempre. Poner
-  o rotar el de un equipo: `sudo bash scripts/set-github-token.sh`.
+  o rotar el de un equipo: `sudo bash scripts/set-github-token.sh`, o
+  `PUT /github-token` desde el backend (una sola via: no hay GET, `/status`
+  solo dice si esta o no). Ambas validan el token contra GitHub antes de
+  guardarlo: un token vencido que pise al bueno deja el equipo sin updates.
 - **Cuidado**: cada Pi ejecuta el `self-update.sh` que tiene EN DISCO, así
   que cambiar el branch trackeado requiere un último push al branch viejo.
   Igual con el token: primero pushear el mecanismo con el repo TODAVÍA
