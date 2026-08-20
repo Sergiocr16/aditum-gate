@@ -32,7 +32,9 @@ NOTA timeouts: el backend corta la conexion a los 5 s (deviceRestTemplate).
 Por eso aqui NO se usa la sesion compartida de httpclient (trae reintentos
 automaticos que multiplican la latencia): cada llamada ISAPI va directa con
 timeouts cortos y un solo intento — si la camara no responde, se devuelve
-504 rapido y el backend reintenta en su proximo ciclo.
+504 rapido y el backend reintenta en su proximo ciclo. Excepcion: el full
+sync (/sync-plates) es bulk y usa ISAPI_SYNC_TIMEOUT mas largo; eso exige que
+el backend suba su read-timeout para ese endpoint en tandem (ver ese constante).
 """
 import csv
 import io
@@ -49,8 +51,14 @@ log = logging.getLogger("aditum.anpr")
 # (connect, read) por llamada ISAPI. Un update-plate hace GET+PUT: peor caso
 # ~2.5s+2.5s, dentro del budget de 5 s del backend en LAN sana.
 ISAPI_TIMEOUT = (2, 2.5)
-# El PUT del full sync sube la lista completa; un poco mas de aire de lectura.
-ISAPI_SYNC_TIMEOUT = (2, 4)
+# El PUT del full sync sube la lista COMPLETA (operacion bulk, no es la apertura
+# en vivo): a ~3.5 ms/placa medido contra la camara del piloto, 1000 placas
+# tardan ~3.5 s y 3000 ~11 s. Se le da mas aire de lectura que a update-plate,
+# pero el Pi NUNCA debe rendirse antes que el backend: este read (12 s) tiene
+# que quedar por DEBAJO del read-timeout que aditum-jh use para /sync-plates
+# (recomendado >= 15 s, en un RestTemplate dedicado; el de 5 s por defecto solo
+# alcanza ~1400 placas). connect corto igual: camara caida se corta rapido.
+ISAPI_SYNC_TIMEOUT = (3, 12)
 
 DEFAULT_CHANNEL = 1
 
