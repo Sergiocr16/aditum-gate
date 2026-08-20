@@ -5,10 +5,12 @@ se veia con `sudo evtest`), el estado de los lectores configurados, el estado
 de los servicios (PM2 y el server web :3000) y metricas basicas del sistema.
 Cada bloque falla de forma aislada: un error en uno no tumba el reporte.
 """
+import fcntl
 import json
 import logging
 import socket
 import os
+import struct
 import subprocess
 import time
 
@@ -241,24 +243,74 @@ def services_status(settings):
     return {"services": services, "pm2Available": pm2 is not None}
 
 
+def _is_private_ipv4(ip):
+    """True si la IP esta en un rango privado (RFC 1918) — la LAN del condo."""
+    if ip.startswith("192.168.") or ip.startswith("10."):
+        return True
+    return any(ip.startswith("172.%d." % octet) for octet in range(16, 32))
+
+
+def _iface_ipv4(ifname):
+    """IPv4 asignada a una interfaz por nombre, via ioctl SIOCGIFADDR (Linux)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        packed = struct.pack("256s", ifname[:15].encode("utf-8"))
+        res = fcntl.ioctl(sock.fileno(), 0x8915, packed)  # SIOCGIFADDR
+        return socket.inet_ntoa(res[20:24])
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def _lan_ipv4_scan():
+    """Recorre las interfaces y devuelve la mejor IPv4 privada de la LAN.
+
+    Es el respaldo para cuando no hay ruta de salida (instalacion en un switch
+    aislado, sin router/Internet todavia): el truco del socket a 8.8.8.8 falla
+    ahi, pero el equipo si tiene IP en la red de la camara. Prefiere rangos
+    privados; ignora loopback (127.x) y link-local (169.254.x). Linux-only
+    (ioctl); en dev sin `if_nameindex` simplemente no encuentra nada.
+    """
+    if not hasattr(socket, "if_nameindex"):
+        return None
+    fallback = None
+    try:
+        ifaces = socket.if_nameindex()
+    except OSError:
+        return None
+    for _idx, name in ifaces:
+        ip = _iface_ipv4(name)
+        if not ip or ip.startswith("127.") or ip.startswith("169.254."):
+            continue
+        if _is_private_ipv4(ip):
+            return ip
+        fallback = fallback or ip
+    return fallback
+
+
 def lan_ipv4():
     """IP del equipo en la LAN del condominio.
 
     Es el dato que hay que escribirle a la camara en su Alarm Server, asi que
-    el editor lo muestra ya armado. Se resuelve abriendo un socket UDP a una
-    IP externa (no manda un solo paquete: solo fuerza al kernel a elegir la
-    interfaz de salida y su direccion) — sobrevive a que el equipo tenga
-    varias interfaces (eth0/wlan0) y no depende de parsear `ip addr`.
+    el editor lo muestra ya armado. Primero abre un socket UDP a una IP externa
+    (no manda un solo paquete: solo fuerza al kernel a elegir la interfaz de
+    salida y su direccion) — sobrevive a que el equipo tenga varias interfaces
+    (eth0/wlan0) y no depende de parsear `ip addr`. Si eso falla (equipo sin
+    ruta a Internet, tipico durante la instalacion en un switch aislado), cae a
+    enumerar las interfaces locales y elegir la IPv4 privada de la LAN.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("8.8.8.8", 80))
         ip = sock.getsockname()[0]
-        return ip if not ip.startswith("127.") else None
+        if not ip.startswith("127."):
+            return ip
     except OSError:
-        return None
+        pass
     finally:
         sock.close()
+    return _lan_ipv4_scan()
 
 
 def system_status():
