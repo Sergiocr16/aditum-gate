@@ -76,6 +76,12 @@ def _text_of(root, name):
     return None
 
 
+# La camara emite "unknown" como placa cuando el OCR no la pudo leer. Es una
+# no-lectura (como un heartbeat): no se encola ni se reenvia a Aditum. Se
+# compara en minusculas por si el firmware varia el casing.
+_NO_PLATE_SENTINELS = {"unknown"}
+
+
 def parse_event_xml(xml_bytes):
     """Extrae los campos del EventNotificationAlert de la camara.
 
@@ -92,7 +98,7 @@ def parse_event_xml(xml_bytes):
         return None
 
     plate = _text_of(root, "licensePlate") or _text_of(root, "originalLicensePlate")
-    if not plate:
+    if not plate or plate.strip().lower() in _NO_PLATE_SENTINELS:
         return None
 
     camera_uuid = (_text_of(root, "UUID") or "").strip().lower()
