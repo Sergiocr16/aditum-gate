@@ -131,12 +131,32 @@ usa (usa el token).
   "gates": [1, 2],
   "hikvisionEnabled": false,
   "pollingEnabled": false,
-  "githubToken": true
+  "githubToken": true,
+  "code": {
+    "branch": "production",
+    "commit": "3a07e9b",
+    "behind": 0,
+    "lastFetchAt": "2026-08-20T18:05:00+00:00",
+    "lastFetchAgoSec": 412
+  }
 }
 ```
 - `provisioned: false` → mostrar badge **"SIN TOKEN"** en el admin.
 - `githubToken: false` → el equipo no puede leer el repo si es privado: no
   se va a actualizar más. Mandarle el token con `PUT /github-token`.
+- `code` es la versión del código que el equipo tiene **en disco**:
+  - `behind`: commits de atraso contra `origin/<branch>` tal como quedó en
+    el último fetch. `0` = al día; `null` = no se pudo determinar.
+  - `lastFetchAgoSec`: segundos desde el último fetch del auto-update. El
+    timer corre cada 15 min, así que un valor **> ~1000 s sostenido
+    significa que el equipo dejó de actualizarse** (típicamente: token
+    vencido o sin token con el repo privado). Va en segundos y no como
+    fecha a propósito: el reloj del Pi puede estar corrido.
+  - No hace llamadas de red: `GET /status` sigue costando milisegundos.
+
+  Con esto Aditum puede listar la flota y ver de un vistazo qué equipos
+  quedaron atrasados, sin token o sin actualizarse. El mismo bloque `code`
+  viene dentro de `GET /health`.
 - `configSource: "config-default.json"` → el Pi está operando en modo
   fallback (nunca recibió config); mostrarlo como alerta.
 - `schemaVersion` es la versión de schema que **soporta el código** del Pi;
@@ -175,6 +195,8 @@ los lectores configurados, el estado de los procesos PM2 y del server web
   ],
   "system": {"cpuTempC": 52.1, "uptimeSec": 86400,
              "memAvailableMb": 512, "memTotalMb": 944},
+  "code": {"branch": "production", "commit": "3a07e9b", "behind": 0,
+           "lastFetchAt": "2026-08-20T18:05:00+00:00", "lastFetchAgoSec": 412},
   "kioskExpected": false
 }
 ```

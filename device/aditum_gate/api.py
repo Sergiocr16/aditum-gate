@@ -176,6 +176,8 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
             # Solo presencia: si es false y el repo es privado, este equipo
             # ya no se actualiza (ver PUT /github-token)
             "githubToken": github_token.is_present(),
+            # Version del codigo y atraso contra el ultimo fetch (sin red)
+            "code": health.code_status(),
         })
 
     @app.route("/health")
