@@ -85,6 +85,13 @@ def _text_of(root, name):
 _NO_PLATE_SENTINELS = {"unknown"}
 
 
+def is_authorized(event):
+    """True si la lectura es del allow list (whiteList) o si la camara no
+    reporto la lista ("" -> fallback: no descartar una autorizada por falta del
+    dato). blackList/otherList => False."""
+    return event.get("vehicleList", "") in ("", "whitelist")
+
+
 def parse_event_xml(xml_bytes):
     """Extrae los campos del EventNotificationAlert de la camara.
 
@@ -104,14 +111,11 @@ def parse_event_xml(xml_bytes):
     if not plate or plate.strip().lower() in _NO_PLATE_SENTINELS:
         return None
 
-    # Solo van a la bitacora las lecturas que la camara matcheo contra el ALLOW
-    # LIST. El evento trae <vehicleListName>: whiteList (autorizada), blackList
-    # (vetada) u otherList (no esta en ninguna lista); se descarta lo que no sea
-    # whiteList. Si el firmware no reporta el campo, no se filtra (fallback
-    # seguro: nunca descartar una autorizada por falta del dato).
+    # <vehicleListName>: resultado del match de la camara contra sus listas —
+    # whiteList (autorizada), blackList (vetada) u otherList (no esta en ninguna);
+    # "" si el firmware no lo reporta. El filtro por allow list lo decide el
+    # caller segun anpr.onlyAuthorized (ver is_authorized), no aca.
     vehicle_list = (_text_of(root, "vehicleListName") or "").strip().lower()
-    if vehicle_list and vehicle_list != "whitelist":
-        return None
 
     camera_uuid = (_text_of(root, "UUID") or "").strip().lower()
     confidence = None
@@ -137,6 +141,7 @@ def parse_event_xml(xml_bytes):
         "capturedAt": captured_at,
         "confidenceLevel": confidence,
         "cameraName": camera_name,
+        "vehicleList": vehicle_list,
     }
 
 
@@ -187,6 +192,13 @@ class AnprEventStore:
     def delete(self, event_id):
         with self._lock, self._connect() as conn:
             conn.execute("DELETE FROM anpr_event WHERE id=?", (event_id,))
+
+    def delete_pending(self):
+        """Borra todas las lecturas pendientes de enviar (no toca sent/failed).
+        Devuelve cuantas borro. Para el boton del editor tras un cutover/pruebas."""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute("DELETE FROM anpr_event WHERE status='pending'")
+            return cur.rowcount
 
     def mark_failed(self, event_id, error):
         """Terminal: Aditum lo rechazo definitivamente. Sale de la cola de

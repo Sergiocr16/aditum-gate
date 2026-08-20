@@ -18,7 +18,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from . import admin_auth, health
 from .anpr import AnprCameraError, http_status_for, normalize_plate
-from .anpr_events import parse_event_xml
+from .anpr_events import parse_event_xml, is_authorized
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
@@ -461,6 +461,11 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         event = parse_event_xml(xml_bytes)
         if event is None:
             return jsonify({"ignored": True})
+        # Switch anpr.onlyAuthorized (default true): solo se encolan lecturas
+        # del allow list (whiteList). En false se encolan todas para revisar.
+        if settings.anpr_only_authorized and not is_authorized(event):
+            return jsonify({"ignored": "no autorizada",
+                            "vehicleList": event["vehicleList"]})
         queued = anpr_store.enqueue(event, source_ip=source_ip)
         log.info("Evento ANPR %s: placa=%s capturado=%s desde=%s (%s)",
                  event["eventUid"], event["licensePlate"], event["capturedAt"],
@@ -521,6 +526,18 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         if anpr_store is None:
             return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
         return jsonify(anpr_store.stats())
+
+    @app.route("/anpr-status/pending", methods=["DELETE"])
+    def anpr_clear_pending():
+        # Protegido por el before_request global. Borra las lecturas PENDIENTES
+        # de enviar (no toca las confirmadas ni las descartadas). Para limpiar la
+        # cola tras pruebas o un cutover, desde el editor. Matchea el regex nginx
+        # de /anpr-status, no necesita ruta nueva.
+        if anpr_store is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
+        deleted = anpr_store.delete_pending()
+        log.warning("Cola ANPR: %s pendientes borradas via /anpr-status/pending", deleted)
+        return jsonify({"deleted": deleted})
 
     # ------------------------------------------------------------
     # Estados de pantalla y LED (compatibilidad con el flujo viejo en que

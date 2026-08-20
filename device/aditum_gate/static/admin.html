@@ -611,9 +611,19 @@
         </div>
 
         <div class="field" style="margin-top:22px">
+          <label class="check"><input type="checkbox" id="f_anprOnlyAuth"> Recibir solo placas autorizadas (allow list)</label>
+          <div class="hint">Activado (recomendado): solo se guardan las lecturas que la cámara matcheó
+            contra su lista blanca. Desactivado: se guardan <b>todas</b> las lecturas para revisar. Las
+            placas ilegibles se ignoran siempre.</div>
+        </div>
+
+        <div class="field" style="margin-top:22px">
           <div class="row" style="justify-content:space-between; align-items:center">
             <label style="margin:0">Estado de la cola</label>
-            <button class="sec sm" id="btnAnprStatus" type="button">Actualizar</button>
+            <div class="row">
+              <button class="sec sm danger" id="btnAnprClear" type="button">Borrar pendientes</button>
+              <button class="sec sm" id="btnAnprStatus" type="button">Actualizar</button>
+            </div>
           </div>
           <div id="anprStatusBody"><p class="hint">Sin consultar.</p></div>
         </div>
@@ -737,6 +747,18 @@
     <div class="row" style="justify-content:flex-end">
       <button class="sec sm" id="btnRestartCancel" type="button">Cancelar</button>
       <button class="sec sm danger" id="btnRestartConfirm" type="button">Sí, reiniciar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="clearModal" hidden>
+  <div class="modal">
+    <h3>Borrar lecturas pendientes</h3>
+    <p>Se borran las lecturas que <b>todavía no se enviaron</b> a Aditum. Las ya confirmadas o
+       descartadas no se tocan. Sirve para limpiar la cola tras pruebas. No se puede deshacer.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="sec sm" id="btnClearCancel" type="button">Cancelar</button>
+      <button class="sec sm danger" id="btnClearConfirm" type="button">Sí, borrar pendientes</button>
     </div>
   </div>
 </div>
@@ -891,6 +913,7 @@
     const anpr = cfg.anpr || {};
     setVal('f_apiBase', (cfg.api && cfg.api.baseUrl) || API_BASE_DEFAULT);
     setChk('f_anprEnabled', anpr.enabled !== false);
+    setChk('f_anprOnlyAuth', anpr.onlyAuthorized !== false);
     setVal('f_anprPurge', anpr.purgeDays !== undefined ? anpr.purgeDays : 7);
     refreshAnprUrls();
 
@@ -1372,6 +1395,7 @@
 
     cfg.anpr = {
       enabled: $('f_anprEnabled').checked,
+      onlyAuthorized: $('f_anprOnlyAuth').checked,
       purgeDays: toInt($('f_anprPurge').value, 7),
     };
 
@@ -1763,6 +1787,25 @@
     if (e.target === $('restartModal')) $('restartModal').hidden = true;
   });
   $('btnRestartConfirm').addEventListener('click', restartService);
+  $('btnAnprClear').addEventListener('click', () => { $('clearModal').hidden = false; });
+  $('btnClearCancel').addEventListener('click', () => { $('clearModal').hidden = true; });
+  $('clearModal').addEventListener('click', (e) => { if (e.target === $('clearModal')) $('clearModal').hidden = true; });
+  $('btnClearConfirm').addEventListener('click', async () => {
+    $('clearModal').hidden = true;
+    const b = $('btnAnprClear'), orig = b.textContent;
+    b.disabled = true; b.textContent = 'Borrando…';
+    try {
+      const r = await fetch('/anpr-status/pending', fetchOpts({ method: 'DELETE' }));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      show('ok', (d.deleted || 0) + ' lectura(s) pendiente(s) borrada(s).');
+      loadAnprStatus();
+    } catch (e) {
+      show('err', 'No se pudo borrar: ' + (e.message || e));
+    } finally {
+      b.disabled = false; b.textContent = orig;
+    }
+  });
   $('btnRemoveToken').addEventListener('click', () => { $('tokenModal').hidden = false; });
   $('btnTokenCancel').addEventListener('click', () => { $('tokenModal').hidden = true; });
   $('tokenModal').addEventListener('click', (e) => {

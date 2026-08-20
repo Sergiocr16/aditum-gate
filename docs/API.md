@@ -356,12 +356,14 @@ pero contra la lista de placas (ISAPI `licensePlateAuditData`).
 |---|---|---|---|
 | `/update-plate` | POST | token | Alta o baja de UNA placa. Contrato de `AnprPlateSyncDispatchService` (TAR-1033) |
 | `/sync-plates` | POST | token | Reemplazo COMPLETO de la lista de la cámara (TAR-1037) |
-| `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola: no abre portones ni toca configuración |
+| `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola (y solo del allow list si `anpr.onlyAuthorized`): no abre portones ni toca configuración |
 | `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
+| `/anpr-status/pending` | DELETE | token | Borra las lecturas **pendientes** de enviar (no toca las confirmadas/descartadas). Botón "Borrar pendientes" del editor, para limpiar tras pruebas o un cutover |
 | `/anpr-test` | POST | token | **Diagnóstico de instalación**: habla directo con una cámara sin pasar por Aditum |
 
-Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en los dos
-primeros y `404` en los dos últimos.
+Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en
+`/update-plate` y `/sync-plates`; `404` en `/anpr-event`, `/anpr-status`,
+`/anpr-status/pending` y `/anpr-test`.
 
 **`POST /update-plate`** — cuerpo:
 
@@ -433,9 +435,15 @@ mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
 por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
 `200 {"ignored": true}` para que la cámara no reintente.
 
+Solo se encolan lecturas del **allow list** (`whiteList`): el evento trae
+`<vehicleListName>` (whiteList/blackList/otherList) con el resultado del match
+de la cámara, y el Pi descarta lo que no sea whiteList cuando
+`anpr.onlyAuthorized = true` (default; switch en el editor). En `false` se
+encolan todas para revisar. Las placas ilegibles (`unknown`) se ignoran siempre.
+
 **Configuración en el editor local** (`/admin` → **ANPR**). Esa pantalla concentra
 las dos patas del flujo: la **URL de Aditum** a la que se envían las lecturas
-(`api.baseUrl`, editable), la **URL que hay que configurarle a la cámara**
+(`api.baseUrl`, solo lectura), la **URL que hay que configurarle a la cámara**
 (`http://<IP del equipo>/anpr-event`, calculada y copiable), la retención y el
 estado en vivo de la cola. El token del dispositivo se asigna en *Seguridad* —
 si falta, la pantalla lo advierte, porque las lecturas se encolarían sin poder

@@ -105,6 +105,8 @@ class Settings:
         anpr = data.get("anpr", {})
         self.anpr_enabled = anpr.get("enabled", True)
         self.anpr_purge_days = anpr.get("purgeDays", 7)
+        # true: solo se encolan lecturas del allow list (whiteList). false: todas.
+        self.anpr_only_authorized = anpr.get("onlyAuthorized", True)
 
 
 def load_settings():
