@@ -51,8 +51,9 @@ log = logging.getLogger("aditum.anpr")
 # (connect, read) por llamada ISAPI. Un update-plate hace GET+PUT: peor caso
 # ~2.5s+2.5s, dentro del budget de 5 s del backend en LAN sana.
 ISAPI_TIMEOUT = (2, 2.5)
-# El PUT del full sync sube la lista COMPLETA (operacion bulk, no es la apertura
-# en vivo): a ~3.5 ms/placa medido contra la camara del piloto, 1000 placas
+# El full sync (export GET + import PUT) mueve la lista COMPLETA (operacion bulk,
+# no es la apertura en vivo): a ~3.5 ms/placa medido contra la camara del piloto
+# en el import (el export ~1.6 ms/placa), 1000 placas
 # tardan ~3.5 s y 3000 ~11 s. Se le da mas aire de lectura que a update-plate,
 # pero el Pi NUNCA debe rendirse antes que el backend: este read (12 s) tiene
 # que quedar por DEBAJO del read-timeout que aditum-jh use para /sync-plates
@@ -127,13 +128,14 @@ class AnprCameraClient:
         return (f"http://{ip}/ISAPI/Traffic/channels/{self.channel}"
                 f"/licensePlateAuditData?fileType=csv")
 
-    def get_plate_rows(self, ip, user, password):
+    def get_plate_rows(self, ip, user, password, timeout=ISAPI_TIMEOUT):
         """Exporta la lista y la devuelve como (header, rows).
 
         `header` es la fila de titulos tal cual la emite el firmware (se reusa
         al reimportar, es device-dependant); `rows` es una lista de filas, cada
-        una una lista de campos en el orden _COL_*."""
-        resp = self._request("GET", self._list_url(ip), user, password)
+        una una lista de campos en el orden _COL_*. En el full sync el export
+        tambien puede ser grande, por eso `timeout` es parametrizable."""
+        resp = self._request("GET", self._list_url(ip), user, password, timeout=timeout)
         if resp.status_code == 401:
             raise AnprCameraError("CAMERA_AUTH", "digest auth rechazada")
         if resp.status_code != 200:
@@ -257,7 +259,13 @@ class AnprCameraClient:
                 "LIST_FULL",
                 f"{len(plates_normalized)} placas > capacidad {capacity}")
         # Solo se reusa el header del export; las filas viejas se descartan.
-        header, _rows = self.get_plate_rows(ip, user, password)
+        # El export usa el MISMO timeout largo que el import: en el full sync
+        # ambas llamadas escalan con el tamano de la lista (~1.6 ms/placa el
+        # export, ~3.5 ms/placa el import), asi que un export de >~1500 placas
+        # se cortaria a los 2.5s por defecto y la capacidad real nunca llegaria
+        # a las ~3000 que habilita el import.
+        header, _rows = self.get_plate_rows(ip, user, password,
+                                            timeout=ISAPI_SYNC_TIMEOUT)
         rows, seen = [], set()
         for plate in plates_normalized:
             if not plate or plate in seen:
