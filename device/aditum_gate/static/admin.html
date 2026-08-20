@@ -270,6 +270,22 @@
   .chip.warn{ background:var(--warn-bg); color:var(--warn); border-color:var(--warn-line); }
   .chip.warn::before{ background:var(--warn); }
 
+  /* ---------- Tabla de log (cola ANPR) ---------- */
+  .tbl-wrap{ overflow-x:auto; margin-top:12px; border:1px solid var(--line); border-radius:var(--radius-sm); }
+  .tbl{ width:100%; min-width:440px; border-collapse:separate; border-spacing:0; font-size:13px; background:var(--card); }
+  .tbl thead th{ text-align:left; font-size:10.5px; font-weight:800; letter-spacing:.05em;
+        text-transform:uppercase; color:var(--mut); background:#f3f7fc;
+        padding:9px 13px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  .tbl tbody td{ padding:9px 13px; border-bottom:1px solid var(--line); color:var(--txt); vertical-align:middle; }
+  .tbl tbody tr:last-child td{ border-bottom:0; }
+  .tbl tbody tr:nth-child(even) td{ background:#fafcff; }
+  .tbl tbody tr:hover td{ background:#f0f6fd; }
+  .tbl .plate{ font:700 13px/1.1 var(--mono); letter-spacing:.03em; color:var(--ink); }
+  .tbl .cam{ font:12px/1.1 var(--mono); color:var(--mut); }
+  .tbl .when{ color:var(--txt); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .tbl .reason{ display:block; margin-top:4px; font-size:11px; line-height:1.35; color:var(--mut); }
+  .badge.warn{ background:var(--warn-bg); color:var(--warn); border:1px solid var(--warn-line); }
+
   /* ---------- Inline message ---------- */
   #msg{ margin-top:14px; font-size:14px; font-weight:500; line-height:1.5; white-space:pre-wrap; }
   #msg:empty{ display:none; }
@@ -1149,15 +1165,24 @@
       if (!recent.length) {
         html += '<p class="hint">Todavía no llegó ninguna lectura a este equipo.</p>';
       } else {
-        html += '<table class="tbl"><thead><tr><th>Placa</th><th>Capturada</th>' +
-          '<th>Cámara</th><th>Estado</th></tr></thead><tbody>' +
-          recent.map((e) => '<tr><td>' + esc(e.license_plate) + '</td>' +
-            '<td>' + esc(e.captured_at) + '</td>' +
-            '<td>' + esc(e.source_ip || '—') + '</td>' +
-            '<td>' + (e.status === 'sent' ? 'Enviada'
-              : e.status === 'failed' ? '<span class="txt-bad">Descartada: ' + esc(e.last_error || '') + '</span>'
-              : 'Pendiente' + (e.attempts ? ' (' + e.attempts + ' intentos: ' + esc(e.last_error || '') + ')' : '')) +
-            '</td></tr>').join('') + '</tbody></table>';
+        html += '<div class="tbl-wrap"><table class="tbl anpr-log"><thead><tr>' +
+          '<th>Placa</th><th>Capturada</th><th>Cámara</th><th>Estado</th>' +
+          '</tr></thead><tbody>' +
+          recent.map((e) => {
+            const w = String(e.captured_at || '').replace('T', ' ').slice(0, 16);
+            const st = e.status === 'sent'
+              ? '<span class="badge ok">Enviada</span>'
+              : e.status === 'failed'
+                ? '<span class="badge bad">Descartada</span>' +
+                  (e.last_error ? '<span class="reason">' + esc(e.last_error) + '</span>' : '')
+                : '<span class="badge warn">Pendiente</span>' +
+                  (e.attempts ? '<span class="reason">' + e.attempts + ' intento' + (e.attempts > 1 ? 's' : '') +
+                    (e.last_error ? ': ' + esc(e.last_error) : '') + '</span>' : '');
+            return '<tr><td><span class="plate">' + esc(e.license_plate) + '</span></td>' +
+              '<td class="when">' + esc(w) + '</td>' +
+              '<td><span class="cam">' + esc(e.source_ip || '—') + '</span></td>' +
+              '<td>' + st + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
       }
       body.innerHTML = html;
     } catch (e) {
