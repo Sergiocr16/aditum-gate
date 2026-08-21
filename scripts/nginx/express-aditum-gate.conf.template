@@ -21,8 +21,24 @@ server {
   # pedestales), para que /admin y el Entry Point del backend funcionen
   # con la misma URL de tunel en todas las variantes. Un endpoint Flask
   # nuevo que deba ser alcanzable via :80 se agrega a esta lista.
-  location ~ ^/(admin|backup|cleanup-cards|closeGate|code-accepted|code-denied|config|gateStatus|github-token|health|openGate|reboot|restart-server|restart|status|token|update-card|wait-for-response)($|/) {
-    # /update-card puede traer foto para terminales Hikvision
+  # Eventos de la camara ANPR (TAR-1035). Va PRIMERO y aparte porque es el
+  # unico endpoint al que postea un tercero en la LAN (la camara, que no
+  # sabe mandar bearer): Flask filtra por IP de origen, y esa IP solo puede
+  # llegarle desde aca. Se fija con $remote_addr (NO
+  # $proxy_add_x_forwarded_for): asi un XFF que mande la camara se DESCARTA
+  # en vez de anteponerse al real, que es lo que lee Flask.
+  location = /anpr-event {
+    # multipart con el XML del evento + las fotos (deteccion y placa)
+    client_max_body_size 10m;
+    proxy_pass http://localhost:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+  }
+
+  location ~ ^/(admin|anpr-status|anpr-test|backup|cleanup-cards|closeGate|code-accepted|code-denied|config|gateStatus|github-token|health|openGate|reboot|restart-server|restart|status|sync-plates|token|update-card|update-plate|wait-for-response)($|/) {
+    # /update-card puede traer foto para terminales Hikvision;
+    # /sync-plates sube la lista completa de placas del condominio
     client_max_body_size 10m;
     proxy_pass http://localhost:8080;
     proxy_http_version 1.1;

@@ -400,6 +400,170 @@ normalmente cerrado el reposo lee `0`.
 
 Si el Pi no tiene Hikvision habilitado → `400`.
 
+### ANPR local-first (cámaras de placas)
+
+La lista de placas autorizadas vive **dentro de la cámara ANPR**: la cámara
+autoriza y abre sola, sin internet. Aditum mantiene esa lista empujando
+cambios al Pi, y las lecturas viajan de vuelta por una cola local que
+sobrevive cortes de conexión. Análogo a `/update-card` con terminales QR,
+pero contra la lista de placas (ISAPI `licensePlateAuditData`).
+
+| Endpoint | Método | Auth | Notas |
+|---|---|---|---|
+| `/update-plate` | POST | token | Alta o baja de UNA placa. Contrato de `AnprPlateSyncDispatchService` (TAR-1033) |
+| `/sync-plates` | POST | token | Reemplazo COMPLETO de la lista de la cámara (TAR-1037) |
+| `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola (y solo del allow list si `anpr.onlyAuthorized`): no abre portones ni toca configuración |
+| `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
+| `/anpr-status/pending` | DELETE | token | Borra las lecturas **pendientes** de enviar (no toca las confirmadas/descartadas). Botón "Borrar pendientes" del editor, para limpiar tras pruebas o un cutover |
+| `/anpr-test` | POST | token | **Diagnóstico de instalación**: habla directo con una cámara sin pasar por Aditum |
+
+Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en
+`/update-plate` y `/sync-plates`; `404` en `/anpr-event`, `/anpr-status`,
+`/anpr-status/pending` y `/anpr-test`.
+
+**`POST /update-plate`** — cuerpo:
+
+```json
+{
+  "requestId": "48211", "action": "ADD",
+  "cameraId": 12, "plate": "ABC-123", "plateNormalized": "ABC123",
+  "cameras": [{ "ip": "10.8.0.31", "user": "admin", "password": "..." }]
+}
+```
+
+`plateNormalized` (`[A-Z0-9]+`) es la **identidad** de la placa y es lo que se
+guarda en la cámara; `plate` es informativa. Las credenciales de la cámara
+viajan en el payload (el Pi es *stateless*: las usa y las descarta, igual que
+`terminals` en `/update-card`).
+
+**`POST /sync-plates`** — igual, con `"plates": [{plate, plateNormalized}, …]`
+en vez de una placa; deja la cámara exactamente con esa lista.
+
+**Idempotencia** (obligatoria por contrato): `ADD` de una placa ya presente
+responde `200` con `detail: "already_present_noop"`, y `DELETE` de una
+inexistente `200` con `"not_found_noop"`. El backend recalcula el estado
+deseado contra la base antes de despachar, así que reintentar nunca es
+incorrecto.
+
+**Códigos que devuelve el Pi** (el backend solo mira el HTTP: `2xx` = éxito,
+cualquier otra cosa = fallo reintentable):
+
+| HTTP | Cuándo | `error` |
+|---|---|---|
+| `200` | Aplicado o no-op idempotente | — |
+| `400` | Falta `action`, `plateNormalized` o `cameras` | — |
+| `401` | Bearer ausente/inválido (Pi provisionado) | — |
+| `502` | La cámara respondió con error | `CAMERA_ERROR`, `CAMERA_AUTH`, `LIST_FULL` |
+| `504` | No se alcanzó la cámara a tiempo | `CAMERA_UNREACHABLE`, `CAMERA_TIMEOUT` |
+
+`LIST_FULL` es explícito a propósito: la cámara tiene un máximo de placas
+(`plateListNum` de `/ISAPI/Traffic/capabilities`) y quedarse sin espacio no
+debe fallar en silencio.
+
+> El cuerpo de error **nunca** ecoa el request: ni credenciales de cámara, ni
+> el bearer. En los logs del Pi solo quedan `requestId`, `action`, `cameraId`,
+> `plateNormalized` e `ip`.
+
+**Qué hace el reenvío con cada respuesta de Aditum** (contrato de TAR-1036):
+
+| Respuesta | Acción |
+|---|---|
+| `200` `RECORDED` o `DUPLICATE` | Éxito — sale de la cola (un duplicado significa que Aditum ya lo tenía) |
+| `400` | **Terminal**: el payload nunca va a ser aceptado (placa ilegible, fecha impresentable). Se marca `failed` con el `reason` y se sigue con el siguiente |
+| `401` | Reintenta — puede ser una rotación de token en curso |
+| `5xx`, timeout, red caída | Reintenta con backoff |
+
+El 400 **tiene** que ser terminal: el reenvío es estrictamente en orden, así que un solo evento
+rechazado para siempre trancaría la cola entera y ninguna lectura posterior llegaría nunca. Las
+descartadas no se borran —quedan visibles en `/anpr-status` y en el editor con su motivo— pero
+salen de la fila de pendientes.
+
+**`POST /anpr-event`** — la cámara postea su `EventNotificationAlert`
+(multipart con el XML + jpgs, o XML crudo). El Pi extrae placa, fecha de
+captura, confianza y `UUID`, y lo encola en SQLite (`anpr-events.db`). Un
+thread los reenvía **en orden** a `POST {api}/aditum-gate/anpr-events` con el
+token del dispositivo, con backoff de 5 s a 5 min; Aditum deduplica por
+`eventUid`, así que un reintento tras timeout no duplica bitácora. Los
+eventos confirmados se purgan a los `anpr.purgeDays` días.
+
+Es el **único** endpoint público además de `/` y el editor: la cámara no sabe
+mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
+por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
+`200 {"ignored": true}` para que la cámara no reintente.
+
+Solo se encolan lecturas del **allow list** (`whiteList`): el evento trae
+`<vehicleListName>` (whiteList/blackList/otherList) con el resultado del match
+de la cámara, y el Pi descarta lo que no sea whiteList cuando
+`anpr.onlyAuthorized = true` (default; switch en el editor). En `false` se
+encolan todas para revisar. Las placas ilegibles (`unknown`) se ignoran siempre.
+
+**Configuración en el editor local** (`/admin` → **ANPR**). Esa pantalla concentra
+las dos patas del flujo: la **URL de Aditum** a la que se envían las lecturas
+(`api.baseUrl`, solo lectura), la **URL que hay que configurarle a la cámara**
+(`http://<IP del equipo>/anpr-event`, calculada y copiable), la retención y el
+estado en vivo de la cola. El token del dispositivo se asigna en *Seguridad* —
+si falta, la pantalla lo advierte, porque las lecturas se encolarían sin poder
+enviarse.
+
+```json
+"anpr": { "enabled": true, "purgeDays": 7 }
+```
+
+`purgeDays` en `0` borra la lectura apenas Aditum la confirma. Lo **pendiente no
+se borra nunca**: se reintenta hasta que Aditum responda OK.
+
+**`POST /anpr-test`** — para validar la instalación en sitio, desde `/admin` →
+**ANPR** → *Probar la conexión con una cámara*:
+
+```json
+{ "ip": "192.168.68.64", "user": "admin", "password": "…",
+  "action": "CHECK" | "ADD" | "DELETE", "plate": "ABC-123" }
+```
+
+`CHECK` es de **solo lectura**: confirma IP, credenciales y soporte ISAPI, y
+devuelve cuántas placas tiene la cámara, su capacidad y una muestra. `ADD` y
+`DELETE` sí modifican la lista (idempotentes, mismos `detail` que
+`/update-plate`); la placa se normaliza igual que en producción, así que
+tecleando `sjb-123` se manda `SJB123`. Los errores se devuelven con el mismo
+código del contrato (`CAMERA_AUTH`, `CAMERA_UNREACHABLE`, `LIST_FULL`…), que el
+editor traduce a lenguaje de instalación.
+
+Las credenciales se reciben **solo para la prueba**: no se guardan ni se
+loguean. El `ip` debe ser de la red privada — sin ese guard el endpoint
+convertiría al Pi en un proxy para golpear cualquier host de internet con las
+credenciales que le pasen (SSRF). Acepta puerto (`192.168.1.64:8000`).
+
+> **La dirección y las credenciales de las cámaras NO se configuran en el Pi.**
+> Viven en Aditum (*Acceso y ANPR* → Cámaras ANPR, tabla `anpr_camera`) y llegan
+> en el payload de cada `/update-plate` y `/sync-plates`. Duplicarlas en cada
+> equipo sería una segunda fuente de verdad que se desincroniza en cuanto alguien
+> cambia una IP. Por eso el filtro de `/anpr-event` es la LAN privada y no una
+> lista local: lo que autoriza de verdad no es la IP, es que el endpoint solo
+> encola.
+
+> El filtro por IP depende de que nginx pase la IP real: el `location =
+> /anpr-event` del template setea `X-Forwarded-For $remote_addr` — con
+> `$proxy_add_x_forwarded_for` una cámara podría anteponer una IP falsa a la
+> real y saltarse el filtro. Sin ese header, Flask vería `127.0.0.1` en todos
+> los eventos (filtro inútil con allowlist vacía, y `403` a todo con
+> allowlist configurada).
+
+**Configuración de la cámara** (`Event → Alarm Setting → Alarm Server`) — el
+cutover del piloto es exactamente este cambio, y el rollback es revertirlo:
+
+| Campo | Antes (flujo legacy) | Ahora (local-first) |
+|---|---|---|
+| Destination IP or Host Name | `caseta.aditumcr.com` | **IP local del Pi** (ej. `192.168.68.100`) |
+| URL | `/api/aditum-gate-plate-reading/{TOKEN_AES}` | `/anpr-event` |
+| Protocol Type | `HTTPS` | `HTTP` |
+| Port No. | `443` | `80` |
+| ANR | ✅ | ✅ (dejarlo: cubre que el Pi esté caído; la cola del Pi cubre que lo esté internet) |
+
+Ya no hace falta token AES en la URL: el evento no viaja por internet, y el
+que lo reenvía a Aditum es el Pi con su token de dispositivo. El endpoint
+legacy `/api/aditum-gate-plate-reading/{token}` queda intacto en el backend
+durante toda la transición, así que una cámara sin migrar sigue funcionando.
+
 ### Pantalla (compatibilidad) y mantenimiento
 
 | Endpoint | Método | Notas |

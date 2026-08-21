@@ -96,6 +96,16 @@
         "nightlyCleanupHour": { "type": "integer", "minimum": 0, "maximum": 23, "default": 2 }
       }
     },
+    "anpr": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "ANPR local-first (TAR-1034/1035): endpoints de placas hacia las camaras y cola offline de eventos",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "purgeDays": { "type": "integer", "minimum": 0, "maximum": 90, "default": 7, "description": "Dias que se conservan las lecturas ya confirmadas por Aditum antes de borrarlas. 0 = borrarlas apenas Aditum confirma (la cola queda solo con lo pendiente)" },
+        "onlyAuthorized": { "type": "boolean", "default": true, "description": "true (default): solo se encolan lecturas del allow list (whiteList) de la camara. false: se encolan todas (whiteList/blackList/otherList) para revisar. Las placas ilegibles (unknown) se ignoran siempre." }
+      }
+    },
     "polling": {
       "type": "object",
       "additionalProperties": false,

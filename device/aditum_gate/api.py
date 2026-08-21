@@ -12,9 +12,13 @@ import time
 
 from datetime import timedelta
 
+import ipaddress
+
 from flask import Flask, jsonify, request, send_from_directory
 
 from . import admin_auth, github_token, health, maintenance
+from .anpr import AnprCameraError, http_status_for, normalize_plate
+from .anpr_events import parse_event_xml, is_authorized
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
@@ -69,7 +73,8 @@ def _write_token_file(token):
         raise
 
 
-def create_app(settings, gates, hikvision_service, screen, leds=None):
+def create_app(settings, gates, hikvision_service, screen, leds=None,
+               anpr_service=None, anpr_store=None):
     app = Flask(__name__)
 
     # Sesion del login admin (cookie firmada HttpOnly). El secreto se persiste
@@ -173,6 +178,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
             "gates": [g["id"] for g in gates.status_all()],
             "hikvisionEnabled": settings.hikvision_enabled,
             "pollingEnabled": settings.polling_enabled,
+            "anprEnabled": settings.anpr_enabled,
+            # Para armar la URL que se le configura a la camara ANPR
+            "lanIp": health.lan_ipv4(),
             # Solo presencia: si es false y el repo es privado, este equipo
             # ya no se actualiza (ver PUT /github-token)
             "githubToken": github_token.is_present(),
@@ -354,6 +362,207 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
         if hikvision_service is None:
             return jsonify({"error": "Hikvision deshabilitado en este dispositivo"}), 400
         return jsonify({"results": hikvision_service.cleanup_all()})
+
+    # ------------------------------------------------------------
+    # ANPR local-first (TAR-1034/TAR-1035): la lista de placas vive en la
+    # camara; Aditum la mantiene via /update-plate y /sync-plates, y las
+    # lecturas llegan por /anpr-event y se reenvian con cola offline.
+    # ------------------------------------------------------------
+
+    def _camera_source_ip():
+        # Detras del nginx local la IP real de la camara viene en
+        # X-Forwarded-For; directo contra :8080 es remote_addr.
+        if request.remote_addr in ("127.0.0.1", "::1"):
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        return request.remote_addr or ""
+
+    def _camera_ip_allowed(ip):
+        # Best-effort (TAR-1035): la LAN del condominio. NO se declaran las
+        # camaras aca a proposito: su direccion es de Aditum (anpr_camera,
+        # TAR-1030) y duplicarla en cada Pi seria una segunda fuente de
+        # verdad que se desincroniza al cambiar una IP.
+        try:
+            return ipaddress.ip_address(ip).is_private
+        except ValueError:
+            return False
+
+    def _extract_event_xml(req):
+        # La camara postea multipart/form-data con el XML en una parte
+        # (tipicamente anpr.xml) + jpgs; tambien se acepta XML crudo.
+        if req.files:
+            for part in req.files.values():
+                content_type = part.content_type or ""
+                filename = part.filename or ""
+                if "xml" in content_type or filename.endswith(".xml"):
+                    return part.read()
+            first = next(iter(req.files.values()), None)
+            if first is not None:
+                return first.read()
+        return req.get_data() or None
+
+    @app.route("/update-plate", methods=["POST"])
+    def update_plate():
+        # Contrato: CONTRACT.md de TAR-1033 (aditum-jh). Solo el codigo HTTP
+        # decide exito/fallo para el backend; el body es informativo.
+        if anpr_service is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 400
+        data = request.get_json(silent=True) or {}
+        action = data.get("action")
+        plate_normalized = data.get("plateNormalized")
+        cameras = data.get("cameras")
+        if action not in ("ADD", "DELETE") or not plate_normalized or not cameras:
+            return jsonify({"error": "action, plateNormalized and cameras required"}), 400
+        # Nunca loguear el request completo (trae credenciales de camara)
+        log.info("update-plate: requestId=%s action=%s cameraId=%s plate=%s",
+                 data.get("requestId"), action, data.get("cameraId"),
+                 plate_normalized)
+        results, error_code = anpr_service.update_plate(
+            action, plate_normalized, cameras)
+        applied = sum(1 for r in results if r["ok"])
+        body = {
+            "ok": error_code is None and applied > 0,
+            "action": action,
+            "plateNormalized": plate_normalized,
+            "applied": applied,
+            "failed": len(results) - applied,
+            "results": results,
+        }
+        if not results:
+            return jsonify({"error": "cameras sin ip valida"}), 400
+        if error_code:
+            body["error"] = error_code
+            return jsonify(body), http_status_for(error_code)
+        return jsonify(body)
+
+    @app.route("/sync-plates", methods=["POST"])
+    def sync_plates():
+        # Full sync (TAR-1037 -> TAR-1034): deja la camara EXACTAMENTE con
+        # las placas del payload (reemplazo completo, idempotente).
+        if anpr_service is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 400
+        data = request.get_json(silent=True) or {}
+        plates = data.get("plates")
+        cameras = data.get("cameras")
+        if not isinstance(plates, list) or not cameras:
+            return jsonify({"error": "plates and cameras required"}), 400
+        normalized = [p.get("plateNormalized") for p in plates
+                      if isinstance(p, dict) and p.get("plateNormalized")]
+        log.info("sync-plates: requestId=%s cameraId=%s placas=%s",
+                 data.get("requestId"), data.get("cameraId"), len(normalized))
+        results, error_code = anpr_service.sync_plates(normalized, cameras)
+        applied = sum(1 for r in results if r["ok"])
+        body = {
+            "ok": error_code is None and applied > 0,
+            "plates": len(normalized),
+            "applied": applied,
+            "failed": len(results) - applied,
+            "results": results,
+        }
+        if not results:
+            return jsonify({"error": "cameras sin ip valida"}), 400
+        if error_code:
+            body["error"] = error_code
+            return jsonify(body), http_status_for(error_code)
+        return jsonify(body)
+
+    @app.route("/anpr-event", methods=["POST"])
+    def anpr_event():
+        # PUBLICO (la camara no sabe mandar bearer; ver PUBLIC_PATHS en
+        # auth.py): filtra por IP de origen y SOLO encola — nunca abre
+        # portones ni toca configuracion. Responde 200 tambien a heartbeats
+        # para que la camara no reintente basura.
+        if anpr_store is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
+        source_ip = _camera_source_ip()
+        if not _camera_ip_allowed(source_ip):
+            log.warning("Evento ANPR rechazado desde IP no permitida: %s",
+                        source_ip)
+            return jsonify({"error": "forbidden"}), 403
+        xml_bytes = _extract_event_xml(request)
+        if not xml_bytes:
+            return jsonify({"error": "empty body"}), 400
+        event = parse_event_xml(xml_bytes)
+        if event is None:
+            return jsonify({"ignored": True})
+        # Switch anpr.onlyAuthorized (default true): solo se encolan lecturas
+        # del allow list (whiteList). En false se encolan todas para revisar.
+        if settings.anpr_only_authorized and not is_authorized(event):
+            return jsonify({"ignored": "no autorizada",
+                            "vehicleList": event["vehicleList"]})
+        queued = anpr_store.enqueue(event, source_ip=source_ip)
+        log.info("Evento ANPR %s: placa=%s capturado=%s desde=%s (%s)",
+                 event["eventUid"], event["licensePlate"], event["capturedAt"],
+                 source_ip, "encolado" if queued else "duplicado ignorado")
+        return jsonify({"queued": queued, "eventUid": event["eventUid"]})
+
+    @app.route("/anpr-test", methods=["POST"])
+    def anpr_test():
+        # Diagnostico de instalacion (protegido por el before_request global):
+        # prueba la conexion Pi -> camara sin pasar por Aditum. Las credenciales
+        # se reciben aca SOLO para la prueba: no se guardan ni se loguean, igual
+        # que las que manda el backend en cada despacho.
+        if anpr_service is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 400
+        data = request.get_json(silent=True) or {}
+        ip = (data.get("ip") or "").strip()
+        action = (data.get("action") or "CHECK").upper()
+        if not ip:
+            return jsonify({"error": "ip requerida"}), 400
+        # La camara vive en la LAN del condominio. Sin este guard el endpoint
+        # convierte al Pi en un proxy para golpear cualquier host de internet
+        # con las credenciales que le pasen (SSRF). Se valida solo el host:
+        # la IP puede venir con puerto (192.168.1.64:8000), que es como se
+        # configura una camara detras de un NAT o en un puerto no estandar.
+        host = ip.rsplit(":", 1)[0] if ip.count(":") == 1 else ip
+        try:
+            if not ipaddress.ip_address(host).is_private:
+                return jsonify({"error": "la IP debe ser de la red local"}), 400
+        except ValueError:
+            return jsonify({"error": "IP invalida"}), 400
+        if action not in ("CHECK", "ADD", "DELETE"):
+            return jsonify({"error": "action debe ser CHECK, ADD o DELETE"}), 400
+
+        user = data.get("user") or "admin"
+        password = data.get("password") or ""
+        client = anpr_service.client
+        try:
+            if action == "CHECK":
+                result = client.probe(ip, user, password)
+                log.info("anpr-test CHECK %s -> %s placas", ip, result["plates"])
+                return jsonify(dict(result, ok=True, action=action))
+            plate = normalize_plate(data.get("plate"))
+            if not plate:
+                return jsonify({"error": "placa requerida para ADD/DELETE"}), 400
+            detail = client.apply_plate(ip, user, password, action, plate)
+            log.info("anpr-test %s %s en %s -> %s", action, plate, ip, detail)
+            return jsonify({"ok": True, "action": action, "plateNormalized": plate,
+                            "detail": detail})
+        except AnprCameraError as e:
+            log.warning("anpr-test %s en %s fallo: %s", action, ip, e.code)
+            # message puede nombrar la IP, nunca usuario ni contrasena
+            return jsonify({"ok": False, "action": action, "error": e.code,
+                            "message": e.message}), http_status_for(e.code)
+
+    @app.route("/anpr-status")
+    def anpr_status():
+        # Protegido por el before_request global; para soporte y el piloto.
+        if anpr_store is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
+        return jsonify(anpr_store.stats())
+
+    @app.route("/anpr-status/pending", methods=["DELETE"])
+    def anpr_clear_pending():
+        # Protegido por el before_request global. Borra las lecturas PENDIENTES
+        # de enviar (no toca las confirmadas ni las descartadas). Para limpiar la
+        # cola tras pruebas o un cutover, desde el editor. Matchea el regex nginx
+        # de /anpr-status, no necesita ruta nueva.
+        if anpr_store is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
+        deleted = anpr_store.delete_pending()
+        log.warning("Cola ANPR: %s pendientes borradas via /anpr-status/pending", deleted)
+        return jsonify({"deleted": deleted})
 
     # ------------------------------------------------------------
     # Estados de pantalla y LED (compatibilidad con el flujo viejo en que

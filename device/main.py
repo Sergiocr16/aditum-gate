@@ -8,6 +8,8 @@ PM2 lo relanza.
 """
 import logging
 
+from aditum_gate.anpr import AnprService
+from aditum_gate.anpr_events import AnprEventForwarder, AnprEventStore
 from aditum_gate.api import create_app
 from aditum_gate.backend import AditumBackend
 from aditum_gate.config_agent import ConfigAgent
@@ -47,13 +49,21 @@ def main():
         hikvision_service = HikvisionService(settings)
         hikvision_service.start_nightly_cleanup()
 
+    anpr_service = None
+    anpr_store = None
+    if settings.anpr_enabled:
+        anpr_service = AnprService()
+        anpr_store = AnprEventStore()
+        AnprEventForwarder(settings, anpr_store).start()
+
     for scanner in build_scanners(settings, backend, screen, leds):
         scanner.start()
 
     if settings.watchdog_enabled:
         NetworkWatchdog(settings).start()
 
-    app = create_app(settings, gates, hikvision_service, screen, leds)
+    app = create_app(settings, gates, hikvision_service, screen, leds,
+                 anpr_service=anpr_service, anpr_store=anpr_store)
     # threaded=True explicito: es el default de Flask >=1.0, pero el API
     # DEPENDE de atender requests concurrentes (un pulso de porton de 1 s
     # o un ISAPI a Hikvision no pueden bloquear el health check) — se

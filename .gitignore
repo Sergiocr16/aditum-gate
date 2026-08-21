@@ -12,6 +12,9 @@ device-id.txt
 device-token.txt
 config-runtime.json
 hikvision-cards.json
+anpr-events.db
+anpr-events.db-wal
+anpr-events.db-shm
 
 # Credenciales del login admin del editor local (hash + secreto de sesion)
 admin-credentials.json

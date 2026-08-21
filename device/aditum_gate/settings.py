@@ -18,6 +18,7 @@ SCHEMA_FILE = REPO_ROOT / "config.schema.json"
 DEVICE_ID_FILE = REPO_ROOT / "device-id.txt"
 DEVICE_TOKEN_FILE = REPO_ROOT / "device-token.txt"
 CARD_STORE_FILE = REPO_ROOT / "hikvision-cards.json"
+ANPR_EVENTS_DB_FILE = REPO_ROOT / "anpr-events.db"
 
 SCREEN_BASE_URL = "http://localhost:3000"
 
@@ -97,6 +98,15 @@ class Settings:
         polling = data.get("polling", {})
         self.polling_enabled = polling.get("enabled", False)
         self.polling_interval_seconds = polling.get("intervalSeconds", 60)
+
+        # ANPR local-first (TAR-1034/1035): endpoints de placas + cola de
+        # eventos. Encendido por defecto: si ninguna camara apunta a la Pi,
+        # no hay trafico y el costo es cero.
+        anpr = data.get("anpr", {})
+        self.anpr_enabled = anpr.get("enabled", True)
+        self.anpr_purge_days = anpr.get("purgeDays", 7)
+        # true: solo se encolan lecturas del allow list (whiteList). false: todas.
+        self.anpr_only_authorized = anpr.get("onlyAuthorized", True)
 
 
 def load_settings():
