@@ -34,7 +34,11 @@ supervisor ni cron de reinicio:
    de scanner, config-agent, watchdog, limpieza nocturna Hikvision. El
    reinicio (nueva config, `POST /restart`) es `os._exit(0)` en
    `config_agent.restart_process` y PM2 lo relanza — no inventar
-   supervisores internos.
+   supervisores internos. Los otros dos reinicios viven en
+   `maintenance.py`: `POST /restart-server` (los dos procesos PM2, para la
+   pantalla colgada que `/restart` no arregla) y `POST /reboot` (el equipo).
+   Ambos se lanzan con `start_new_session` porque el comando mata a quien lo
+   lanzó; el reboot autónomo por pérdida de red sigue siendo del watchdog.
 2. **`aditum-web`** = `web/server.js` — Express+WebSocket :3000: sirve el
    build de Angular (`web/pedestal-app/dist/pedestal-app/browser`), recibe
    los estados de los scanners y los broadcastea a la pantalla, expone

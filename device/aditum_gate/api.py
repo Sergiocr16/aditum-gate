@@ -14,7 +14,7 @@ from datetime import timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import admin_auth, github_token, health
+from . import admin_auth, github_token, health, maintenance
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
@@ -389,5 +389,33 @@ def create_app(settings, gates, hikvision_service, screen, leds=None):
         log.warning("Reinicio del proceso solicitado via /restart")
         threading.Timer(RESTART_RESPONSE_GRACE, restart_process).start()
         return jsonify({"message": "Restarting"})
+
+    @app.route("/restart-server", methods=["POST"])
+    def restart_server():
+        # Reinicia los DOS procesos PM2. /restart solo se reinicia a si mismo
+        # (os._exit): esto tambien levanta aditum-web, o sea la pantalla
+        # colgada, que es el caso que /restart no arregla. El SO no se toca.
+        # Se verifica pm2 ANTES de responder: contestar "Restarting" y que no
+        # pase nada es peor que un error, es lo ultimo que se intenta antes
+        # de mandar a alguien al sitio.
+        if not maintenance.locate_pm2():
+            return jsonify({"error": "pm2 no disponible en este equipo"}), 503
+        log.warning("Reinicio de los servicios solicitado via /restart-server")
+        threading.Timer(RESTART_RESPONSE_GRACE, maintenance.restart_services).start()
+        return jsonify({
+            "message": "Restarting services",
+            "processes": list(maintenance.PM2_PROCESS_NAMES),
+        })
+
+    @app.route("/reboot", methods=["POST"])
+    def reboot():
+        # Reinicia el EQUIPO entero: el acceso queda caido hasta que bootee.
+        # No confundir con el watchdog de red, que hace lo mismo por su
+        # cuenta cuando pierde conectividad (ahi no hay quien llame a esto).
+        if not maintenance.locate_reboot():
+            return jsonify({"error": "reboot no disponible en este equipo"}), 503
+        log.warning("Reinicio del EQUIPO solicitado via /reboot")
+        threading.Timer(RESTART_RESPONSE_GRACE, maintenance.reboot_system).start()
+        return jsonify({"message": "Rebooting"})
 
     return app

@@ -21,7 +21,7 @@ server {
   # pedestales), para que /admin y el Entry Point del backend funcionen
   # con la misma URL de tunel en todas las variantes. Un endpoint Flask
   # nuevo que deba ser alcanzable via :80 se agrega a esta lista.
-  location ~ ^/(admin|backup|cleanup-cards|closeGate|code-accepted|code-denied|config|gateStatus|health|openGate|restart|status|token|update-card|wait-for-response)($|/) {
+  location ~ ^/(admin|backup|cleanup-cards|closeGate|code-accepted|code-denied|config|gateStatus|github-token|health|openGate|reboot|restart-server|restart|status|token|update-card|wait-for-response)($|/) {
     # /update-card puede traer foto para terminales Hikvision
     client_max_body_size 10m;
     proxy_pass http://localhost:8080;
