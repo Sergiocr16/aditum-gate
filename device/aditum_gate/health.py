@@ -14,9 +14,14 @@ import struct
 import subprocess
 import time
 
+from datetime import datetime, timezone
+
 from .httpclient import request
+from .settings import REPO_ROOT
 
 log = logging.getLogger("aditum.health")
+
+GIT_TIMEOUT = 5
 
 WEB_SERVER_URL = "http://localhost:3000/api/config"
 PM2_PROCESS_NAMES = ("aditum-device", "aditum-web")
@@ -343,6 +348,52 @@ def system_status():
     return system
 
 
+def _git(*args):
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT)] + list(args),
+            capture_output=True, text=True, timeout=GIT_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        log.debug("git %s fallo: %s", args[0] if args else "", e)
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def code_status():
+    """Que version del codigo tiene el equipo y cuanto le falta para estar
+    al dia. NO toca la red: compara contra origin/<branch> tal como quedo en
+    el ultimo fetch del self-update, asi GET /status sigue siendo barato.
+
+    behind = commits de atraso (0 = al dia, None = no se pudo determinar).
+    lastFetchAgoSec dice si el timer de auto-update esta corriendo de verdad
+    (deberia ser < 900 s); se mide en segundos y no contra el reloj del Pi,
+    que puede estar corrido.
+    """
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    status = {
+        "branch": branch,
+        "commit": _git("rev-parse", "--short", "HEAD"),
+        "behind": None,
+        "lastFetchAt": None,
+        "lastFetchAgoSec": None,
+    }
+    if branch and branch != "HEAD":
+        count = _git("rev-list", "--count", "HEAD..origin/%s" % branch)
+        if count and count.isdigit():
+            status["behind"] = int(count)
+    try:
+        mtime = os.path.getmtime(os.path.join(str(REPO_ROOT), ".git", "FETCH_HEAD"))
+        status["lastFetchAt"] = datetime.fromtimestamp(
+            mtime, timezone.utc).isoformat(timespec="seconds")
+        status["lastFetchAgoSec"] = max(0, int(time.time() - mtime))
+    except OSError as e:
+        log.debug("Sin FETCH_HEAD: %s", e)
+    return status
+
+
 def report(settings):
     """Arma el reporte completo para GET /health."""
     input_devices = list_input_devices()
@@ -354,5 +405,6 @@ def report(settings):
         "cameras": list_cameras(),
         "readers": readers_status(settings, input_devices),
         "system": system_status(),
+        "code": code_status(),
         "kioskExpected": bool(settings.has_screen),
     }

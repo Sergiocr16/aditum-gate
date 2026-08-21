@@ -34,7 +34,11 @@ supervisor ni cron de reinicio:
    de scanner, config-agent, watchdog, limpieza nocturna Hikvision. El
    reinicio (nueva config, `POST /restart`) es `os._exit(0)` en
    `config_agent.restart_process` y PM2 lo relanza — no inventar
-   supervisores internos.
+   supervisores internos. Los otros dos reinicios viven en
+   `maintenance.py`: `POST /restart-server` (los dos procesos PM2, para la
+   pantalla colgada que `/restart` no arregla) y `POST /reboot` (el equipo).
+   Ambos se lanzan con `start_new_session` porque el comando mata a quien lo
+   lanzó; el reboot autónomo por pérdida de red sigue siendo del watchdog.
 2. **`aditum-web`** = `web/server.js` — Express+WebSocket :3000: sirve el
    build de Angular (`web/pedestal-app/dist/pedestal-app/browser`), recibe
    los estados de los scanners y los broadcastea a la pantalla, expone
@@ -118,7 +122,7 @@ supervisor ni cron de reinicio:
 ```bash
 python3 -m compileall -q device scripts/validate_configs.py scripts/configure.py
 node --check web/server.js && node --check ecosystem.config.js
-bash -n scripts/bootstrap.sh && bash -n scripts/self-update.sh && bash -n scripts/doctor.sh
+for f in scripts/*.sh; do bash -n "$f"; done     # igual que el CI
 python3 scripts/validate_configs.py                  # configs vs schema (pip install jsonschema)
 sudo bash scripts/doctor.sh                          # diagnostico integral del equipo (25+ checks)
 ```
@@ -159,8 +163,21 @@ actualizar también `config-default.json`, los `examples/` y, si aplica,
   check final; nunca `git clean -x` — borraría identidad y venv). No hay
   push por SSH — las Pis están detrás de NAT; no reintroducir workflows de
   deploy por SSH (el branch `auto` lo intentó y no funciona).
+- **Repo privado**: el token de lectura de GitHub vive en
+  `/etc/aditum-gate/github-token` (root 600, **fuera** del árbol de git);
+  `scripts/github-auth.sh` lo convierte en credential helper `--system` y
+  bootstrap/self-update/doctor lo usan. Nunca commitear un token: GitHub
+  revoca solos los que detecta y quedan en el historial para siempre. Poner
+  o rotar el de un equipo: `sudo bash scripts/set-github-token.sh`, o
+  `PUT /github-token` desde el backend (una sola via: no hay GET, `/status`
+  solo dice si esta o no). Ambas validan el token contra GitHub antes de
+  guardarlo: un token vencido que pise al bueno deja el equipo sin updates.
 - **Cuidado**: cada Pi ejecuta el `self-update.sh` que tiene EN DISCO, así
   que cambiar el branch trackeado requiere un último push al branch viejo.
+  Igual con el token: primero pushear el mecanismo con el repo TODAVÍA
+  público, después poner el token equipo por equipo, y solo entonces
+  cambiar la visibilidad del repo — al revés, la flota entera deja de
+  actualizarse a la vez.
   La flota instalada antes de 2026-07 aún trackea `main`; migrarla = push a
   `main` del commit que cambia el default (pendiente, requiere confirmación
   explícita del usuario). Esta Pi de banco ya trackea `production`: **todo

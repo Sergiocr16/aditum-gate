@@ -32,10 +32,11 @@ jobs:
           node --check ecosystem.config.js
 
       - name: Sintaxis bash
+        # Glob y no lista a mano: github-auth.sh y set-github-token.sh se
+        # agregaron sin entrar aca, y corren en toda la flota igual que los
+        # otros. Un script nuevo queda cubierto sin acordarse de este paso.
         run: |
-          bash -n scripts/bootstrap.sh
-          bash -n scripts/self-update.sh
-          bash -n scripts/doctor.sh
+          for f in scripts/*.sh; do bash -n "$f"; done
 
       # El template llega a toda la flota via self-update; un render que no
       # pasa nginx -t alli se restaura y reintenta cada 15 min para siempre,

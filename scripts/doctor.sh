@@ -44,6 +44,42 @@ if systemctl is-active --quiet aditum-update.timer 2>/dev/null; then
 else
   bad "aditum-update.timer inactivo (el equipo no se actualiza solo)"
 fi
+# Acceso de lectura al repo remoto: si falla, el equipo se congela en la
+# version que tenga (el timer corre pero no trae nada).
+# shellcheck source=scripts/github-auth.sh
+. "$REPO_DIR/scripts/github-auth.sh" 2>/dev/null || true
+if github_token_present 2>/dev/null; then
+  perms="$(stat -c '%a %U' "$GH_TOKEN_FILE" 2>/dev/null)"
+  if [ "$perms" = "600 root" ]; then
+    ok "token de GitHub presente ($GH_TOKEN_FILE, root 600)"
+  else
+    warn "token de GitHub con permisos $perms (deberia ser 600 root)"
+  fi
+else
+  warn "sin token de GitHub: si el repo pasa a privado este equipo deja de actualizarse"
+fi
+remote_url="$(git remote get-url origin 2>/dev/null || echo '')"
+# Unica llamada a internet del diagnostico. git no trae limite propio, asi
+# que va con timeout como los curl de mas abajo: con DNS muerto o portal
+# cautivo, ls-remote se queda minutos y cuelga el doctor entero.
+rc=0
+if [ -n "$remote_url" ]; then
+  GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true \
+    timeout 15 git ls-remote --exit-code origin HEAD >/dev/null 2>&1 || rc=$?
+else
+  rc=1
+fi
+if [ "$rc" = 0 ]; then
+  ok "el repo remoto se puede leer (git ls-remote)"
+elif [ "$rc" = 124 ]; then
+  # 124 = lo mato el timeout: no hubo respuesta. No es un problema de
+  # credencial, y decir "poné el token" aca manda a arreglar lo que no es.
+  warn "el repo remoto no respondio en 15 s (revisar red/DNS del equipo)"
+elif [ "$(id -u)" != 0 ]; then
+  warn "no se pudo leer el repo remoto (correr con sudo: la credencial es root-only)"
+else
+  bad "no se puede leer el repo remoto: sudo bash scripts/set-github-token.sh"
+fi
 
 # ------------------------------------------------------------------
 section "Venv y dependencias Python (pinneadas)"

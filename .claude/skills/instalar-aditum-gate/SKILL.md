@@ -39,6 +39,11 @@ curl -fsSL https://raw.githubusercontent.com/Sergiocr16/aditum-gate/production/s
 
 (o `sudo bash scripts/bootstrap.sh` si el repo ya esta en `/home/pi/aditum-gate`).
 
+Con el repo privado el instalador pide el token de GitHub por teclado si el
+equipo todavia no lo tiene; tambien se puede pasar en `ADITUM_GH_TOKEN=...` o
+ponerlo aparte con `sudo bash scripts/set-github-token.sh`. Sin token el
+equipo instala pero NO vuelve a actualizarse: doctor lo marca.
+
 Es idempotente y retroactivo: desmonta instalaciones viejas, deja Node 20,
 venv con deps **pinneadas** (`device/requirements*.txt`), PM2 root, nginx,
 timer de auto-update y extras por variante (opencv/neopixel) segun la config.

@@ -33,7 +33,25 @@ log() { echo "$(date '+%F %T') $*"; }
 git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$REPO_DIR" || \
   git config --system --add safe.directory "$REPO_DIR" 2>/dev/null || true
 
-git fetch origin "$BRANCH" --quiet
+# Credenciales de GitHub (repo privado): self-heal en cada pasada, por si la
+# config --system se perdio. Si no hay token guardado no hace nada. El
+# guard cubre el arranque desde un checkout viejo, sin la libreria todavia.
+if [ -f "$REPO_DIR/scripts/github-auth.sh" ]; then
+  # shellcheck source=scripts/github-auth.sh
+  . "$REPO_DIR/scripts/github-auth.sh"
+  github_credentials_apply || log "AVISO: no se pudo aplicar la credencial de GitHub"
+fi
+
+# Sin esto git cuelga esperando usuario/clave bajo systemd (sin terminal)
+export GIT_TERMINAL_PROMPT=0
+if ! git fetch origin "$BRANCH" --quiet; then
+  if command -v github_token_present >/dev/null && github_token_present; then
+    log "ERROR: fetch fallido con token presente (revisar vigencia y permisos: sudo bash scripts/set-github-token.sh)"
+  else
+    log "ERROR: fetch fallido y este equipo no tiene token de GitHub (repo privado: sudo bash scripts/set-github-token.sh)"
+  fi
+  exit 1
+fi
 
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"

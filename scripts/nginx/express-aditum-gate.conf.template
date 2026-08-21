@@ -36,7 +36,7 @@ server {
     proxy_set_header X-Forwarded-For $remote_addr;
   }
 
-  location ~ ^/(admin|anpr-status|anpr-test|backup|cleanup-cards|closeGate|code-accepted|code-denied|config|gateStatus|health|openGate|restart|status|sync-plates|token|update-card|update-plate|wait-for-response)($|/) {
+  location ~ ^/(admin|anpr-status|anpr-test|backup|cleanup-cards|closeGate|code-accepted|code-denied|config|gateStatus|github-token|health|openGate|reboot|restart-server|restart|status|sync-plates|token|update-card|update-plate|wait-for-response)($|/) {
     # /update-card puede traer foto para terminales Hikvision;
     # /sync-plates sube la lista completa de placas del condominio
     client_max_body_size 10m;
