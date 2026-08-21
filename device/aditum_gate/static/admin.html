@@ -912,7 +912,9 @@
     // ANPR (placas)
     const anpr = cfg.anpr || {};
     setVal('f_apiBase', (cfg.api && cfg.api.baseUrl) || API_BASE_DEFAULT);
-    setChk('f_anprEnabled', anpr.enabled !== false);
+    // Apagado por defecto: el ANPR se enciende equipo por equipo, asi que una
+    // config sin bloque anpr abre el formulario con la lectura de placas apagada
+    setChk('f_anprEnabled', anpr.enabled === true);
     setChk('f_anprOnlyAuth', anpr.onlyAuthorized !== false);
     setVal('f_anprPurge', anpr.purgeDays !== undefined ? anpr.purgeDays : 7);
     refreshAnprUrls();

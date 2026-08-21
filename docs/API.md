@@ -435,6 +435,15 @@ cambios al Pi, y las lecturas viajan de vuelta por una cola local que
 sobrevive cortes de conexión. Análogo a `/update-card` con terminales QR,
 pero contra la lista de placas (ISAPI `licensePlateAuditData`).
 
+El ANPR viene **apagado de fábrica** (`anpr.enabled` default `false`): se
+enciende equipo por equipo, en la config o desde el editor local, cuando hay
+una cámara ANPR en la LAN posteando a `/anpr-event`. Con el ANPR apagado,
+`GET /status` reporta `anprEnabled: false` y los endpoints de esta sección
+responden `{"error": "ANPR deshabilitado en este dispositivo"}`: `400` los
+que hablan con la cámara (`/update-plate`, `/sync-plates`, `/anpr-test`) y
+`404` los de la cola local (`/anpr-event`, `/anpr-status`,
+`/anpr-status/pending`).
+
 | Endpoint | Método | Auth | Notas |
 |---|---|---|---|
 | `/update-plate` | POST | token | Alta o baja de UNA placa. Contrato de `AnprPlateSyncDispatchService` (TAR-1033) |
