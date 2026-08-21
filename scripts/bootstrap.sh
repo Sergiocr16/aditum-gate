@@ -16,6 +16,7 @@
 #   ADITUM_HOME=/home/pi/aditum-gate   ruta de instalacion
 #   ADITUM_USER=pi                     usuario de la instalacion vieja
 #   ADITUM_BRANCH=production           branch a trackear
+#   ADITUM_GH_TOKEN=...                token de lectura del repo (privado)
 #   ADITUM_RECONFIGURE=1               forzar el wizard aunque haya config
 #   ADITUM_CONFIG_URL=... / ADITUM_CONFIG_FILE=...   config preparada
 #   ADITUM_NONINTERACTIVE=1 + ADITUM_DEVICE_ID etc.  (ver configure.py)
@@ -23,6 +24,8 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/Sergiocr16/aditum-gate"
+GH_TOKEN_FILE=/etc/aditum-gate/github-token
+GH_CRED_FILE=/etc/aditum-gate/git-credentials
 REPO_DIR="${ADITUM_HOME:-/home/pi/aditum-gate}"
 PI_USER="${ADITUM_USER:-pi}"
 BRANCH="${ADITUM_BRANCH:-production}"
@@ -32,6 +35,68 @@ LOG_FILE=/var/log/aditum-bootstrap.log
 
 log()  { echo -e "\n==> $*"; }
 warn() { echo "AVISO: $*" >&2; }
+
+# Sin esto git cuelga esperando usuario/clave en una terminal que no existe
+export GIT_TERMINAL_PROMPT=0
+
+# ----------------------------------------------------------------------------
+# Acceso al repo cuando es privado. El token vive en /etc/aditum-gate/, root
+# 600 y FUERA del arbol de git: nunca se commitea (en un repo publico GitHub
+# lo detecta y lo revoca solo, y quedaria en el historial para siempre) y
+# `git clean -fd` no lo borra. Esta es la version minima de
+# scripts/github-auth.sh, que aca todavia no existe: bootstrap corre por
+# `curl | sudo bash`, antes de clonar el repo.
+setup_github_auth() {
+  local token="${ADITUM_GH_TOKEN:-}"
+  if [ -z "$token" ] && [ -s "$GH_TOKEN_FILE" ]; then
+    token="$(tr -d ' \t\n\r' < "$GH_TOKEN_FILE")"
+  fi
+  [ -n "$token" ] || return 0
+  install -d -m 700 "$(dirname "$GH_TOKEN_FILE")"
+  ( umask 077; printf '%s\n' "$token" > "$GH_TOKEN_FILE" )
+  ( umask 077; printf 'https://x-access-token:%s@github.com\n' "$token" > "$GH_CRED_FILE" )
+  chmod 600 "$GH_TOKEN_FILE" "$GH_CRED_FILE"
+  # A nivel --system porque quien clona y actualiza es root (timer incluido)
+  git config --system --replace-all "credential.https://github.com.helper" \
+    "store --file=$GH_CRED_FILE"
+  git config --system --replace-all "credential.https://github.com.username" \
+    x-access-token
+}
+
+ensure_repo_access() {
+  setup_github_auth
+  git ls-remote --exit-code "$REPO_URL" HEAD >/dev/null 2>&1 && return 0
+  # Repo privado y sin token util: pedirlo. Lee de /dev/tty y no de stdin,
+  # que bajo `curl | sudo bash` es el propio script.
+  local intento token
+  for intento in 1 2 3; do
+    # Abrir /dev/tty de verdad: existe como nodo aunque no haya terminal
+    # de control (systemd, ssh no interactivo) y ahi no se puede preguntar.
+    { : < /dev/tty; } 2>/dev/null || break
+    {
+      echo
+      echo "No se pudo leer $REPO_URL."
+      echo "Si el repo es privado hace falta un token de GitHub con permiso"
+      echo "de lectura de contenido sobre el (intento $intento de 3)."
+      printf "Token (no se muestra al escribir, Enter para cancelar): "
+    } > /dev/tty
+    IFS= read -rs token < /dev/tty || break
+    echo > /dev/tty
+    [ -n "$token" ] || break
+    ADITUM_GH_TOKEN="$token" setup_github_auth
+    if git ls-remote --exit-code "$REPO_URL" HEAD >/dev/null 2>&1; then
+      log "Token de GitHub validado y guardado en $GH_TOKEN_FILE"
+      return 0
+    fi
+    echo "Ese token no sirvio." > /dev/tty
+  done
+  echo
+  echo "ERROR: no hay acceso de lectura a $REPO_URL."
+  echo "  - Repo publico: revisar conectividad/DNS del equipo."
+  echo "  - Repo privado: correr de nuevo con ADITUM_GH_TOKEN=<token>, o en un"
+  echo "    equipo ya instalado: sudo bash scripts/set-github-token.sh"
+  exit 1
+}
 
 # ----------------------------------------------------------------------------
 preflight() {
@@ -132,6 +197,7 @@ teardown_legacy() {
 
 # ----------------------------------------------------------------------------
 sync_repo() {
+  ensure_repo_access
   if [ -d "$REPO_DIR/.git" ] && git -C "$REPO_DIR" remote get-url origin 2>/dev/null | grep -q 'aditum-gate'; then
     log "Actualizando repo existente a origin/$BRANCH"
     git -C "$REPO_DIR" fetch origin "$BRANCH"

@@ -80,6 +80,8 @@ aditum-gate/
 │   ├── bootstrap.sh             # Instalador one-liner (virgen o retroactivo)
 │   ├── configure.py             # Wizard de configuración (con hints de la instalación vieja)
 │   ├── self-update.sh           # Auto-update pull-based (lock + stamps + health)
+│   ├── github-auth.sh           # Credencial de GitHub del equipo (repo privado)
+│   ├── set-github-token.sh      # Pone/rota ese token en un equipo instalado
 │   ├── systemd/                 # Timer del auto-update
 │   ├── nginx/                   # Template del site (puerto según variante)
 │   └── validate_configs.py      # Valida configs contra el schema (CI)
@@ -160,6 +162,21 @@ cualquier branch histórico), como en una terminal con `sudo`:
 curl -fsSL https://raw.githubusercontent.com/Sergiocr16/aditum-gate/production/scripts/bootstrap.sh | sudo bash
 ```
 
+Con el **repo privado** hace falta un token de GitHub con permiso de lectura
+de contenido sobre el repo (ver [Acceso al repo privado](#acceso-al-repo-privado)):
+
+```bash
+GH=<token>
+curl -fsSL -H "Authorization: Bearer $GH" -H "Accept: application/vnd.github.raw" \
+  https://api.github.com/repos/Sergiocr16/aditum-gate/contents/scripts/bootstrap.sh?ref=production \
+  | sudo ADITUM_GH_TOKEN="$GH" bash
+```
+
+Si se omite `ADITUM_GH_TOKEN` y el repo no se puede leer, el instalador
+**pide el token por teclado** (hasta 3 intentos, lee de `/dev/tty` así que
+funciona igual dentro del `curl | sudo bash`) y lo valida contra GitHub
+antes de seguir.
+
 El instalador (`scripts/bootstrap.sh`) hace todo y es **idempotente**
 (re-correrlo es el primer paso de soporte ante cualquier problema):
 
@@ -186,6 +203,46 @@ El instalador (`scripts/bootstrap.sh`) hace todo y es **idempotente**
 Requisitos previos en una Pi virgen: Raspbian, red, y el acceso remoto de
 siempre (remoteiot con `partners@aditumcr.com`; VNC con X11 vía
 `raspi-config`; `xscreensaver` deshabilitado si hay pantalla).
+
+### Acceso al repo privado
+
+El deploy es pull-based: si el repo es privado, cada Pi necesita poder leerlo
+o se queda congelada en la versión que tenga. El token **nunca va en el
+repo** (GitHub revoca solo los que detecta commiteados, y quedarían en el
+historial para siempre): vive en `/etc/aditum-gate/github-token`, root `600`,
+fuera del árbol de git para que `git clean -fd` no lo borre. De ahí
+`scripts/github-auth.sh` genera `/etc/aditum-gate/git-credentials` y registra
+el credential helper de git a nivel `--system` (quien clona y actualiza es
+root: bootstrap y el timer).
+
+Dos vías para ponerlo en un equipo ya instalado — las dos validan el token
+contra GitHub **antes** de guardarlo, así un token vencido no deja al equipo
+sin actualizaciones:
+
+```bash
+# 1. En sitio o por el túnel, un comando (lo pide por teclado):
+sudo bash scripts/set-github-token.sh
+
+# 2. Desde aditum-jh, que lo tiene como variable de entorno, sin entrar al
+#    equipo (ver PUT /github-token en docs/API.md):
+curl -X PUT https://<entry-point>/github-token \
+  -H "Authorization: Bearer <token del dispositivo>" \
+  -H 'Content-Type: application/json' -d '{"token":"<token de GitHub>"}'
+```
+
+`GET /status` reporta `githubToken: true|false`, así que el backend puede
+listar qué equipos de la flota todavía no lo tienen.
+
+`scripts/self-update.sh` re-aplica la credencial en cada pasada (self-heal) y
+`scripts/doctor.sh` verifica que el token esté y que el repo remoto se pueda
+leer. Usar un token de **solo lectura** (fine-grained, `Contents: Read-only`,
+limitado a este repo) y con vencimiento: no necesita más permisos.
+
+> **Orden obligatorio para pasar el repo a privado:** primero pushear con el
+> repo aún público, esperar a que toda la flota tome el commit (≤15 min),
+> poner el token en cada Pi (`set-github-token.sh`, verificando con
+> `doctor.sh`), y recién entonces cambiar la visibilidad en GitHub. Al revés,
+> todos los equipos dejan de actualizarse a la vez.
 
 ### Diagnóstico: `scripts/doctor.sh`
 
@@ -217,7 +274,8 @@ ADITUM_SCANNERS='[{"role":"entry","doorId":"118","deviceName":"Newtologic  4010E
   curl -fsSL .../bootstrap.sh | sudo -E bash
 ```
 
-Otras variables: `ADITUM_BRANCH` (pin de branch por Pi), `ADITUM_RECONFIGURE=1`
+Otras variables: `ADITUM_GH_TOKEN` (token de lectura del repo privado),
+`ADITUM_BRANCH` (pin de branch por Pi), `ADITUM_RECONFIGURE=1`
 (forzar el wizard), `ADITUM_HOME`, `ADITUM_USER` (usuario de la instalación),
 `ADITUM_CONFIG_FILE` (config preparada local, alternativa a
 `ADITUM_CONFIG_URL`), `ADITUM_ADMIN_USER` / `ADITUM_ADMIN_PASSWORD` (siembra

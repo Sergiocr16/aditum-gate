@@ -159,8 +159,21 @@ actualizar también `config-default.json`, los `examples/` y, si aplica,
   check final; nunca `git clean -x` — borraría identidad y venv). No hay
   push por SSH — las Pis están detrás de NAT; no reintroducir workflows de
   deploy por SSH (el branch `auto` lo intentó y no funciona).
+- **Repo privado**: el token de lectura de GitHub vive en
+  `/etc/aditum-gate/github-token` (root 600, **fuera** del árbol de git);
+  `scripts/github-auth.sh` lo convierte en credential helper `--system` y
+  bootstrap/self-update/doctor lo usan. Nunca commitear un token: GitHub
+  revoca solos los que detecta y quedan en el historial para siempre. Poner
+  o rotar el de un equipo: `sudo bash scripts/set-github-token.sh`, o
+  `PUT /github-token` desde el backend (una sola via: no hay GET, `/status`
+  solo dice si esta o no). Ambas validan el token contra GitHub antes de
+  guardarlo: un token vencido que pise al bueno deja el equipo sin updates.
 - **Cuidado**: cada Pi ejecuta el `self-update.sh` que tiene EN DISCO, así
   que cambiar el branch trackeado requiere un último push al branch viejo.
+  Igual con el token: primero pushear el mecanismo con el repo TODAVÍA
+  público, después poner el token equipo por equipo, y solo entonces
+  cambiar la visibilidad del repo — al revés, la flota entera deja de
+  actualizarse a la vez.
   La flota instalada antes de 2026-07 aún trackea `main`; migrarla = push a
   `main` del commit que cambia el default (pendiente, requiere confirmación
   explícita del usuario). Esta Pi de banco ya trackea `production`: **todo

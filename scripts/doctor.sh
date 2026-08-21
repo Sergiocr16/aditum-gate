@@ -44,6 +44,29 @@ if systemctl is-active --quiet aditum-update.timer 2>/dev/null; then
 else
   bad "aditum-update.timer inactivo (el equipo no se actualiza solo)"
 fi
+# Acceso de lectura al repo remoto: si falla, el equipo se congela en la
+# version que tenga (el timer corre pero no trae nada).
+# shellcheck source=scripts/github-auth.sh
+. "$REPO_DIR/scripts/github-auth.sh" 2>/dev/null || true
+if github_token_present 2>/dev/null; then
+  perms="$(stat -c '%a %U' "$GH_TOKEN_FILE" 2>/dev/null)"
+  if [ "$perms" = "600 root" ]; then
+    ok "token de GitHub presente ($GH_TOKEN_FILE, root 600)"
+  else
+    warn "token de GitHub con permisos $perms (deberia ser 600 root)"
+  fi
+else
+  warn "sin token de GitHub: si el repo pasa a privado este equipo deja de actualizarse"
+fi
+remote_url="$(git remote get-url origin 2>/dev/null || echo '')"
+if [ -n "$remote_url" ] && GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true \
+     git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
+  ok "el repo remoto se puede leer (git ls-remote)"
+elif [ "$(id -u)" != 0 ]; then
+  warn "no se pudo leer el repo remoto (correr con sudo: la credencial es root-only)"
+else
+  bad "no se puede leer el repo remoto: sudo bash scripts/set-github-token.sh"
+fi
 
 # ------------------------------------------------------------------
 section "Venv y dependencias Python (pinneadas)"
