@@ -106,6 +106,23 @@
 }
 .bloque-idle { gap: 18px; animation-duration: .5s; }
 .bloque-espere { gap: 22px; }
+.bloque-fallo { gap: 12px; }
+
+/* El consejo de brillo es el que mas resuelve el fallo: va destacado */
+.subtitulo-brillo {
+  font-size: 27px;
+  font-weight: 800;
+  color: #0a1f33;
+  background: rgba(222, 182, 110, .28);
+  border: 2px solid rgba(185, 138, 47, .45);
+  border-radius: 999px;
+  padding: 8px 22px;
+}
+
+/* Ultima linea del aviso: el respaldo, un escalon por debajo */
+.subtitulo-respaldo { font-size: 22px; color: #66707c; }
+.sello-chico { width: 150px; height: 150px; margin-top: 4px; }
+.sello-chico svg { width: 150px; height: 150px; }
 
 .titulo { margin: 0; font-size: 50px; font-weight: 900; letter-spacing: 1px; color: #0a1f33; }
 .titulo-idle { font-size: 52px; }
@@ -190,6 +207,7 @@
 .halo-verde-a { border: 3px solid rgba(11, 163, 96, .5); animation: halo 1.8s ease-out 1s infinite; }
 .halo-verde-b { inset: -16px; border: 2px solid rgba(11, 163, 96, .3); animation: halo 1.8s ease-out 1.4s infinite; }
 .halo-rojo { border: 3px solid rgba(214, 69, 80, .45); animation: halo 2s ease-out 1.2s infinite; }
+.halo-ambar { border: 3px solid rgba(185, 138, 47, .45); animation: halo 2s ease-out 1.2s infinite; }
 
 .sello svg {
   width: 250px;
@@ -203,10 +221,14 @@
 }
 .sello-ok { animation: fillGreen .5s ease-in-out .5s forwards, bump .35s ease-in-out 1s both; }
 .sello-mal { animation: fillRed .5s ease-in-out .4s forwards; }
+.sello-alerta { animation: fillAmbar .5s ease-in-out .4s forwards; }
 .trazo-circulo-verde { stroke: #0ba360; stroke-width: 3; stroke-dasharray: 160; stroke-dashoffset: 160; animation: drawStroke .7s cubic-bezier(.65, 0, .45, 1) forwards; }
 .trazo-check { stroke-dasharray: 60; stroke-dashoffset: 60; animation: drawStroke .35s cubic-bezier(.65, 0, .45, 1) .85s forwards; }
 .trazo-circulo-rojo { stroke: #d64550; stroke-width: 3; stroke-dasharray: 160; stroke-dashoffset: 160; animation: drawStroke .6s cubic-bezier(.65, 0, .45, 1) forwards; }
 .trazo-equis { stroke-dasharray: 50; stroke-dashoffset: 50; animation: drawStroke .35s cubic-bezier(.65, 0, .45, 1) .7s forwards; }
+.trazo-circulo-ambar { stroke: #b98a2f; stroke-width: 3; stroke-dasharray: 160; stroke-dashoffset: 160; animation: drawStroke .6s cubic-bezier(.65, 0, .45, 1) forwards; }
+.trazo-alerta { stroke-width: 5; stroke-dasharray: 20; stroke-dashoffset: 20; animation: drawStroke .3s cubic-bezier(.65, 0, .45, 1) .7s forwards; }
+.trazo-alerta-punto { stroke-width: 5.5; stroke-dasharray: 2; stroke-dashoffset: 2; animation: drawStroke .2s ease .95s forwards; }
 
 .pie {
   flex: none;
