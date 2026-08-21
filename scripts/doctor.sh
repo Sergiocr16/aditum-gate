@@ -59,9 +59,22 @@ else
   warn "sin token de GitHub: si el repo pasa a privado este equipo deja de actualizarse"
 fi
 remote_url="$(git remote get-url origin 2>/dev/null || echo '')"
-if [ -n "$remote_url" ] && GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true \
-     git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
+# Unica llamada a internet del diagnostico. git no trae limite propio, asi
+# que va con timeout como los curl de mas abajo: con DNS muerto o portal
+# cautivo, ls-remote se queda minutos y cuelga el doctor entero.
+rc=0
+if [ -n "$remote_url" ]; then
+  GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true \
+    timeout 15 git ls-remote --exit-code origin HEAD >/dev/null 2>&1 || rc=$?
+else
+  rc=1
+fi
+if [ "$rc" = 0 ]; then
   ok "el repo remoto se puede leer (git ls-remote)"
+elif [ "$rc" = 124 ]; then
+  # 124 = lo mato el timeout: no hubo respuesta. No es un problema de
+  # credencial, y decir "poné el token" aca manda a arreglar lo que no es.
+  warn "el repo remoto no respondio en 15 s (revisar red/DNS del equipo)"
 elif [ "$(id -u)" != 0 ]; then
   warn "no se pudo leer el repo remoto (correr con sudo: la credencial es root-only)"
 else
