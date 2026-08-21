@@ -103,7 +103,9 @@ class Settings:
         # eventos. Encendido por defecto: si ninguna camara apunta a la Pi,
         # no hay trafico y el costo es cero.
         anpr = data.get("anpr", {})
-        self.anpr_enabled = anpr.get("enabled", True)
+        # Apagado por defecto: el ANPR es opt-in por equipo (una config sin
+        # bloque anpr no lee placas)
+        self.anpr_enabled = anpr.get("enabled", False)
         self.anpr_purge_days = anpr.get("purgeDays", 7)
         # true: solo se encolan lecturas del allow list (whiteList). false: todas.
         self.anpr_only_authorized = anpr.get("onlyAuthorized", True)

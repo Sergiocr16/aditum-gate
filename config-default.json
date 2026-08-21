@@ -30,5 +30,6 @@
     "watchdog": { "enabled": false, "host": "1.1.1.1", "intervalSec": 240 }
   },
   "hikvision": { "enabled": false, "nightlyCleanupHour": 2 },
+  "anpr": { "enabled": false },
   "polling": { "intervalSeconds": 60, "enabled": false }
 }
