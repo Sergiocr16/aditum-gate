@@ -22,7 +22,7 @@ health del API — para health por túnel usar `GET /status` o `GET /health`.)
 > - [ ] `GET /gateStatus` y `GET /gateStatus/<id>`
 > - [ ] `POST /update-card` y `POST /cleanup-cards`
 > - [ ] `GET /code-accepted/<name>`, `/code-denied/<name>`, `/wait-for-response/<name>`
-> - [ ] `POST /restart`
+> - [ ] `POST /restart`, `POST /restart-server`, `POST /reboot`
 > - [ ] Generar y provisionar un token por dispositivo (ver
 >       [Provisión](#provisión-y-rotación-del-token))
 >
@@ -83,7 +83,9 @@ Reglas:
 | `/openGate/<id>`, `/closeGate/<id>` | GET | T/S | Pulso de apertura/cierre |
 | `/update-card`, `/cleanup-cards` | POST | T/S | Tarjetas Hikvision |
 | `/code-*`, `/wait-for-response/<name>` | GET | T/S | Estados de pantalla (compat) |
-| `/restart` | POST | T/S | Reiniciar el proceso |
+| `/restart` | POST | T/S | Reiniciar el proceso de este API |
+| `/restart-server` | POST | T/S | Reiniciar los dos servicios (device + web) |
+| `/reboot` | POST | T/S | Reiniciar el equipo entero |
 
 ### Salud y estado
 
@@ -406,6 +408,32 @@ Si el Pi no tiene Hikvision habilitado → `400`.
 | `/code-denied/<name>` | GET | ídem con LED rojo 4 s |
 | `/wait-for-response/<name>` | GET | ídem con LED amarillo parpadeante hasta el veredicto |
 | `/restart` | POST | Reinicia el proceso (PM2 lo relanza) — `{"message": "Restarting"}` |
+| `/restart-server` | POST | Reinicia **los dos** procesos PM2 — `{"message": "Restarting services", "processes": [...]}` |
+| `/reboot` | POST | Reinicia **el equipo** — `{"message": "Rebooting"}` |
+
+### Los tres reinicios, de menor a mayor
+
+Los tres responden **antes** de ejecutar (~1 s de gracia), así que el `200` no
+confirma que el equipo volvió: para eso hay que volver a llamar a `GET /status`.
+
+| | Qué reinicia | Corte de acceso | Cuándo |
+|---|---|---|---|
+| `POST /restart` | solo este proceso (`aditum-device`) | ~2 s | Releer config, destrabar un lector |
+| `POST /restart-server` | `aditum-device` + `aditum-web` | ~3 s | Lo anterior **y** la pantalla colgada |
+| `POST /reboot` | el equipo entero | ~40 s | USB que no responde, red trabada — último recurso |
+
+`/restart` no toca `aditum-web`: si lo que está mal es la pantalla del
+pedestal, el que sirve es `/restart-server`.
+
+Ninguno confirma el resultado por diseño (el proceso muere antes de poder
+contestar). Si el binario necesario no está en el equipo se responde `503`
+**sin** reiniciar nada: `{"error": "pm2 no disponible en este equipo"}` o
+`{"error": "reboot no disponible en este equipo"}`. Firmware viejo sin estos
+endpoints responde `405` / `404`.
+
+`POST /reboot` es una orden remota explícita; no confundirlo con el watchdog
+de red (`gpio.watchdog.enabled`), que reinicia el equipo por su cuenta cuando
+pierde conectividad y no depende de que nadie llame al API.
 
 ## Provisión y rotación del token
 
