@@ -118,7 +118,7 @@ supervisor ni cron de reinicio:
 ```bash
 python3 -m compileall -q device scripts/validate_configs.py scripts/configure.py
 node --check web/server.js && node --check ecosystem.config.js
-bash -n scripts/bootstrap.sh && bash -n scripts/self-update.sh && bash -n scripts/doctor.sh
+for f in scripts/*.sh; do bash -n "$f"; done     # igual que el CI
 python3 scripts/validate_configs.py                  # configs vs schema (pip install jsonschema)
 sudo bash scripts/doctor.sh                          # diagnostico integral del equipo (25+ checks)
 ```
