@@ -83,6 +83,12 @@ Reglas:
 | `/openGate/<id>`, `/closeGate/<id>` | GET | T/S | Pulso de apertura/cierre |
 | `/update-card`, `/cleanup-cards` | POST | T/S | Tarjetas Hikvision |
 | `/code-*`, `/wait-for-response/<name>` | GET | T/S | Estados de pantalla (compat) |
+| `/anpr-event` | POST | especial | Lecturas de placa que postea la cámara (IP de la LAN) |
+| `/anpr-status` | GET | T/S | Estado del ANPR: cámara, cola y últimas lecturas |
+| `/anpr-status/pending` | DELETE | T/S | Vaciar la cola de lecturas sin enviar |
+| `/anpr-test` | POST | T/S | Probar la conexión con la cámara desde el editor |
+| `/sync-plates` | POST | T/S | Cargar la lista de placas autorizadas del condominio |
+| `/update-plate` | POST | T/S | Alta/baja de una placa suelta |
 | `/restart` | POST | T/S | Reiniciar el proceso de este API |
 | `/restart-server` | POST | T/S | Reiniciar los dos servicios (device + web) |
 | `/reboot` | POST | T/S | Reiniciar el equipo entero |
@@ -133,6 +139,8 @@ usa (usa el token).
   "gates": [1, 2],
   "hikvisionEnabled": false,
   "pollingEnabled": false,
+  "anprEnabled": true,
+  "lanIp": "10.0.0.200",
   "githubToken": true,
   "code": {
     "branch": "production",
@@ -144,6 +152,13 @@ usa (usa el token).
 }
 ```
 - `provisioned: false` → mostrar badge **"SIN TOKEN"** en el admin.
+- `anprEnabled` / `lanIp`: si el ANPR está activo, `lanIp` es la IP de este
+  equipo en la red local, que es la que hay que configurarle a la cámara
+  como destino de las lecturas (`http://<lanIp>/anpr-event`). Puede venir
+  `null` si no se pudo determinar.
+- Este mismo bloque completo viene dentro de `GET /health` como `device`:
+  el editor local lo muestra en la sección "Salud" sin pedir `/status`
+  aparte.
 - `githubToken: false` → el equipo no puede leer el repo si es privado: no
   se va a actualizar más. Mandarle el token con `PUT /github-token`.
 - `code` es la versión del código que el equipo tiene **en disco**:
@@ -199,9 +214,21 @@ los lectores configurados, el estado de los procesos PM2 y del server web
              "memAvailableMb": 512, "memTotalMb": 944},
   "code": {"branch": "production", "commit": "3a07e9b", "behind": 0,
            "lastFetchAt": "2026-08-20T18:05:00+00:00", "lastFetchAgoSec": 412},
-  "kioskExpected": false
+  "kioskExpected": false,
+  "device": {"deviceId": "GATE-CR-0034", "placeName": "Condominio X",
+             "scannerType": "hid", "configRevision": 42, "schemaVersion": 1,
+             "provisioned": true, "configSource": "config-runtime.json",
+             "hasScreen": true, "gates": [1, 2], "hikvisionEnabled": false,
+             "pollingEnabled": false, "anprEnabled": true,
+             "lanIp": "10.0.0.200", "githubToken": true}
 }
 ```
+- `device` es **exactamente lo que devuelve `GET /status`** (sin `code`, que
+  en `/health` va en la raíz): identidad, revisión de config, provisión,
+  flags de funciones, IP en la LAN y presencia del token de GitHub. Está acá
+  para que el diagnóstico sea una sola llamada: el editor local pinta la
+  sección "Salud" con esto sin consultar `/status` aparte. Los dos endpoints
+  salen de la misma función en `api.py`, así que no pueden divergir.
 - `web-server-3000` es un check HTTP real contra `:3000`: PM2 puede reportar
   el proceso `online` con el puerto muerto; este campo distingue ambos casos.
 - Si el equipo **no tiene pantalla**, `services` trae solo `aditum-device`:

@@ -1634,6 +1634,8 @@
     server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>',
     scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/>',
     camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+    key: '<circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 9-9"/><path d="m15.5 7.5 3 3 2.5-2.5-3-3"/>',
+    net: '<rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M5 16v-3h14v3"/><path d="M12 8v5"/>',
   };
   function ico(name, kind) {
     return '<div class="t-ico' + (kind ? ' ' + kind : '') + '">' +
@@ -1674,6 +1676,61 @@
     }
     kpis.push(tile('usb', 'USB de entrada', String(devs.length), '', 'dispositivos detectados'));
     parts.push('<div class="dgrid">' + kpis.join('') + '</div>');
+
+    // Equipo: identidad, version del codigo y lo que decide si este Pi sigue
+    // recibiendo actualizaciones. Es el mismo bloque que devuelve GET /status
+    // (viene en h.device), aca al lado del resto de la salud.
+    const dev = h.device || {};
+    const code = h.code || {};
+    const eq = [];
+    if (dev.deviceId) {
+      const idSub = [dev.placeName, 'config rev ' + dev.configRevision, dev.configSource]
+        .filter(Boolean).join(' · ');
+      eq.push(svcTile('cpu', dev.provisioned === false ? 'bad' : '', dev.deviceId, idSub,
+                      dev.provisioned === false ? 'SIN TOKEN' : ''));
+    }
+    if (code.commit || code.branch) {
+      const behind = code.behind;
+      const k = behind === 0 ? 'ok' : (behind > 0 ? 'warn' : '');
+      const cSub = [code.branch, behind === 0 ? 'al día con el repo'
+        : (behind > 0 ? behind + ' commits atrás' : 'atraso desconocido')]
+        .filter(Boolean).join(' · ');
+      eq.push(svcTile('server', k, 'Código ' + (code.commit || '?'), cSub,
+                      behind === 0 ? 'AL DÍA' : (behind > 0 ? 'ATRASADO' : 'SIN DATO')));
+    }
+    const ago = code.lastFetchAgoSec;
+    if (ago === null || ago === undefined) {
+      eq.push(svcTile('clock', 'bad', 'Auto-update',
+                      'nunca hizo fetch: este equipo no se está actualizando', 'DETENIDO'));
+    } else {
+      const stale = ago > 1000;  // el timer corre cada 15 min
+      eq.push(svcTile('clock', stale ? 'bad' : 'ok', 'Auto-update',
+                      'último chequeo hace ' + (ago < 60 ? ago + ' s' : fmtUptime(ago)) +
+                      ' · corre cada 15 min', stale ? 'DETENIDO' : 'AL DÍA'));
+    }
+    if (dev.githubToken !== undefined) {
+      eq.push(svcTile('key', dev.githubToken ? 'ok' : 'warn', 'Token de GitHub',
+                      dev.githubToken ? 'el equipo puede leer el repo'
+                        : 'sin token: si el repo es privado, dejó de actualizarse',
+                      dev.githubToken ? 'OK' : 'FALTA'));
+    }
+    if (dev.lanIp !== undefined) {
+      eq.push(svcTile('net', dev.lanIp ? '' : 'warn', dev.lanIp || 'Sin IP en la LAN',
+                      dev.lanIp ? 'IP de este equipo en la red local'
+                        : 'no se pudo determinar la IP local', ''));
+    }
+    const feats = [];
+    if (dev.scannerType && dev.scannerType !== 'none') feats.push('Lectores: ' + dev.scannerType);
+    if ((dev.gates || []).length) feats.push('Portones: ' + dev.gates.join(', '));
+    if (dev.anprEnabled) feats.push('ANPR');
+    if (dev.hikvisionEnabled) feats.push('Hikvision');
+    if (dev.hasScreen) feats.push('Pantalla');
+    if (dev.pollingEnabled) feats.push('Polling de config');
+    if (feats.length) eq.push(svcTile('scan', '', 'Funciones activas', feats.join(' · '), ''));
+    if (eq.length) {
+      parts.push('<div class="dsec">Equipo</div>');
+      parts.push('<div class="dgrid">' + eq.join('') + '</div>');
+    }
 
     // Servicios
     parts.push('<div class="dsec">Servicios</div>');

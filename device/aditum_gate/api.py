@@ -164,9 +164,15 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
     # ------------------------------------------------------------
     # Estado y configuracion (administracion desde Aditum)
     # ------------------------------------------------------------
-    @app.route("/status")
-    def status():
-        return jsonify({
+    def device_status():
+        """Identidad y flags del equipo.
+
+        Sale por dos vias y por eso vive en un solo lugar: GET /status (lo
+        que Aditum consulta de la flota) y el bloque "device" de GET /health
+        (lo mismo, pero al lado de servicios/lectores/sistema para el tecnico
+        que mira el editor local). Agregar un campo aca lo publica en ambas.
+        """
+        return {
             "deviceId": settings.device_id,
             "placeName": settings.place_name,
             "scannerType": settings.scanner_type,
@@ -184,15 +190,22 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             # Solo presencia: si es false y el repo es privado, este equipo
             # ya no se actualiza (ver PUT /github-token)
             "githubToken": github_token.is_present(),
-            # Version del codigo y atraso contra el ultimo fetch (sin red)
-            "code": health.code_status(),
-        })
+        }
+
+    @app.route("/status")
+    def status():
+        # Version del codigo y atraso contra el ultimo fetch (sin red). En
+        # /health el mismo bloque va en la raiz, no dentro de "device".
+        return jsonify(dict(device_status(), code=health.code_status()))
 
     @app.route("/health")
     def health_report():
-        # Salud del dispositivo: USB conectados, lectores, servicios, sistema.
+        # Salud del dispositivo: USB conectados, lectores, servicios, sistema
+        # y el mismo "device" que devuelve /status (identidad, flags, version).
         # Protegido por el before_request global (sesion admin o token).
-        return jsonify(health.report(settings))
+        report = health.report(settings)
+        report["device"] = device_status()
+        return jsonify(report)
 
     @app.route("/config")
     def get_config():
