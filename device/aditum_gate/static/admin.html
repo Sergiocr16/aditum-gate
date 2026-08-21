@@ -231,6 +231,11 @@
          color:var(--mut); margin:24px 0 0; }
   .dgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
           gap:16px; margin-top:14px; }
+  /* Tarjetas de estado (equipo, servicios, lectores): el texto es largo (titulo,
+     subtitulo y badge), asi que la columna nunca baja de 320px por mas tarjetas
+     que haya; con 260px el titulo se partia a la mitad. */
+  .dgrid.status{ grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+  .dgrid .span{ grid-column:1/-1; }
   .tile{ background:#fff; border:1px solid var(--line); border-radius:var(--radius);
          padding:20px 22px; box-shadow:var(--shadow-sm); min-width:0; }
   .tile.kpi{ display:flex; align-items:center; gap:16px; }
@@ -248,11 +253,18 @@
           font-variant-numeric:tabular-nums; }
   .t-big small{ font-size:15px; font-weight:600; color:var(--mut); }
   .t-big.ok{ color:var(--ok); } .t-big.warn{ color:var(--warn); } .t-big.bad{ color:var(--err); }
-  .t-sub{ font-size:12.5px; color:var(--mut); margin-top:5px; overflow-wrap:anywhere; }
-  .t-name{ font-size:14px; font-weight:700; color:var(--ink); }
-  .tile.svc{ display:flex; align-items:center; gap:16px; }
+  .t-sub{ font-size:12.5px; line-height:1.5; color:var(--mut); margin-top:5px; overflow-wrap:break-word; }
+  .t-name{ font-size:14px; font-weight:700; line-height:1.35; color:var(--ink); overflow-wrap:break-word; }
+  .tile.svc{ display:flex; align-items:flex-start; gap:14px; }
+  .tile.svc .t-ico{ width:44px; height:44px; border-radius:12px; }
+  .tile.svc .t-ico svg{ width:22px; height:22px; }
   .tile.svc .svc-main{ flex:1; min-width:0; }
-  .tile.svc .t-sub{ margin-top:2px; }
+  /* Titulo y badge en la misma linea: el subtitulo usa el ancho completo. */
+  .svc-head{ display:flex; align-items:flex-start; gap:10px; min-height:22px; }
+  .svc-head .t-name{ flex:1; min-width:0; }
+  .svc-head .badge{ margin-top:1px; }
+  .tile.svc .t-sub{ margin-top:4px; }
+  .feats{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
   .badge{ font-size:10.5px; font-weight:800; letter-spacing:.05em; padding:4px 10px;
           border-radius:999px; flex:none; white-space:nowrap; }
   .badge.ok{ background:var(--ok-bg); color:var(--ok); border:1px solid var(--ok-line); }
@@ -1653,9 +1665,16 @@
   }
   function svcTile(icon, kind, name, sub, badge) {
     return '<div class="tile svc' + (kind ? ' ' + kind : '') + '">' + ico(icon, kind) +
-      '<div class="svc-main"><div class="t-name">' + esc(name) + '</div>' +
-      '<div class="t-sub">' + esc(sub) + '</div></div>' +
-      (badge ? '<span class="badge ' + kind + '">' + badge + '</span>' : '') + '</div>';
+      '<div class="svc-main"><div class="svc-head"><div class="t-name">' + esc(name) + '</div>' +
+      (badge ? '<span class="badge ' + kind + '">' + badge + '</span>' : '') + '</div>' +
+      (sub ? '<div class="t-sub">' + esc(sub) + '</div>' : '') + '</div></div>';
+  }
+  // Las funciones activas son una lista, no un estado: van en chips a lo ancho.
+  function featTile(feats) {
+    return '<div class="tile svc span">' + ico('scan', '') +
+      '<div class="svc-main"><div class="svc-head"><div class="t-name">Funciones activas</div></div>' +
+      '<div class="feats">' + feats.map((f) => '<span class="chip">' + esc(f) + '</span>').join('') +
+      '</div></div></div>';
   }
   function renderHealth(h) {
     const parts = [];
@@ -1728,10 +1747,10 @@
     if (dev.hikvisionEnabled) feats.push('Hikvision');
     if (dev.hasScreen) feats.push('Pantalla');
     if (dev.pollingEnabled) feats.push('Polling de config');
-    if (feats.length) eq.push(svcTile('scan', '', 'Funciones activas', feats.join(' · '), ''));
+    if (feats.length) eq.push(featTile(feats));
     if (eq.length) {
       parts.push('<div class="dsec">Equipo</div>');
-      parts.push('<div class="dgrid">' + eq.join('') + '</div>');
+      parts.push('<div class="dgrid status">' + eq.join('') + '</div>');
     }
 
     // Servicios
@@ -1749,7 +1768,7 @@
                      sub.join(' · '), s.online ? 'EN LÍNEA' : 'CAÍDO');
     });
     if (h.kioskExpected) svc.push(svcTile('monitor', '', 'Kiosk de pantalla', 'activado por configuración', ''));
-    parts.push('<div class="dgrid">' + svc.join('') + '</div>');
+    parts.push('<div class="dgrid status">' + svc.join('') + '</div>');
     if (h.pm2Available === false) {
       parts.push('<p class="hint">PM2 no respondió: sin datos de reinicios/uptime de procesos.</p>');
     }
@@ -1758,7 +1777,7 @@
     parts.push('<div class="dsec">Lectores configurados</div>');
     const readers = h.readers || [];
     if (readers.length) {
-      parts.push('<div class="dgrid">' + readers.map((r) => {
+      parts.push('<div class="dgrid status">' + readers.map((r) => {
         const role = r.role === 'entry' ? 'Entrada' : 'Salida';
         const name = r.deviceName || (r.cameraIndex !== undefined ? 'Cámara ' + r.cameraIndex : '');
         const rIcon = r.cameraIndex !== undefined ? 'camera' : 'scan';
