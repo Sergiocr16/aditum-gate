@@ -531,6 +531,13 @@ con cuerpo vacío queda solo el código.
 ```json
 {
   "pending": 6, "sent": 128, "failed": 0, "deferred": 1,
+  "discarded": 12, "onlyAuthorized": true,
+  "lists": [
+    { "vehicle_list": "whitelist", "queued": 128, "discarded": 0,
+      "last_at": "2026-08-24T23:48:55-06:00" },
+    { "vehicle_list": "blacklist", "queued": 0, "discarded": 12,
+      "last_at": "2026-08-24T23:12:01-06:00" }
+  ],
   "recent": [
     { "event_uid": "2026…", "license_plate": "ABC123",
       "captured_at": "2026-08-24T22:41:29-06:00", "status": "pending",
@@ -543,6 +550,23 @@ con cuerpo vacío queda solo el código.
 `deferred` cuenta las pendientes que ahora mismo están cediendo el turno (van incluidas en
 `pending`, no son una categoría aparte). `retry_after` es `null` salvo en esas. Un `deferred > 0`
 sostenido significa que Aditum está rechazando el reenvío: mirar `last_error`.
+
+**`lists` es lo que hace verificable el filtro de allowlist.** Cuenta cada lectura recibida por el
+`<vehicleListName>` que reportó la cámara y qué se hizo con ella. Hace falta porque una lectura
+descartada **no queda en ningún lado** (la bitácora es solo de autorizadas), así que sin el contador
+los tres escenarios de abajo se ven idénticos desde el equipo — una cola sana. No guarda placas,
+solo el nombre de la lista, y es acumulativo (la purga no lo toca).
+
+| Qué se ve en `lists` | Qué significa |
+|---|---|
+| `whitelist` con `queued` y `blacklist`/`otherlist` con `discarded` | El filtro está funcionando |
+| Una sola entrada con `vehicle_list: ""` y todo en `queued` | **La cámara no reporta la lista**: el filtro no descarta nada y entran todas las lecturas |
+| Todo en `discarded`, `queued` en cero | **Se descarta todo**: el firmware usa otro nombre de lista (`allowList`, uno localizado…) y la bitácora quedó vacía |
+
+Los dos casos malos son silenciosos sin este contador. El editor los traduce a un aviso en
+`/admin` → ANPR, y cada descarte se loguea (`Evento ANPR descartado por allowlist: placa=… lista=…`).
+`onlyAuthorized` viaja en la respuesta porque sin saber si el filtro está encendido los contadores
+no se pueden interpretar.
 
 **`POST /anpr-event`** — la cámara postea su `EventNotificationAlert`
 (multipart con el XML + jpgs, o XML crudo). El Pi extrae placa, fecha de

@@ -78,6 +78,20 @@ CREATE TABLE IF NOT EXISTS anpr_event (
     retry_after   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_anpr_event_status ON anpr_event(status, id);
+
+-- Cuantas lecturas llegaron con cada <vehicleListName> y que se hizo con
+-- ellas. Es lo unico que hace VERIFICABLE el filtro de allowlist: las
+-- descartadas no se guardan (la bitacora es solo de autorizadas), asi que
+-- sin este contador no hay forma de distinguir "no habia nada que
+-- descartar" de "la camara no reporta la lista y el filtro no descarta
+-- nunca" ni de "el firmware usa otro nombre y se descarta todo". No
+-- guarda placas: solo el nombre de la lista.
+CREATE TABLE IF NOT EXISTS anpr_list_stat (
+    vehicle_list TEXT PRIMARY KEY,
+    queued       INTEGER NOT NULL DEFAULT 0,
+    discarded    INTEGER NOT NULL DEFAULT 0,
+    last_at      TEXT
+);
 """
 
 
@@ -203,6 +217,20 @@ class AnprEventStore:
                  event["confidenceLevel"], event["cameraName"], source_ip))
             return cursor.rowcount == 1
 
+    def record_list_outcome(self, vehicle_list, discarded):
+        """Suma una lectura al contador de su <vehicleListName>.
+
+        `vehicle_list` es "" cuando la camara no reporta el dato — ese caso
+        es justamente el que delata que el filtro no esta filtrando."""
+        column = "discarded" if discarded else "queued"
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                f"INSERT INTO anpr_list_stat (vehicle_list, {column}, last_at) "
+                "VALUES (?, 1, ?) "
+                "ON CONFLICT(vehicle_list) DO UPDATE SET "
+                f"{column}={column}+1, last_at=excluded.last_at",
+                (vehicle_list or "", _now()))
+
     def next_pending(self):
         """El pendiente mas viejo que no este pospuesto. Un evento que Aditum
         rechaza una y otra vez cede el turno (retry_after) para no trancar a
@@ -282,6 +310,9 @@ class AnprEventStore:
             deferred = conn.execute(
                 "SELECT COUNT(*) FROM anpr_event WHERE status='pending' "
                 "AND retry_after > ?", (_now(),)).fetchone()[0]
+            lists = [dict(r) for r in conn.execute(
+                "SELECT vehicle_list, queued, discarded, last_at "
+                "FROM anpr_list_stat ORDER BY queued + discarded DESC")]
             last = conn.execute(
                 "SELECT event_uid, license_plate, captured_at, status, attempts,"
                 " last_error, source_ip, retry_after FROM anpr_event "
@@ -291,6 +322,8 @@ class AnprEventStore:
                 "sent": sent,
                 "failed": failed,
                 "deferred": deferred,
+                "discarded": sum(r["discarded"] for r in lists),
+                "lists": lists,
                 "recent": [dict(r) for r in last],
             }
 

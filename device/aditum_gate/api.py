@@ -502,8 +502,16 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         # Switch anpr.onlyAuthorized (default true): solo se encolan lecturas
         # del allow list (whiteList). En false se encolan todas para revisar.
         if settings.anpr_only_authorized and not is_authorized(event):
+            # Se cuenta y se loguea: una lectura descartada no deja rastro en
+            # la cola (la bitacora es solo de autorizadas), asi que sin esto
+            # el filtro seria imposible de verificar desde el equipo.
+            anpr_store.record_list_outcome(event["vehicleList"], discarded=True)
+            log.info("Evento ANPR descartado por allowlist: placa=%s lista=%r "
+                     "desde=%s", event["licensePlate"], event["vehicleList"],
+                     source_ip)
             return jsonify({"ignored": "no autorizada",
                             "vehicleList": event["vehicleList"]})
+        anpr_store.record_list_outcome(event["vehicleList"], discarded=False)
         queued = anpr_store.enqueue(event, source_ip=source_ip)
         log.info("Evento ANPR %s: placa=%s capturado=%s desde=%s (%s)",
                  event["eventUid"], event["licensePlate"], event["capturedAt"],
@@ -579,7 +587,10 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         # Protegido por el before_request global; para soporte y el piloto.
         if anpr_store is None:
             return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
-        return jsonify(anpr_store.stats())
+        # onlyAuthorized viaja con las estadisticas: sin saber si el filtro
+        # esta encendido, los contadores por lista no se pueden interpretar.
+        return jsonify(dict(anpr_store.stats(),
+                            onlyAuthorized=settings.anpr_only_authorized))
 
     @app.route("/anpr-status/pending", methods=["DELETE"])
     def anpr_clear_pending():
