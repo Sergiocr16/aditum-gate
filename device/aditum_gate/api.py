@@ -534,8 +534,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                 return jsonify({"error": "la IP debe ser de la red local"}), 400
         except ValueError:
             return jsonify({"error": "IP invalida"}), 400
-        if action not in ("CHECK", "ADD", "DELETE"):
-            return jsonify({"error": "action debe ser CHECK, ADD o DELETE"}), 400
+        if action not in ("CHECK", "LIST", "FIND", "ADD", "DELETE"):
+            return jsonify(
+                {"error": "action debe ser CHECK, LIST, FIND, ADD o DELETE"}), 400
 
         user = data.get("user") or "admin"
         password = data.get("password") or ""
@@ -545,9 +546,24 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                 result = client.probe(ip, user, password)
                 log.info("anpr-test CHECK %s -> %s placas", ip, result["plates"])
                 return jsonify(dict(result, ok=True, action=action))
+            if action == "LIST":
+                # Solo lectura: exporta la lista de la camara para consultarla.
+                result = client.list_plates(ip, user, password)
+                log.info("anpr-test LIST %s -> %s placas%s", ip, result["total"],
+                         " (truncada)" if result["truncated"] else "")
+                return jsonify(dict(result, ok=True, action=action))
             plate = normalize_plate(data.get("plate"))
             if not plate:
-                return jsonify({"error": "placa requerida para ADD/DELETE"}), 400
+                return jsonify(
+                    {"error": "placa requerida para FIND, ADD o DELETE"}), 400
+            if action == "FIND":
+                # Solo lectura: responde si la placa esta en la camara y en que
+                # lista, sin tocar nada.
+                result = client.find_plate(ip, user, password, plate)
+                log.info("anpr-test FIND %s en %s -> %s", plate, ip,
+                         "encontrada" if result["found"] else "no esta")
+                return jsonify(dict(result, ok=True, action=action,
+                                    plateNormalized=plate))
             detail = client.apply_plate(ip, user, password, action, plate)
             log.info("anpr-test %s %s en %s -> %s", action, plate, ip, detail)
             return jsonify({"ok": True, "action": action, "plateNormalized": plate,

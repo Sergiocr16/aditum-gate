@@ -606,19 +606,21 @@
             </div>
           </div>
           <div class="row" style="margin-top:10px">
-            <div class="field" style="flex:1; min-width:150px">
+            <div class="field" style="flex:0 0 130px; margin-bottom:0">
               <label for="f_testPlate">Placa de prueba</label>
               <input type="text" id="f_testPlate" placeholder="ABC123">
             </div>
             <div class="field" style="align-self:flex-end">
               <div class="row">
                 <button class="sec sm" id="btnAnprCheck" type="button">Probar conexión</button>
+                <button class="sec sm" id="btnAnprFind" type="button">Buscar placa</button>
+                <button class="sec sm" id="btnAnprList" type="button">Ver lista</button>
                 <button class="sec sm" id="btnAnprAdd" type="button">Agregar placa</button>
                 <button class="sec sm danger" id="btnAnprDel" type="button">Quitar placa</button>
               </div>
             </div>
           </div>
-          <div id="anprTestBody"><p class="hint">«Probar conexión» solo lee la lista de la cámara y no cambia nada.
+          <div id="anprTestBody"><p class="hint">«Probar conexión», «Buscar placa» y «Ver lista» solo leen la lista de la cámara y no cambian nada.
             «Agregar»/«Quitar» sí la modifican: usá una placa de prueba y acordate de quitarla al terminar.</p></div>
         </div>
 
@@ -1138,8 +1140,8 @@
       action: action,
       plate: txt($('f_testPlate')),
     };
-    if (action !== 'CHECK' && !payload.plate) {
-      body.innerHTML = '<p class="hint txt-bad">Ingresá la placa de prueba.</p>'; return;
+    if (action !== 'CHECK' && action !== 'LIST' && !payload.plate) {
+      body.innerHTML = '<p class="hint txt-bad">Ingresá la placa.</p>'; return;
     }
     body.innerHTML = '<p class="hint">Hablando con la cámara…</p>';
     try {
@@ -1155,6 +1157,27 @@
         body.innerHTML = '<p class="hint"><b class="txt-ok">Conexión OK.</b> La cámara tiene ' +
           d.plates + ' placa(s)' + (d.capacity ? ' de un máximo de ' + d.capacity : '') + '.' +
           (d.sample && d.sample.length ? ' Ejemplos: ' + esc(d.sample.join(', ')) + '.' : '') + '</p>';
+      } else if (action === 'LIST') {
+        const plates = d.plates || [];
+        body.innerHTML = '<p class="hint">La cámara tiene <b>' + d.total + '</b> placa(s)' +
+          (d.capacity ? ' de un máximo de ' + d.capacity : '') + '.' +
+          (d.truncated ? ' Se muestran las primeras ' + plates.length + '.' : '') + '</p>' +
+          (plates.length
+            ? '<div style="max-height:220px; overflow:auto; padding:8px; border:1px solid var(--line); border-radius:var(--radius-sm); word-break:break-word">' +
+              esc(plates.join(', ')) + '</div>'
+            : '<p class="hint">La lista de la cámara está vacía.</p>');
+      } else if (action === 'FIND') {
+        const m = d.match || {};
+        const lista = m.group === 'allowlist' ? 'lista blanca (autorizada)'
+          : m.group === 'blacklist' ? 'LISTA NEGRA (no autorizada)'
+          : ('grupo ' + (m.group || '?'));
+        const vig = (m.validFrom || m.validTo)
+          ? ' Vigencia: ' + esc(m.validFrom || '—') + ' → ' + esc(m.validTo || '—') + '.' : '';
+        body.innerHTML = d.found
+          ? '<p class="hint"><b class="txt-ok">La placa ' + esc(d.plateNormalized) +
+            ' SÍ está en la cámara.</b> Está en ' + esc(lista) + '.' + vig + '</p>'
+          : '<p class="hint"><b class="txt-bad">La placa ' + esc(d.plateNormalized) +
+            ' NO está en la cámara.</b> Hay ' + d.total + ' placa(s) cargadas.</p>';
       } else {
         body.innerHTML = '<p class="hint"><b class="txt-ok">Listo.</b> Placa ' + esc(d.plateNormalized) +
           ': ' + esc(anprTestDetail(d.detail)) + '</p>';
@@ -1198,6 +1221,7 @@
         '<span class="chip">Pendientes de enviar: <b>' + d.pending + '</b></span>' +
         '<span class="chip">Ya confirmadas: <b>' + d.sent + '</b></span>' +
         (d.failed ? '<span class="chip bad">Descartadas por Aditum: <b>' + d.failed + '</b></span>' : '') +
+        (d.deferred ? '<span class="chip bad">Aditum está rechazando el envío: <b>' + d.deferred + '</b> en pausa</span>' : '') +
         '</div>';
       if (!recent.length) {
         html += '<p class="hint">Todavía no llegó ninguna lectura a este equipo.</p>';
@@ -1911,6 +1935,8 @@
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
   $('btnAnprStatus').addEventListener('click', loadAnprStatus);
   $('btnAnprCheck').addEventListener('click', () => runAnprTest('CHECK'));
+  $('btnAnprFind').addEventListener('click', () => runAnprTest('FIND'));
+  $('btnAnprList').addEventListener('click', () => runAnprTest('LIST'));
   $('btnAnprAdd').addEventListener('click', () => runAnprTest('ADD'));
   $('btnAnprDel').addEventListener('click', () => runAnprTest('DELETE'));
   $('f_apiBase').addEventListener('input', refreshAnprUrls);

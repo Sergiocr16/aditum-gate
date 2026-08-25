@@ -74,6 +74,15 @@ VALIDITY_YEARS = 20
 # Columnas del CSV export/import (orden fijo del header del firmware).
 _COL_NO, _COL_PLATE, _COL_GROUP, _COL_START, _COL_END, _COL_CARD = range(6)
 
+# Etiqueta legible del grupo del CSV, para que una consulta distinga una placa
+# que esta pero en lista NEGRA de una que esta autorizada.
+_GROUP_LABELS = {ALLOW_LIST_GROUP: "allowlist", "0": "blacklist"}
+
+# Tope de placas que devuelve una consulta de lista. La camara admite miles
+# (plateListNum); el tope es una valvula de seguridad para no armar una
+# respuesta enorme en un equipo modesto, y se avisa con `truncated`.
+PLATE_LIST_LIMIT = 5000
+
 # Normalizacion espejo de LicensePlateUtil (aditum-jh): mayusculas + solo
 # [A-Z0-9]. Se usa SOLO para comparar contra entradas legadas cargadas a
 # mano en la camara; el valor que manda el backend ya viene normalizado y
@@ -228,6 +237,55 @@ class AnprCameraClient:
             "capacity": self.plate_capacity(ip, user, password),
             "sample": plates[:5],
         }
+
+    @classmethod
+    def _row_detail(cls, row):
+        """Grupo y vigencia de una fila del CSV, para poder responder no solo
+        'esta' sino EN QUE lista esta y hasta cuando."""
+        def field(index):
+            return row[index].strip() if len(row) > index else ""
+        group = field(_COL_GROUP)
+        return {
+            "plate": cls._row_plate(row),
+            "group": _GROUP_LABELS.get(group, group),
+            "validFrom": field(_COL_START),
+            "validTo": field(_COL_END),
+        }
+
+    def list_plates(self, ip, user, password, limit=PLATE_LIST_LIMIT):
+        """Lista de SOLO LECTURA de las placas cargadas en la camara.
+
+        Las placas vuelven normalizadas, ordenadas y sin repetir (una lista
+        cargada a mano puede tener duplicados); `total` es cuantas distintas
+        hay en la camara, no cuantas se devuelven."""
+        _header, rows = self.get_plate_rows(ip, user, password,
+                                            timeout=ISAPI_SYNC_TIMEOUT)
+        plates = sorted({p for p in (self._row_plate(r) for r in rows) if p})
+        return {
+            "total": len(plates),
+            "plates": plates[:limit],
+            "truncated": len(plates) > limit,
+            "capacity": self.plate_capacity(ip, user, password),
+        }
+
+    def find_plate(self, ip, user, password, plate_normalized):
+        """Busca UNA placa en la lista de la camara (SOLO LECTURA).
+
+        No alcanza con found/not found: una placa puede estar cargada en la
+        lista negra o con una vigencia vencida, y para el que consulta eso no
+        es lo mismo que estar autorizada. Por eso vuelve tambien la fila."""
+        _header, rows = self.get_plate_rows(ip, user, password,
+                                            timeout=ISAPI_SYNC_TIMEOUT)
+        match = None
+        total = 0
+        for row in rows:
+            plate = self._row_plate(row)
+            if not plate:
+                continue
+            total += 1
+            if match is None and plate == plate_normalized:
+                match = self._row_detail(row)
+        return {"found": match is not None, "match": match, "total": total}
 
     def apply_plate(self, ip, user, password, action, plate_normalized):
         """ADD/DELETE idempotente de UNA placa via read-modify-write.
