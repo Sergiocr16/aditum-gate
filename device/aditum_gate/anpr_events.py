@@ -22,9 +22,18 @@ Decisiones clave:
   - Un 400 de Aditum es TERMINAL: el payload nunca va a ser aceptado (placa
     ilegible, fecha impresentable...). Se marca 'failed' y se sigue con el
     siguiente. Reintentarlo seria bloquear la cola ENTERA para siempre: el
-    reenvio es estrictamente en orden, asi que la fila mas vieja tranca a
-    todas las de atras. Todo lo demas (401 por rotacion de token, 5xx, red
-    caida) SI se reintenta indefinidamente: un evento valido no se pierde.
+    reenvio es en orden, asi que la fila mas vieja tranca a todas las de
+    atras. Todo lo demas (401 por rotacion de token, 5xx, red caida) SI se
+    reintenta indefinidamente: un evento valido no se pierde.
+  - Pero reintentar para siempre tampoco puede congelar la cola: tras
+    DEFER_AFTER intentos fallidos el evento cede el turno DEFER_SECONDS
+    (columna retry_after) y el forwarder sigue con el siguiente. No se
+    descarta —vuelve a la fila al vencer— a costa de que el orden de entrega
+    deje de ser estricto. Aditum lo tolera: deduplica por eventUid y el
+    capturedAt de cada lectura viaja en el payload.
+  - De cada fallo se guarda el codigo HTTP mas un recorte del cuerpo de la
+    respuesta en last_error. Un 'http_500' a secas no deja ninguna pista de
+    que fue lo que Aditum rechazo.
   - Purga: los eventos ya confirmados por Aditum se borran despues de
     `purgeDays` dias, o al instante si `purgeDays` es 0 (unica excepcion al
     no-DELETE: es una cola, no historial). Lo PENDIENTE no se borra nunca:
@@ -48,6 +57,9 @@ BACKOFF_INITIAL = 5      # segundos
 BACKOFF_MAX = 300        # 5 minutos
 IDLE_POLL = 2            # segundos entre chequeos cuando no hay pendientes
 PURGE_INTERVAL = 3600    # purga como maximo una vez por hora
+DEFER_AFTER = 5          # intentos fallidos antes de dejar pasar a los de atras
+DEFER_SECONDS = 600      # 10 min que el evento pospuesto cede el paso
+ERROR_BODY_CHARS = 150   # cuanto del cuerpo del error se guarda en last_error
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS anpr_event (
@@ -62,10 +74,17 @@ CREATE TABLE IF NOT EXISTS anpr_event (
     status        TEXT NOT NULL DEFAULT 'pending',
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT,
-    sent_at       TEXT
+    sent_at       TEXT,
+    retry_after   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_anpr_event_status ON anpr_event(status, id);
 """
+
+
+def _now():
+    """Ahora en ISO 8601 local. Todos los timestamps de la tabla se generan
+    igual, asi que compararlos como texto ordena bien."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def _local(tag):
@@ -154,6 +173,15 @@ class AnprEventStore:
         self._lock = threading.Lock()
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn):
+        """Agrega columnas nuevas a las bases que ya existen en la flota.
+        CREATE TABLE IF NOT EXISTS no toca una tabla ya creada."""
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(anpr_event)")}
+        if "retry_after" not in columns:
+            conn.execute("ALTER TABLE anpr_event ADD COLUMN retry_after TEXT")
 
     def _connect(self):
         conn = sqlite3.connect(self.path, timeout=10)
@@ -176,17 +204,22 @@ class AnprEventStore:
             return cursor.rowcount == 1
 
     def next_pending(self):
+        """El pendiente mas viejo que no este pospuesto. Un evento que Aditum
+        rechaza una y otra vez cede el turno (retry_after) para no trancar a
+        los que vienen atras; sigue pendiente y vuelve a la fila al vencer."""
+        now = _now()
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM anpr_event WHERE status='pending' "
-                "ORDER BY id LIMIT 1").fetchone()
+                "AND (retry_after IS NULL OR retry_after <= ?) "
+                "ORDER BY id LIMIT 1", (now,)).fetchone()
             return dict(row) if row else None
 
     def mark_sent(self, event_id):
         with self._lock, self._connect() as conn:
             conn.execute(
-                "UPDATE anpr_event SET status='sent', sent_at=?, last_error=NULL "
-                "WHERE id=?",
+                "UPDATE anpr_event SET status='sent', sent_at=?, last_error=NULL, "
+                "retry_after=NULL WHERE id=?",
                 (datetime.now().astimezone().isoformat(timespec="seconds"), event_id))
 
     def delete(self, event_id):
@@ -209,11 +242,19 @@ class AnprEventStore:
                 "UPDATE anpr_event SET status='failed', attempts=attempts+1, "
                 "last_error=? WHERE id=?", (str(error)[:200], event_id))
 
-    def mark_attempt(self, event_id, error):
+    def mark_attempt(self, event_id, error, defer_seconds=None):
+        """Suma un intento. Con defer_seconds, ademas posterga el evento esos
+        segundos para que la cola siga avanzando sin el."""
+        retry_after = None
+        if defer_seconds:
+            retry_after = (datetime.now().astimezone()
+                           + timedelta(seconds=defer_seconds)) \
+                .isoformat(timespec="seconds")
         with self._lock, self._connect() as conn:
             conn.execute(
-                "UPDATE anpr_event SET attempts=attempts+1, last_error=? WHERE id=?",
-                (str(error)[:200], event_id))
+                "UPDATE anpr_event SET attempts=attempts+1, last_error=?, "
+                "retry_after=? WHERE id=?",
+                (str(error)[:200], retry_after, event_id))
 
     def purge_sent(self, days):
         cutoff = (datetime.now().astimezone() - timedelta(days=days)) \
@@ -238,20 +279,35 @@ class AnprEventStore:
             failed = conn.execute(
                 "SELECT COUNT(*) FROM anpr_event WHERE status='failed'"
             ).fetchone()[0]
+            deferred = conn.execute(
+                "SELECT COUNT(*) FROM anpr_event WHERE status='pending' "
+                "AND retry_after > ?", (_now(),)).fetchone()[0]
             last = conn.execute(
                 "SELECT event_uid, license_plate, captured_at, status, attempts,"
-                " last_error, source_ip FROM anpr_event "
+                " last_error, source_ip, retry_after FROM anpr_event "
                 "ORDER BY id DESC LIMIT 5").fetchall()
             return {
                 "pending": pending,
                 "sent": sent,
                 "failed": failed,
+                "deferred": deferred,
                 "recent": [dict(r) for r in last],
             }
 
 
+def _response_snippet(resp):
+    """Una linea del cuerpo de la respuesta, recortada, para el last_error."""
+    try:
+        body = (resp.text or "").strip()
+    except Exception:
+        return ""
+    return " ".join(body.split())[:ERROR_BODY_CHARS]
+
+
 class AnprEventForwarder(threading.Thread):
-    """Reenvia la cola a Aditum en orden, con backoff ante fallos."""
+    """Reenvia la cola a Aditum en orden de llegada, con backoff ante fallos.
+    El evento que falla DEFER_AFTER veces cede el turno para que la cola no
+    quede congelada detras de el."""
 
     def __init__(self, settings, store):
         super().__init__(name="anpr-forwarder", daemon=True)
@@ -296,8 +352,8 @@ class AnprEventForwarder(threading.Thread):
                 reason = (resp.json() or {}).get("reason") or ""
             except ValueError:
                 pass
-            return False, f"http_400 {reason}".strip(), True
-        return False, f"http_{resp.status_code}", False
+            return False, f"http_400 {reason or _response_snippet(resp)}".strip(), True
+        return False, f"http_{resp.status_code} {_response_snippet(resp)}".strip(), False
 
     def run(self):
         log.info("Forwarder ANPR iniciado → %s", self._events_url())
@@ -329,6 +385,16 @@ class AnprEventForwarder(threading.Thread):
                          row["event_uid"], row["license_plate"],
                          row["captured_at"])
                 self._backoff = BACKOFF_INITIAL
+                continue
+            attempts = row["attempts"] + 1
+            if attempts >= DEFER_AFTER:
+                # Deja pasar a los de atras: un solo evento atascado no puede
+                # congelar la bitacora entera del condominio.
+                self.store.mark_attempt(row["id"], error,
+                                        defer_seconds=DEFER_SECONDS)
+                log.error("Evento ANPR %s lleva %s intentos fallidos (%s): se "
+                          "pospone %ss y sigue la cola. NO se descarta.",
+                          row["event_uid"], attempts, error, DEFER_SECONDS)
                 continue
             self.store.mark_attempt(row["id"], error)
             log.warning("Reenvio ANPR %s fallo (%s); reintento en %ss",

@@ -86,7 +86,7 @@ Reglas:
 | `/anpr-event` | POST | especial | Lecturas de placa que postea la cámara (IP de la LAN) |
 | `/anpr-status` | GET | T/S | Estado del ANPR: cámara, cola y últimas lecturas |
 | `/anpr-status/pending` | DELETE | T/S | Vaciar la cola de lecturas sin enviar |
-| `/anpr-test` | POST | T/S | Probar la conexión con la cámara desde el editor |
+| `/anpr-test` | POST | T/S | Probar la conexión con la cámara y consultar su lista de placas |
 | `/sync-plates` | POST | T/S | Cargar la lista de placas autorizadas del condominio |
 | `/update-plate` | POST | T/S | Alta/baja de una placa suelta |
 | `/restart` | POST | T/S | Reiniciar el proceso de este API |
@@ -451,7 +451,7 @@ que hablan con la cámara (`/update-plate`, `/sync-plates`, `/anpr-test`) y
 | `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola (y solo del allow list si `anpr.onlyAuthorized`): no abre portones ni toca configuración |
 | `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
 | `/anpr-status/pending` | DELETE | token | Borra las lecturas **pendientes** de enviar (no toca las confirmadas/descartadas). Botón "Borrar pendientes" del editor, para limpiar tras pruebas o un cutover |
-| `/anpr-test` | POST | token | **Diagnóstico de instalación**: habla directo con una cámara sin pasar por Aditum |
+| `/anpr-test` | POST | token | **Diagnóstico y consulta**: habla directo con una cámara sin pasar por Aditum. `CHECK`/`LIST`/`FIND` solo leen; `ADD`/`DELETE` escriben |
 
 Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en
 `/update-plate` y `/sync-plates`; `404` en `/anpr-event`, `/anpr-status`,
@@ -509,10 +509,40 @@ debe fallar en silencio.
 | `401` | Reintenta — puede ser una rotación de token en curso |
 | `5xx`, timeout, red caída | Reintenta con backoff |
 
-El 400 **tiene** que ser terminal: el reenvío es estrictamente en orden, así que un solo evento
-rechazado para siempre trancaría la cola entera y ninguna lectura posterior llegaría nunca. Las
-descartadas no se borran —quedan visibles en `/anpr-status` y en el editor con su motivo— pero
-salen de la fila de pendientes.
+El 400 **tiene** que ser terminal: el reenvío es en orden, así que un solo evento rechazado para
+siempre trancaría la cola entera y ninguna lectura posterior llegaría nunca. Las descartadas no se
+borran —quedan visibles en `/anpr-status` y en el editor con su motivo— pero salen de la fila de
+pendientes.
+
+Reintentar indefinidamente tampoco puede congelar la cola. Tras **5 intentos fallidos** el evento
+**cede el turno 10 minutos** (columna `retry_after`) y el reenvío sigue con el siguiente; al vencer
+vuelve a la fila y, por ser el más viejo, recupera su lugar. No se descarta nunca. El precio es que
+el orden de entrega deja de ser estricto ante un fallo persistente, algo que Aditum tolera: dedup
+por `eventUid` y el `capturedAt` de cada lectura viaja en el payload. Así un `401` sostenido (token
+del equipo revocado) o un `5xx` sostenido dejan de ser un cuello de botella y pasan a verse como
+`deferred` en `/anpr-status`.
+
+De cada fallo se guarda en `last_error` el código HTTP **más un recorte del cuerpo** de la respuesta
+(150 chars, en una línea). Un `http_500` a secas no dice qué rechazó Aditum. Si el backend responde
+con cuerpo vacío queda solo el código.
+
+**`GET /anpr-status`** — respuesta:
+
+```json
+{
+  "pending": 6, "sent": 128, "failed": 0, "deferred": 1,
+  "recent": [
+    { "event_uid": "2026…", "license_plate": "ABC123",
+      "captured_at": "2026-08-24T22:41:29-06:00", "status": "pending",
+      "attempts": 5, "last_error": "http_500 …", "source_ip": "192.168.100.106",
+      "retry_after": "2026-08-24T22:51:29-06:00" }
+  ]
+}
+```
+
+`deferred` cuenta las pendientes que ahora mismo están cediendo el turno (van incluidas en
+`pending`, no son una categoría aparte). `retry_after` es `null` salvo en esas. Un `deferred > 0`
+sostenido significa que Aditum está rechazando el reenvío: mirar `last_error`.
 
 **`POST /anpr-event`** — la cámara postea su `EventNotificationAlert`
 (multipart con el XML + jpgs, o XML crudo). El Pi extrae placa, fecha de
@@ -553,16 +583,51 @@ se borra nunca**: se reintenta hasta que Aditum responda OK.
 
 ```json
 { "ip": "192.168.68.64", "user": "admin", "password": "…",
-  "action": "CHECK" | "ADD" | "DELETE", "plate": "ABC-123" }
+  "action": "CHECK" | "LIST" | "FIND" | "ADD" | "DELETE", "plate": "ABC-123" }
 ```
 
-`CHECK` es de **solo lectura**: confirma IP, credenciales y soporte ISAPI, y
-devuelve cuántas placas tiene la cámara, su capacidad y una muestra. `ADD` y
-`DELETE` sí modifican la lista (idempotentes, mismos `detail` que
-`/update-plate`); la placa se normaliza igual que en producción, así que
-tecleando `sjb-123` se manda `SJB123`. Los errores se devuelven con el mismo
-código del contrato (`CAMERA_AUTH`, `CAMERA_UNREACHABLE`, `LIST_FULL`…), que el
-editor traduce a lenguaje de instalación.
+`CHECK`, `LIST` y `FIND` son de **solo lectura** (exportan la lista de la cámara
+y no escriben nada). `ADD` y `DELETE` sí modifican la lista (idempotentes,
+mismos `detail` que `/update-plate`). La placa se normaliza igual que en
+producción, así que tecleando `sjb-123` se consulta `SJB123`. Los errores se
+devuelven con el mismo código del contrato (`CAMERA_AUTH`,
+`CAMERA_UNREACHABLE`, `LIST_FULL`…), que el editor traduce a lenguaje de
+instalación.
+
+`CHECK` confirma IP, credenciales y soporte ISAPI, y devuelve cuántas placas
+tiene la cámara, su capacidad y una muestra de 5.
+
+**`LIST`** — consultar la allowlist entera de la cámara. No lleva `plate`:
+
+```json
+{ "ok": true, "action": "LIST", "total": 412, "capacity": 10000,
+  "truncated": false, "plates": ["ABC123", "BFB365", "…"] }
+```
+
+`plates` viene normalizada, ordenada y **sin repetir** (una lista cargada a mano
+puede tener duplicados); `total` son las placas distintas que hay en la cámara,
+no las que se devuelven. Con más de 5000 se devuelven las primeras y
+`truncated: true`.
+
+**`FIND`** — saber si UNA placa está cargada. Requiere `plate`:
+
+```json
+{ "ok": true, "action": "FIND", "plateNormalized": "ABC123", "found": true,
+  "total": 412,
+  "match": { "plate": "ABC123", "group": "allowlist",
+             "validFrom": "2026-01-01", "validTo": "2046-01-01" } }
+```
+
+`match` es `null` cuando `found` es `false`. Devuelve la fila y no solo un
+booleano **a propósito**: una placa puede estar cargada en `blacklist` o con la
+vigencia vencida, y para el que consulta eso no es lo mismo que estar
+autorizada. `group` es `allowlist` (grupo `1` del CSV), `blacklist` (`0`) o el
+valor crudo si el firmware usa otro. `total` es cuántas placas tiene la cámara,
+para dar contexto a un `found: false`.
+
+Las dos consultas usan el timeout largo del export (`ISAPI_SYNC_TIMEOUT`): la
+lista completa de una cámara con miles de placas no entra en los 2,5 s del
+timeout normal.
 
 Las credenciales se reciben **solo para la prueba**: no se guardan ni se
 loguean. El `ip` debe ser de la red privada — sin ese guard el endpoint
