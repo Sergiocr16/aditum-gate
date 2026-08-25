@@ -107,7 +107,8 @@ class Settings:
         # bloque anpr no lee placas)
         self.anpr_enabled = anpr.get("enabled", False)
         self.anpr_purge_days = anpr.get("purgeDays", 7)
-        # true: solo se encolan lecturas del allow list (whiteList). false: todas.
+        # true: solo se encolan lecturas del allow list (whiteList/allowList).
+        # false: todas.
         self.anpr_only_authorized = anpr.get("onlyAuthorized", True)
 
 

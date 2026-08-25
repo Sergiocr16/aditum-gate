@@ -11,6 +11,8 @@ Decisiones clave:
   - Solo se encolan lecturas del ALLOW LIST: el evento trae <vehicleListName>
     y se descartan blackList/otherList (y las placas 'unknown' ilegibles). El
     gate lo abre la camara localmente; la bitacora es solo de autorizadas.
+    OJO: el allow list se llama "whiteList" en firmwares viejos y "allowList"
+    en los nuevos; ver ALLOW_LIST_NAMES.
   - eventUid: se usa el <UUID> que emite la propia camara cuando viene (estable
     ante reintentos del lado camara); si falta, uuid4 generado aqui. Siempre
     minusculas hex+guiones → seguro ante el UNIQUE case-insensitive de MySQL.
@@ -118,11 +120,19 @@ def _text_of(root, name):
 _NO_PLATE_SENTINELS = {"unknown"}
 
 
+# Nombres con los que la camara reporta SU allow list en <vehicleListName>.
+# Hikvision cambio la terminologia en los firmwares nuevos (whiteList ->
+# allowList, igual que blackList -> blockList) y hay equipos de las dos epocas
+# en la flota: son la MISMA lista, la de placas autorizadas. Reconocer solo una
+# hace que el filtro descarte en silencio todas las lecturas autorizadas.
+ALLOW_LIST_NAMES = ("whitelist", "allowlist")
+
+
 def is_authorized(event):
-    """True si la lectura es del allow list (whiteList) o si la camara no
-    reporto la lista ("" -> fallback: no descartar una autorizada por falta del
-    dato). blackList/otherList => False."""
-    return event.get("vehicleList", "") in ("", "whitelist")
+    """True si la lectura es del allow list (whiteList/allowList) o si la camara
+    no reporto la lista ("" -> fallback: no descartar una autorizada por falta
+    del dato). blackList/blockList/otherList => False."""
+    return event.get("vehicleList", "") in ("",) + ALLOW_LIST_NAMES
 
 
 def parse_event_xml(xml_bytes):
@@ -145,7 +155,8 @@ def parse_event_xml(xml_bytes):
         return None
 
     # <vehicleListName>: resultado del match de la camara contra sus listas —
-    # whiteList (autorizada), blackList (vetada) u otherList (no esta en ninguna);
+    # whiteList/allowList (autorizada), blackList/blockList (vetada) u otherList
+    # (no esta en ninguna);
     # "" si el firmware no lo reporta. El filtro por allow list lo decide el
     # caller segun anpr.onlyAuthorized (ver is_authorized), no aca.
     vehicle_list = (_text_of(root, "vehicleListName") or "").strip().lower()

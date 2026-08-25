@@ -103,7 +103,7 @@
       "properties": {
         "enabled": { "type": "boolean", "default": false, "description": "Apagado por defecto: la lectura de placas es opt-in por equipo (necesita una camara ANPR en la LAN posteando a /anpr-event). Una config sin bloque anpr queda sin ANPR" },
         "purgeDays": { "type": "integer", "minimum": 0, "maximum": 90, "default": 7, "description": "Dias que se conservan las lecturas ya confirmadas por Aditum antes de borrarlas. 0 = borrarlas apenas Aditum confirma (la cola queda solo con lo pendiente)" },
-        "onlyAuthorized": { "type": "boolean", "default": true, "description": "true (default): solo se encolan lecturas del allow list (whiteList) de la camara. false: se encolan todas (whiteList/blackList/otherList) para revisar. Las placas ilegibles (unknown) se ignoran siempre." }
+        "onlyAuthorized": { "type": "boolean", "default": true, "description": "true (default): solo se encolan lecturas del allow list de la camara, que segun el firmware se llama whiteList o allowList. false: se encolan todas (allow list/blackList/otherList) para revisar. Las placas ilegibles (unknown) se ignoran siempre." }
       }
     },
     "polling": {

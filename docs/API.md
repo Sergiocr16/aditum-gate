@@ -559,9 +559,9 @@ solo el nombre de la lista, y es acumulativo (la purga no lo toca).
 
 | Qué se ve en `lists` | Qué significa |
 |---|---|
-| `whitelist` con `queued` y `blacklist`/`otherlist` con `discarded` | El filtro está funcionando |
+| `whitelist`/`allowlist` con `queued` y `blacklist`/`otherlist` con `discarded` | El filtro está funcionando |
 | Una sola entrada con `vehicle_list: ""` y todo en `queued` | **La cámara no reporta la lista**: el filtro no descarta nada y entran todas las lecturas |
-| Todo en `discarded`, `queued` en cero | **Se descarta todo**: el firmware usa otro nombre de lista (`allowList`, uno localizado…) y la bitácora quedó vacía |
+| Todo en `discarded`, `queued` en cero | **Se descarta todo**: el firmware reporta un nombre de lista que no es allow list (uno localizado, una lista propia…) y la bitácora quedó vacía |
 
 Los dos casos malos son silenciosos sin este contador. El editor los traduce a un aviso en
 `/admin` → ANPR, y cada descarte se loguea (`Evento ANPR descartado por allowlist: placa=… lista=…`).
@@ -581,11 +581,17 @@ mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
 por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
 `200 {"ignored": true}` para que la cámara no reintente.
 
-Solo se encolan lecturas del **allow list** (`whiteList`): el evento trae
-`<vehicleListName>` (whiteList/blackList/otherList) con el resultado del match
-de la cámara, y el Pi descarta lo que no sea whiteList cuando
+Solo se encolan lecturas del **allow list**: el evento trae
+`<vehicleListName>` con el resultado del match de la cámara, y el Pi descarta lo
+que no sea el allow list cuando
 `anpr.onlyAuthorized = true` (default; switch en el editor). En `false` se
 encolan todas para revisar. Las placas ilegibles (`unknown`) se ignoran siempre.
+
+El allow list llega con **dos nombres segun el firmware**: `whiteList` en los
+viejos y `allowList` en los nuevos (Hikvision renombro whiteList/blackList a
+allowList/blockList). El Pi acepta los dos como autorizadas — comparacion en
+minusculas, ver `ALLOW_LIST_NAMES` en `anpr_events.py`. Cualquier otro valor
+(`blackList`, `blockList`, `otherList`, un nombre localizado) se descarta.
 
 **Configuración en el editor local** (`/admin` → **ANPR**). Esa pantalla concentra
 las dos patas del flujo: la **URL de Aditum** a la que se envían las lecturas

@@ -1241,9 +1241,9 @@
         const encoladas = lists.reduce((a, l) => a + l.queued, 0);
         let aviso = '';
         if (sinLista === vistas) {
-          aviso = '<b class="txt-warn">La cámara no está reportando la lista (whiteList/blackList), así que el filtro no descarta nada: están entrando todas las lecturas.</b> ';
+          aviso = '<b class="txt-warn">La cámara no está reportando la lista (allowList/blackList), así que el filtro no descarta nada: están entrando todas las lecturas.</b> ';
         } else if (!encoladas) {
-          aviso = '<b class="txt-warn">Se están descartando todas las lecturas: revisá que la lista de la cámara se llame whiteList.</b> ';
+          aviso = '<b class="txt-warn">Se están descartando todas las lecturas: el equipo solo reconoce como autorizadas las listas whiteList y allowList; revisá cómo se llama la de la cámara.</b> ';
         }
         html += '<p class="hint">Filtro «solo placas autorizadas»: ' + aviso + detalle + '</p>';
       }
