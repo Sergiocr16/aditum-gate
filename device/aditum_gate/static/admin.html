@@ -1217,6 +1217,7 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       const recent = d.recent || [];
+      const descartadas = d.recentDiscarded || [];
       let html = '<div class="chips" style="margin:8px 0">' +
         '<span class="chip">Pendientes de enviar: <b>' + d.pending + '</b></span>' +
         '<span class="chip">Ya confirmadas: <b>' + d.sent + '</b></span>' +
@@ -1258,7 +1259,7 @@
             const st = e.status === 'sent'
               ? '<span class="badge ok">Enviada</span>'
               : e.status === 'failed'
-                ? '<span class="badge bad">Descartada</span>' +
+                ? '<span class="badge bad">Rechazada por Aditum</span>' +
                   (e.last_error ? '<span class="reason">' + esc(e.last_error) + '</span>' : '')
                 : '<span class="badge warn">Pendiente</span>' +
                   (e.attempts ? '<span class="reason">' + e.attempts + ' intento' + (e.attempts > 1 ? 's' : '') +
@@ -1267,6 +1268,20 @@
               '<td class="when">' + esc(w) + '</td>' +
               '<td><span class="cam">' + esc(e.source_ip || '—') + '</span></td>' +
               '<td>' + st + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      }
+      if (descartadas.length) {
+        html += '<p class="hint" style="margin-top:14px">Últimas lecturas <b>descartadas</b> por el filtro ' +
+          '(no se envían a Aditum; se borran junto con las confirmadas a los mismos días de retención):</p>' +
+          '<div class="tbl-wrap"><table class="tbl anpr-log"><thead><tr>' +
+          '<th>Placa</th><th>Capturada</th><th>Cámara</th><th>Lista</th>' +
+          '</tr></thead><tbody>' +
+          descartadas.map((e) => {
+            const w = String(e.captured_at || '').replace('T', ' ').slice(0, 16);
+            return '<tr><td><span class="plate">' + esc(e.license_plate) + '</span></td>' +
+              '<td class="when">' + esc(w) + '</td>' +
+              '<td><span class="cam">' + esc(e.source_ip || '—') + '</span></td>' +
+              '<td><span class="badge warn">' + esc(e.vehicle_list || 'sin lista') + '</span></td></tr>';
           }).join('') + '</tbody></table></div>';
       }
       body.innerHTML = html;

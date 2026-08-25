@@ -77,17 +77,19 @@ CREATE TABLE IF NOT EXISTS anpr_event (
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT,
     sent_at       TEXT,
-    retry_after   TEXT
+    retry_after   TEXT,
+    vehicle_list  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_anpr_event_status ON anpr_event(status, id);
 
 -- Cuantas lecturas llegaron con cada <vehicleListName> y que se hizo con
--- ellas. Es lo unico que hace VERIFICABLE el filtro de allowlist: las
--- descartadas no se guardan (la bitacora es solo de autorizadas), asi que
--- sin este contador no hay forma de distinguir "no habia nada que
--- descartar" de "la camara no reporta la lista y el filtro no descarta
--- nunca" ni de "el firmware usa otro nombre y se descarta todo". No
--- guarda placas: solo el nombre de la lista.
+-- ellas. Las descartadas tambien se guardan como filas (status='discarded'),
+-- pero la purga se las lleva a los purgeDays dias: este contador es
+-- ACUMULATIVO y sobrevive a la purga, asi que sigue siendo lo que permite
+-- distinguir "no habia nada que descartar" de "la camara no reporta la lista
+-- y el filtro no descarta nunca" y de "el firmware usa otro nombre y se
+-- descarta todo" cuando la ventana de filas ya se vacio. No guarda placas:
+-- solo el nombre de la lista.
 CREATE TABLE IF NOT EXISTS anpr_list_stat (
     vehicle_list TEXT PRIMARY KEY,
     queued       INTEGER NOT NULL DEFAULT 0,
@@ -207,6 +209,8 @@ class AnprEventStore:
         columns = {r["name"] for r in conn.execute("PRAGMA table_info(anpr_event)")}
         if "retry_after" not in columns:
             conn.execute("ALTER TABLE anpr_event ADD COLUMN retry_after TEXT")
+        if "vehicle_list" not in columns:
+            conn.execute("ALTER TABLE anpr_event ADD COLUMN vehicle_list TEXT")
 
     def _connect(self):
         conn = sqlite3.connect(self.path, timeout=10)
@@ -214,19 +218,33 @@ class AnprEventStore:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def enqueue(self, event, source_ip=None):
-        """Inserta el evento; devuelve True si es nuevo, False si el
-        event_uid ya estaba (reintento de la camara → idempotente)."""
+    def _insert(self, event, source_ip, status):
+        """Inserta el evento con el status dado; devuelve True si es nuevo,
+        False si el event_uid ya estaba (reintento de la camara →
+        idempotente)."""
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO anpr_event "
                 "(event_uid, license_plate, captured_at, received_at,"
-                " confidence, camera_name, source_ip) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " confidence, camera_name, source_ip, status, vehicle_list) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (event["eventUid"], event["licensePlate"], event["capturedAt"],
-                 datetime.now().astimezone().isoformat(timespec="seconds"),
-                 event["confidenceLevel"], event["cameraName"], source_ip))
+                 _now(), event["confidenceLevel"], event["cameraName"],
+                 source_ip, status, event.get("vehicleList", "")))
             return cursor.rowcount == 1
+
+    def enqueue(self, event, source_ip=None):
+        """Encola el evento para reenviarlo a Aditum."""
+        return self._insert(event, source_ip, "pending")
+
+    def record_discarded(self, event, source_ip=None):
+        """Guarda una lectura que el filtro de allowlist descarto.
+
+        Queda como fila 'discarded': NO se reenvia nunca (next_pending solo
+        mira 'pending') y la purga la borra igual que a las confirmadas. Sirve
+        para responder "por que esta placa no aparece en la bitacora" desde
+        /admin, sin tener que entrar por SSH a leer el log."""
+        return self._insert(event, source_ip, "discarded")
 
     def record_list_outcome(self, vehicle_list, discarded):
         """Suma una lectura al contador de su <vehicleListName>.
@@ -295,16 +313,21 @@ class AnprEventStore:
                 "retry_after=? WHERE id=?",
                 (str(error)[:200], retry_after, event_id))
 
-    def purge_sent(self, days):
+    def purge_processed(self, days):
+        """Borra lo que ya no tiene nada pendiente que hacer: confirmadas por
+        Aditum y descartadas por el filtro. Lo PENDIENTE no se toca nunca.
+
+        Las descartadas no tienen sent_at, asi que su edad se mide por
+        received_at."""
         cutoff = (datetime.now().astimezone() - timedelta(days=days)) \
             .isoformat(timespec="seconds")
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM anpr_event WHERE status='sent' AND sent_at < ?",
-                (cutoff,))
+                "DELETE FROM anpr_event WHERE status IN ('sent', 'discarded') "
+                "AND COALESCE(sent_at, received_at) < ?", (cutoff,))
             if cursor.rowcount:
-                log.info("Purga ANPR: %s eventos confirmados eliminados",
-                         cursor.rowcount)
+                log.info("Purga ANPR: %s eventos procesados eliminados "
+                         "(confirmados + descartados)", cursor.rowcount)
             return cursor.rowcount
 
     def stats(self):
@@ -324,18 +347,32 @@ class AnprEventStore:
             lists = [dict(r) for r in conn.execute(
                 "SELECT vehicle_list, queued, discarded, last_at "
                 "FROM anpr_list_stat ORDER BY queued + discarded DESC")]
+            # La cola y los descartes van por separado: si se mezclaran, el
+            # ruido de la calle (otherList) taparia las lecturas que importan.
             last = conn.execute(
                 "SELECT event_uid, license_plate, captured_at, status, attempts,"
-                " last_error, source_ip, retry_after FROM anpr_event "
+                " last_error, source_ip, retry_after, vehicle_list "
+                "FROM anpr_event WHERE status <> 'discarded' "
                 "ORDER BY id DESC LIMIT 5").fetchall()
+            last_discarded = conn.execute(
+                "SELECT license_plate, captured_at, received_at, source_ip,"
+                " vehicle_list FROM anpr_event WHERE status = 'discarded' "
+                "ORDER BY id DESC LIMIT 10").fetchall()
+            discarded_stored = conn.execute(
+                "SELECT COUNT(*) FROM anpr_event WHERE status='discarded'"
+            ).fetchone()[0]
             return {
                 "pending": pending,
                 "sent": sent,
                 "failed": failed,
                 "deferred": deferred,
+                # 'discarded' es el acumulado historico del contador; se
+                # mantiene aunque la purga ya se haya llevado las filas.
                 "discarded": sum(r["discarded"] for r in lists),
+                "discardedStored": discarded_stored,
                 "lists": lists,
                 "recent": [dict(r) for r in last],
+                "recentDiscarded": [dict(r) for r in last_discarded],
             }
 
 
@@ -451,6 +488,6 @@ class AnprEventForwarder(threading.Thread):
         if now - self._last_purge >= PURGE_INTERVAL:
             self._last_purge = now
             try:
-                self.store.purge_sent(self.settings.anpr_purge_days)
+                self.store.purge_processed(self.settings.anpr_purge_days)
             except Exception:
                 log.exception("Fallo la purga de eventos ANPR")
