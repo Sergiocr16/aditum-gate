@@ -531,7 +531,7 @@ con cuerpo vacío queda solo el código.
 ```json
 {
   "pending": 6, "sent": 128, "failed": 0, "deferred": 1,
-  "discarded": 12, "onlyAuthorized": true,
+  "discarded": 12, "discardedStored": 9, "onlyAuthorized": true,
   "lists": [
     { "vehicle_list": "whitelist", "queued": 128, "discarded": 0,
       "last_at": "2026-08-24T23:48:55-06:00" },
@@ -542,7 +542,12 @@ con cuerpo vacío queda solo el código.
     { "event_uid": "2026…", "license_plate": "ABC123",
       "captured_at": "2026-08-24T22:41:29-06:00", "status": "pending",
       "attempts": 5, "last_error": "http_500 …", "source_ip": "192.168.100.106",
-      "retry_after": "2026-08-24T22:51:29-06:00" }
+      "retry_after": "2026-08-24T22:51:29-06:00", "vehicle_list": "allowlist" }
+  ],
+  "recentDiscarded": [
+    { "license_plate": "FLR522", "captured_at": "2026-08-25T10:19:25-06:00",
+      "received_at": "2026-08-25T16:19:25-06:00", "source_ip": "192.168.100.102",
+      "vehicle_list": "otherlist" }
   ]
 }
 ```
@@ -550,6 +555,15 @@ con cuerpo vacío queda solo el código.
 `deferred` cuenta las pendientes que ahora mismo están cediendo el turno (van incluidas en
 `pending`, no son una categoría aparte). `retry_after` es `null` salvo en esas. Un `deferred > 0`
 sostenido significa que Aditum está rechazando el reenvío: mirar `last_error`.
+
+Las lecturas que el filtro descarta **también se guardan**, como filas con `status: "discarded"`:
+nunca se reenvían (el forwarder solo toma `pending`) y sirven para responder *por qué esta placa no
+aparece en la bitácora* sin entrar por SSH a leer el log. Van aparte de la cola —`recentDiscarded`
+(últimas 10) y `discardedStored` (cuántas hay guardadas)— porque mezclarlas con `recent` haría que el
+tráfico de calle (`otherList`) tapara las lecturas que importan. `recent` excluye las descartadas.
+
+No confundir `discarded` con `discardedStored`: el primero es el **acumulado histórico** del contador
+`lists`, que sobrevive a la purga; el segundo, cuántas filas hay ahora en la ventana de retención.
 
 **`lists` es lo que hace verificable el filtro de allowlist.** Cuenta cada lectura recibida por el
 `<vehicleListName>` que reportó la cámara y qué se hizo con ella. Hace falta porque una lectura
@@ -605,8 +619,10 @@ enviarse.
 "anpr": { "enabled": true, "purgeDays": 7 }
 ```
 
-`purgeDays` en `0` borra la lectura apenas Aditum la confirma. Lo **pendiente no
-se borra nunca**: se reintenta hasta que Aditum responda OK.
+`purgeDays` rige por igual para las confirmadas y las descartadas: una sola
+retención para todo lo ya procesado (la edad de una descartada se mide por
+`received_at`, que no tiene `sent_at`). En `0` se borra apenas se procesa. Lo
+**pendiente no se borra nunca**: se reintenta hasta que Aditum responda OK.
 
 **`POST /anpr-test`** — para validar la instalación en sitio, desde `/admin` →
 **ANPR** → *Probar la conexión con una cámara*:

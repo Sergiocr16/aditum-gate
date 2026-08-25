@@ -506,6 +506,10 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             # la cola (la bitacora es solo de autorizadas), asi que sin esto
             # el filtro seria imposible de verificar desde el equipo.
             anpr_store.record_list_outcome(event["vehicleList"], discarded=True)
+            # Se guarda ademas como fila 'discarded' (nunca se reenvia, la
+            # purga se la lleva igual que a las confirmadas) para poder
+            # responder desde /admin por que una placa no esta en la bitacora.
+            anpr_store.record_discarded(event, source_ip=source_ip)
             log.info("Evento ANPR descartado por allowlist: placa=%s lista=%r "
                      "desde=%s", event["licensePlate"], event["vehicleList"],
                      source_ip)
