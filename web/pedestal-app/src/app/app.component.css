@@ -121,9 +121,6 @@
 
 /* Ultima linea del aviso: el respaldo, un escalon por debajo */
 .subtitulo-respaldo { font-size: 22px; color: #66707c; }
-.sello-chico { width: 150px; height: 150px; margin-top: 4px; }
-.sello-chico svg { width: 150px; height: 150px; }
-
 .titulo { margin: 0; font-size: 50px; font-weight: 900; letter-spacing: 1px; color: #0a1f33; }
 .titulo-idle { font-size: 52px; }
 .titulo-escaneo { font-size: 46px; }
@@ -222,6 +219,11 @@
 .sello-ok { animation: fillGreen .5s ease-in-out .5s forwards, bump .35s ease-in-out 1s both; }
 .sello-mal { animation: fillRed .5s ease-in-out .4s forwards; }
 .sello-alerta { animation: fillAmbar .5s ease-in-out .4s forwards; }
+/* Sello reducido del aviso de fallo (cuatro lineas de texto arriba). Va DESPUES
+   de .sello / .sello svg y con mas especificidad: si no, pierde la cascada y el
+   sello sale a 250px con el relleno calculado para 150px (queda un hueco blanco). */
+.sello.sello-chico { width: 150px; height: 150px; margin-top: 4px; }
+.sello.sello-chico svg { width: 150px; height: 150px; }
 .trazo-circulo-verde { stroke: #0ba360; stroke-width: 3; stroke-dasharray: 160; stroke-dashoffset: 160; animation: drawStroke .7s cubic-bezier(.65, 0, .45, 1) forwards; }
 .trazo-check { stroke-dasharray: 60; stroke-dashoffset: 60; animation: drawStroke .35s cubic-bezier(.65, 0, .45, 1) .85s forwards; }
 .trazo-circulo-rojo { stroke: #d64550; stroke-width: 3; stroke-dasharray: 160; stroke-dashoffset: 160; animation: drawStroke .6s cubic-bezier(.65, 0, .45, 1) forwards; }

@@ -39,7 +39,7 @@ app-root { flex: 1; min-width: 0; }
 @keyframes drawStroke { 100% { stroke-dashoffset: 0; } }
 @keyframes fillGreen { 100% { box-shadow: inset 0 0 0 130px #0ba360; } }
 @keyframes fillRed { 100% { box-shadow: inset 0 0 0 130px #d64550; } }
-@keyframes fillAmbar { 100% { box-shadow: inset 0 0 0 80px #b98a2f; } }
+@keyframes fillAmbar { 100% { box-shadow: inset 0 0 0 130px #b98a2f; } }
 @keyframes bump { 0%, 100% { transform: none; } 50% { transform: scale3d(1.08, 1.08, 1); } }
 @keyframes halo { 0% { transform: scale(.85); opacity: .55; } 100% { transform: scale(1.45); opacity: 0; } }
 @keyframes shakeX { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-9px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
