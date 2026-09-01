@@ -208,8 +208,8 @@ class HidScanner(Scanner):
     def _read_until_terminator(self):
         """Lee teclas hasta Enter (lectores nuevos) o '@' (sufijo legacy).
 
-        Bloquea la lectura apenas el texto deja de coincidir con el prefijo
-        esperado (modo discarding hasta el siguiente terminador).
+        Bloquea la lectura apenas el texto deja de poder ser alguno de los
+        prefijos validos (modo discarding hasta el siguiente terminador).
         """
         caps = False
         current_text = ""
@@ -246,10 +246,12 @@ class HidScanner(Scanner):
 
             current_text += key
 
-            # Guardia de prefijo inmediata (case-insensitive)
+            # Guardia de prefijo inmediata (case-insensitive): lo tecleado
+            # debe seguir siendo el inicio de algun prefijo valido, o ya
+            # contener uno completo
             typed = len(current_text)
-            prefix = self.prefix.upper()
-            if typed <= len(prefix) and prefix[:typed] != current_text.upper():
+            upper = current_text.upper()
+            if not any(p.startswith(upper) or upper.startswith(p) for p in self.prefixes):
                 log.info("Prefijo invalido en %s: lectura bloqueada", self.reader.role)
                 self.deny()
                 discarding = True

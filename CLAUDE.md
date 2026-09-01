@@ -17,8 +17,10 @@ cada dispositivo lo decide su **config JSON** (ver `config.schema.json`):
   apertura de portones).
 - `scanners[]`: 0–2 lectores, cada uno con `role` (entry/exit), `doorId`, y
   `deviceName` (HID) o `cameraIndex` (OpenCV).
-- `screen.hasScreen`, `gpio.*` (pines, watchdog, neopixel), `api.baseUrl`
-  (app vs caseta.aditumcr.com) y `api.verifierStyle` (secure/legacy).
+- `screen.hasScreen`, `gpio.*` (pines, watchdog, neopixel) y `api.baseUrl`
+  (app vs caseta.aditumcr.com). Los QR `ADTG...` y `ADITUMGATE=...` se
+  aceptan **siempre** y solo esos dos (`backend.QR_FORMATS`); el prefijo
+  decide el endpoint. `api.verifierStyle` es obsoleto: se acepta y se ignora.
 
 Si una funcionalidad nueva aplica solo a algunas instalaciones, se agrega un
 flag al schema + `settings.py`, no un branch ni un archivo paralelo.

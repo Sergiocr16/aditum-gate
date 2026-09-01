@@ -4,8 +4,7 @@
   "deviceId": "",
   "placeName": "Sin configurar",
   "api": {
-    "baseUrl": "https://app.aditumcr.com/api",
-    "verifierStyle": "secure"
+    "baseUrl": "https://app.aditumcr.com/api"
   },
   "scannerType": "none",
   "scanners": [],

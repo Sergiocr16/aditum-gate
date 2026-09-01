@@ -151,7 +151,7 @@ metelos en el prompt correspondiente del wizard:
 | Campo del JSON | De donde leerlo en `$OLD` |
 |---|---|
 | `api.baseUrl` | Host de las URLs `aditum-gate-verifier-*`: `app.` vs `caseta.aditumcr.com` (grep en los `scanner*.py`). |
-| `api.verifierStyle` | El viejo usa prefijo QR `ADITUMGATE=` y endpoints **sin** `-secure` -> **`legacy`**. Migrar a `secure` SOLO si el backend de ese condominio ya expone los endpoints `-secure` (confirmar). |
+| `api.verifierStyle` | **Ya no se usa** (obsoleto, se ignora): los QR `ADTG` y `ADITUMGATE=` se aceptan siempre y el prefijo de cada codigo decide el endpoint. No ponerlo. |
 | `scanners[].cameraIndex` | `cv2.VideoCapture(N)` en `scanner.py`/`scannerExit.py`. |
 | `scanners[].strictMarkerMatch` | `true` solo donde el viejo casaba `EXIT`<->rol (`scannerExit.py`); `false` en el resto. |
 | `screen.doorType` | `doorType` en `app.component.ts` (`ENTRY`/`EXIT`). |
@@ -165,7 +165,7 @@ metelos en el prompt correspondiente del wizard:
 |---|---|---|
 | `placeName` en `scanner*.py` | `placeName` | Placeholder en el repo de muestra. |
 | Host de URLs verifier | `api.baseUrl` | El viejo mezclaba `app.`/`caseta.`; elegir uno. |
-| Prefijo `ADITUMGATE=`, endpoints sin `-secure` | `api.verifierStyle: "legacy"` | Ver paso 4. |
+| Prefijo `ADITUMGATE=`, endpoints sin `-secure` | (nada) | Ambos prefijos se aceptan siempre; el `ADITUMGATE=` va solo al endpoint legacy. |
 | Script que corria (camara/HID/ISAPI/relays) | `scannerType` | opencv/hid/hikvision/none. |
 | `doorType = "entry"/"exit"` | `scanners[].role` | |
 | `doorId` | `scanners[].doorId` | `'0'` es placeholder; el real lo da Aditum. |

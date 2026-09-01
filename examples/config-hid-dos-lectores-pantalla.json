@@ -4,8 +4,7 @@
   "deviceId": "GATE-CR-0001",
   "placeName": "Condominio Ejemplo",
   "api": {
-    "baseUrl": "https://caseta.aditumcr.com/api",
-    "verifierStyle": "secure"
+    "baseUrl": "https://caseta.aditumcr.com/api"
   },
   "scannerType": "hid",
   "scanners": [

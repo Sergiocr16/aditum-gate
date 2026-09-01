@@ -16,7 +16,11 @@ cada dispositivo lo decide su **configuración**, no el branch:
 
 Cada una puede combinarse con: pantalla pedestal (`screen.hasScreen`), 1 o 2
 lectores/cámaras (`scanners`), watchdog de red, NeoPixel, y API
-`app.aditumcr.com` o `caseta.aditumcr.com` con estilo `secure` o `legacy`.
+`app.aditumcr.com` o `caseta.aditumcr.com`. Los QR con prefijo `ADTG`
+(seguro, endpoints `-secure`) y `ADITUMGATE=` (legacy) se aceptan **siempre**
+en todos los equipos y solo esos dos: el prefijo de cada código decide el
+endpoint, no hay nada que configurar (`api.verifierStyle` es obsoleto y se
+ignora).
 
 ## Arquitectura
 
@@ -60,7 +64,7 @@ aditum-gate/
 │       ├── static/admin.html    # Editor en linea: http://localhost:8080/admin
 │       ├── log.py               # Logging a stdout (PM2 lo captura)
 │       ├── httpclient.py        # Session con reintentos y timeouts
-│       ├── backend.py           # Verificación QR (estilos secure/legacy)
+│       ├── backend.py           # Verificación QR (ADTG→-secure, ADITUMGATE=→legacy)
 │       ├── api.py               # Flask :8080 (portones, Hikvision, health)
 │       ├── gpio_relays.py       # Relays GPIO (pines desde config)
 │       ├── hikvision.py         # ISAPI + CardStore persistente + limpieza 2AM
@@ -280,7 +284,7 @@ Otras variables: `ADITUM_GH_TOKEN` (token de lectura del repo privado),
 `ADITUM_CONFIG_FILE` (config preparada local, alternativa a
 `ADITUM_CONFIG_URL`), `ADITUM_ADMIN_USER` / `ADITUM_ADMIN_PASSWORD` (siembra
 de las credenciales del editor en línea), y las del wizard
-(`ADITUM_PLACE_NAME`, `ADITUM_VERIFIER`, `ADITUM_HAS_SCREEN`,
+(`ADITUM_PLACE_NAME`, `ADITUM_HAS_SCREEN`,
 `ADITUM_DOOR_TYPE`, `ADITUM_LOGO_URL`, `ADITUM_WATCHDOG`, `ADITUM_NEOPIXEL`,
 `ADITUM_TOKEN`).
 
@@ -391,12 +395,12 @@ branch viejo de cada Pi se reproduce con una config:
 
 | Branch viejo | Config equivalente |
 |---|---|
-| `hikvision-qr` | `scannerType: "hid"` o `"hikvision"`, `verifierStyle: "secure"`, `hikvision.enabled` según el caso |
+| `hikvision-qr` | `scannerType: "hid"` o `"hikvision"`, `hikvision.enabled` según el caso |
 | `pistolaqr` | `scannerType: "hid"`, `baseUrl: caseta`, 2 scanners, `hasScreen: true` |
 | `qr-readers` | Igual que pistolaqr pero `baseUrl: app` |
 | `qr-small` | `scannerType: "none"`, `gpio.watchdog.enabled: true`, `hasScreen: false` |
 | `pedestal-app` | `scannerType: "opencv"`, `hasScreen: true`, `gpio.neopixel.enabled: true` |
-| `main` (viejo) | `scannerType: "opencv"`, `verifierStyle: "legacy"` |
+| `main` (viejo) | `scannerType: "opencv"` (sus QR `ADITUMGATE=` se aceptan siempre) |
 
 Correspondencia de archivos eliminados → nuevos:
 

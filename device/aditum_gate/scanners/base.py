@@ -3,10 +3,16 @@
 Cada lector configurado corre como un thread independiente. La validacion de
 prefijo, el debounce de codigos repetidos y la verificacion contra el backend
 viven aqui UNA sola vez; las subclases solo implementan read_code().
+
+Prefijos: se aceptan SIEMPRE los dos formatos de QR de Aditum ("ADTG..." y
+"ADITUMGATE=...") y solo esos; el prefijo leido decide el endpoint del
+backend (ver backend.QR_FORMATS). No depende de la config del equipo.
 """
 import logging
 import threading
 import time
+
+from ..backend import QR_PREFIXES, match_qr
 
 log = logging.getLogger("aditum.scanner")
 
@@ -24,7 +30,8 @@ class Scanner(threading.Thread):
         self.backend = backend
         self.screen = screen
         self.leds = leds
-        self.prefix = settings.qr_prefix
+        # Prefijos validos (para la guardia temprana del lector HID)
+        self.prefixes = QR_PREFIXES
         self._last_code = None
         self._last_code_at = 0.0
 
@@ -57,12 +64,18 @@ class Scanner(threading.Thread):
             log.debug("Codigo repetido ignorado (%s)", self.reader.role)
             return
 
-        if not text.upper().startswith(self.prefix.upper()) or len(text) > MAX_CODE_LEN:
+        matched = match_qr(text)
+        if matched is None or len(text) > MAX_CODE_LEN:
             log.info("QR invalido en %s: prefijo/longitud incorrectos", self.reader.role)
             self.deny()
             return
 
-        payload = text[len(self.prefix):]
+        prefix, style = matched
+        payload = text[len(prefix):]
+        if not payload:
+            log.info("QR sin datos tras el prefijo en %s: denegado local", self.reader.role)
+            self.deny()
+            return
 
         # Semantica estricta opcional (scannerExit.py original): si el
         # marcador EXIT del QR no coincide con el rol del lector se deniega
@@ -75,7 +88,7 @@ class Scanner(threading.Thread):
             return
 
         self.screen.loading()
-        authorized = self.backend.verify(self.reader.role, payload, self.reader.door_id)
+        authorized = self.backend.verify(self.reader.role, payload, self.reader.door_id, style)
         if authorized:
             if self.leds:
                 self.leds.flash_green()
