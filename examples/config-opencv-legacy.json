@@ -4,8 +4,7 @@
   "deviceId": "GATE-CR-0003",
   "placeName": "Condominio OpenCV",
   "api": {
-    "baseUrl": "https://app.aditumcr.com/api",
-    "verifierStyle": "legacy"
+    "baseUrl": "https://app.aditumcr.com/api"
   },
   "scannerType": "opencv",
   "scanners": [

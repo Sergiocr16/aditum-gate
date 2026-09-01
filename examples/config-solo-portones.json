@@ -4,8 +4,7 @@
   "deviceId": "GATE-CR-0004",
   "placeName": "Caseta solo relays",
   "api": {
-    "baseUrl": "https://app.aditumcr.com/api",
-    "verifierStyle": "secure"
+    "baseUrl": "https://app.aditumcr.com/api"
   },
   "scannerType": "none",
   "scanners": [],

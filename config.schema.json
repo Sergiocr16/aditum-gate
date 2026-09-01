@@ -11,11 +11,14 @@
     "placeName": { "type": "string" },
     "api": {
       "type": "object",
-      "required": ["baseUrl", "verifierStyle"],
+      "required": ["baseUrl"],
       "additionalProperties": false,
       "properties": {
         "baseUrl": { "type": "string", "pattern": "^https?://" },
-        "verifierStyle": { "enum": ["secure", "legacy"] }
+        "verifierStyle": {
+          "enum": ["secure", "legacy"],
+          "description": "Obsoleto: se acepta por compatibilidad con configs ya pusheadas y se ignora. Los dos prefijos de QR (ADTG y ADITUMGATE=) se aceptan siempre y el prefijo de cada codigo decide el endpoint."
+        }
       }
     },
     "scannerType": { "enum": ["hid", "opencv", "hikvision", "none"] },

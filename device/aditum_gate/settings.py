@@ -22,9 +22,6 @@ ANPR_EVENTS_DB_FILE = REPO_ROOT / "anpr-events.db"
 
 SCREEN_BASE_URL = "http://localhost:3000"
 
-# Prefijo del QR segun el estilo de verificacion del backend
-QR_PREFIXES = {"secure": "ADTG", "legacy": "ADITUMGATE="}
-
 
 def _read_text_file(path):
     try:
@@ -62,8 +59,9 @@ class Settings:
 
         api = data.get("api", {})
         self.api_base_url = api.get("baseUrl", "https://app.aditumcr.com/api").rstrip("/")
-        self.verifier_style = api.get("verifierStyle", "secure")
-        self.qr_prefix = QR_PREFIXES[self.verifier_style]
+        # api.verifierStyle es obsoleto y se ignora: los dos prefijos de QR
+        # (ADTG y ADITUMGATE=) se aceptan siempre y cada uno elige su endpoint
+        # (ver backend.QR_FORMATS).
 
         self.scanner_type = data.get("scannerType", "none")
         self.scanners = [Reader(r) for r in data.get("scanners", [])]

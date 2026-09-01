@@ -536,14 +536,6 @@
           <input type="text" id="f_placeName" placeholder="Nombre del condominio">
           <div class="hint">Condominio o sitio donde está instalado el equipo.</div>
         </div>
-        <div class="field">
-          <label for="f_verifierStyle">Formato de QR <span class="key">verifierStyle</span></label>
-          <select id="f_verifierStyle">
-            <option value="secure">Seguro (prefijo ADTG)</option>
-            <option value="legacy">Legacy (prefijo ADITUMGATE=)</option>
-          </select>
-          <div class="hint">Tipo de código QR que acepta el equipo. Usá <b>Seguro</b> salvo en sitios con códigos viejos. El servidor es siempre caseta.aditumcr.com.</div>
-        </div>
       </div>
     </div>
 
@@ -888,8 +880,8 @@
     setVal('f_deviceId', cfg.deviceId || deviceIdFromStatus || '');
     setVal('f_placeName', cfg.placeName || '');
 
-    // API (siempre caseta, no se muestra) + formato de QR
-    $('f_verifierStyle').value = api.verifierStyle || 'secure';
+    // API: siempre caseta (no se edita). Formato de QR: no se configura,
+    // el equipo acepta siempre ADTG y ADITUMGATE= (verifierStyle es obsoleto).
 
     // Tipo de equipo (derivado de la config) + scannerType interno
     $('f_deviceType').value = deriveDeviceType(cfg);
@@ -1352,8 +1344,7 @@
     }
     const host = String((cfg.api && cfg.api.baseUrl) || '').replace(/^https?:\/\//, '').replace(/\/api$/, '');
     if (host) {
-      p.push('Verifica los códigos contra <strong>' + esc(host) + '</strong>' +
-             ((cfg.api || {}).verifierStyle === 'legacy' ? ' (formato legacy)' : '') + '.');
+      p.push('Verifica los códigos contra <strong>' + esc(host) + '</strong> (acepta QR ADTG y ADITUMGATE=).');
     }
     return p.join(' ');
   }
@@ -1426,8 +1417,7 @@
     const isPedestal = (t === 'pedestal');
     const hikOn = hasGates && $('f_hikEnabled').checked;
 
-    cfg.api = { baseUrl: txt($('f_apiBase')) || API_BASE_DEFAULT,
-                verifierStyle: $('f_verifierStyle').value };
+    cfg.api = { baseUrl: txt($('f_apiBase')) || API_BASE_DEFAULT };
 
     if (hasReaders) {
       cfg.scannerType = ($('f_scannerType').value === 'opencv') ? 'opencv' : 'hid';
@@ -1486,7 +1476,6 @@
   function validateClient(cfg) {
     const errs = [];
     if (!/^https?:\/\//.test(cfg.api.baseUrl || '')) errs.push('api.baseUrl debe empezar con http:// o https://');
-    if (!['secure', 'legacy'].includes(cfg.api.verifierStyle)) errs.push('verifierStyle inválido');
     (cfg.scanners || []).forEach((s, i) => {
       if (!s.doorId) errs.push('Lector ' + (i + 1) + ': doorId es obligatorio');
       if (cfg.scannerType === 'hid' && !s.deviceName)

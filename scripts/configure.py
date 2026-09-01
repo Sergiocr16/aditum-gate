@@ -15,9 +15,9 @@ examples/. Lo invoca scripts/bootstrap.sh, pero puede correrse a mano:
 
 Env vars del modo no interactivo: ADITUM_DEVICE_ID (obligatoria),
 ADITUM_PLACE_NAME, ADITUM_SCANNER_TYPE (hid|opencv|hikvision|none),
-ADITUM_API (app|caseta), ADITUM_VERIFIER (secure|legacy), ADITUM_HAS_SCREEN
-(1|0), ADITUM_DOOR_TYPE (ENTRY|EXIT), ADITUM_LOGO_URL, ADITUM_SCANNERS
-(JSON array), ADITUM_WATCHDOG (1|0), ADITUM_NEOPIXEL (1|0), ADITUM_TOKEN.
+ADITUM_API (app|caseta), ADITUM_HAS_SCREEN (1|0), ADITUM_DOOR_TYPE (ENTRY|EXIT),
+ADITUM_LOGO_URL, ADITUM_SCANNERS (JSON array), ADITUM_WATCHDOG (1|0),
+ADITUM_NEOPIXEL (1|0), ADITUM_TOKEN.
 """
 import argparse
 import json
@@ -239,10 +239,9 @@ def wizard(hints_dir=None):
         ("caseta", "caseta.aditumcr.com"),
     ], "caseta" if scanner_type == "hid" else "app")
     config["api"]["baseUrl"] = API_HOSTS[api]
-    config["api"]["verifierStyle"] = ask_choice("Estilo de verificacion QR", [
-        ("secure", "secure (prefijo ADTG, QR firmado) — instalaciones nuevas"),
-        ("legacy", "legacy (prefijo ADITUMGATE=) — instalaciones viejas"),
-    ], config["api"].get("verifierStyle", "secure"))
+    # Sin "estilo de verificacion": los QR ADTG y ADITUMGATE= se aceptan
+    # siempre y el prefijo decide el endpoint (api.verifierStyle es obsoleto)
+    config["api"].pop("verifierStyle", None)
 
     # Lectores
     if scanner_type in ("hid", "opencv"):
@@ -377,8 +376,8 @@ def from_env():
         config["placeName"] = env("ADITUM_PLACE_NAME")
     if env("ADITUM_API"):
         config["api"]["baseUrl"] = API_HOSTS[env("ADITUM_API")]
-    if env("ADITUM_VERIFIER"):
-        config["api"]["verifierStyle"] = env("ADITUM_VERIFIER")
+    # ADITUM_VERIFIER ya no existe: los QR ADTG y ADITUMGATE= se aceptan siempre
+    config["api"].pop("verifierStyle", None)
     if env("ADITUM_SCANNERS"):
         config["scanners"] = json.loads(env("ADITUM_SCANNERS"))
     if env("ADITUM_HAS_SCREEN") is not None and env("ADITUM_HAS_SCREEN") != "":
