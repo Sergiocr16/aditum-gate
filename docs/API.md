@@ -422,10 +422,62 @@ normalmente cerrado el reposo lee `0`.
 
 | Endpoint | Método | Notas |
 |---|---|---|
-| `/update-card` | POST | `{"cardNo", "employeeNo", "terminals": [{ip,user,password}]}` — las credenciales de los terminales viajan en el payload (vienen de la tabla `gate`), **no** en la config |
+| `/update-card` | POST | Registra en los terminales las tarjetas (tokens QR) de una persona; dos payloads, ver abajo. Las credenciales de los terminales viajan en el payload (vienen de la tabla `gate`), **no** en la config |
 | `/cleanup-cards` | POST | Borra todos los visitantes registrados |
 
 Si el Pi no tiene Hikvision habilitado → `400`.
+
+#### `POST /update-card` — payload nuevo (ventanas de tarjetas)
+
+```json
+{
+  "employeeNo": "12345",
+  "cardNo": "<vigente>",
+  "cardNos": ["<vigente>", "<+1>", "<+2>"],
+  "terminals": [{"ip": "192.168.1.50", "user": "admin", "password": "..."}]
+}
+```
+
+- `cardNos` es el conjunto **completo** de tarjetas que deben quedar vivas para
+  esa persona, la vigente primero. `cardNo` se sigue mandando (= `cardNos[0]`)
+  por compatibilidad: un Pi viejo lo usa e ignora `cardNos`.
+- Por terminal el Pi: asegura el usuario (`UserInfo/Search` y `UserInfo/Record`
+  si falta) → consulta sus tarjetas actuales (`CardInfo/Search` por
+  `EmployeeNoList`) → registra las de `cardNos` que falten (`CardInfo/Record`)
+  → borra en **una sola** llamada solo las de esa persona que no estén en
+  `cardNos` (`CardInfo/Delete` con `CardNoList`). **Nunca borra antes de
+  registrar**: el visitante nunca queda sin tarjeta válida durante el refresco.
+- Tope de 5 tarjetas vivas por persona: se conservan las primeras de `cardNos`.
+- Un `401`/`403` del terminal corta el proceso **sin reintentar** (cada intento
+  fallido cuenta para el bloqueo por login ilegal del Hikvision: ~7 → 30 min)
+  y queda en `errors`. Un terminal que no responde también corta (`status`
+  `null`). Si falla `CardInfo/Search` por otro motivo, registra todo lo pedido
+  y no borra nada (estado desconocido).
+- Idempotente: repetir el mismo payload no registra ni borra nada.
+
+Respuesta:
+
+```json
+{
+  "cardNo": "<vigente>",
+  "cardNos": ["<vigente>", "<+1>", "<+2>"],
+  "results": [
+    {"ip": "192.168.1.50", "status": 200, "employeeNo": "12345",
+     "registered": ["<+2>"], "deleted": ["<vencida>"], "errors": []}
+  ]
+}
+```
+
+`status` es `200` sin errores; si no, el HTTP del primer paso que falló. Cada
+error es `{"step": "ensure_user" | "search_cards" | "register_card" |
+"delete_cards", "status": <http|null>, ...}` (con `cardNo` o `cardNos` según
+el paso).
+
+#### `POST /update-card` — payload legacy (sin `cardNos`)
+
+`{"cardNo", "employeeNo", "terminals"}` → reemplazo total: borra todas las
+tarjetas del `employeeNo` en el terminal y registra `cardNo`. Sin cambios.
+Respuesta: `{"cardNo", "results": [{"ip", "status", "employeeNo"}]}`.
 
 ### ANPR local-first (cámaras de placas)
 

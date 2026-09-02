@@ -21,6 +21,7 @@ from .anpr import AnprCameraError, http_status_for, normalize_plate
 from .anpr_events import parse_event_xml, is_authorized
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
+from .hikvision import normalize_card_nos
 from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
 
 log = logging.getLogger("aditum.api")
@@ -358,17 +359,36 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
     # ------------------------------------------------------------
     @app.route("/update-card", methods=["POST"])
     def update_card():
+        # Dos payloads: legacy {cardNo} = reemplazo total; nuevo {cardNo,
+        # cardNos: [vigente, +1, +2]} = el conjunto completo de tarjetas que
+        # deben quedar vivas (cardNo sigue viajando por compatibilidad y es
+        # cardNos[0]). Ver hikvision.py y docs/API.md.
         if hikvision_service is None:
             return jsonify({"error": "Hikvision deshabilitado en este dispositivo"}), 400
         data = request.get_json(silent=True)
-        if not data or "cardNo" not in data or "terminals" not in data:
+        if not data or "terminals" not in data:
+            return jsonify({"error": "cardNo and terminals required"}), 400
+        card_nos = None
+        if "cardNos" in data:
+            raw = data["cardNos"]
+            if not isinstance(raw, list) or not all(isinstance(c, str) for c in raw):
+                return jsonify({"error": "cardNos must be a list of strings"}), 400
+            card_nos = normalize_card_nos(raw)
+            if not card_nos:
+                return jsonify({"error": "cardNos must not be empty"}), 400
+        card_no = data.get("cardNo") or (card_nos[0] if card_nos else None)
+        if not card_no:
             return jsonify({"error": "cardNo and terminals required"}), 400
         results = hikvision_service.update_card(
-            card_no=data["cardNo"],
+            card_no=card_no,
             employee_no=data.get("employeeNo", "99999"),
             terminals=data["terminals"],
+            card_nos=card_nos,
         )
-        return jsonify({"cardNo": data["cardNo"], "results": results})
+        body = {"cardNo": card_no, "results": results}
+        if card_nos is not None:
+            body["cardNos"] = card_nos
+        return jsonify(body)
 
     @app.route("/cleanup-cards", methods=["POST"])
     def cleanup_cards():

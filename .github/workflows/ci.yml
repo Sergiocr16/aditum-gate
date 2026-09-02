@@ -22,6 +22,13 @@ jobs:
           pip install jsonschema
           python scripts/validate_configs.py
 
+      - name: Tests unitarios
+        # Solo lo que importan los tests (flask/requests pinneados como en la
+        # flota); evdev/cv2 no hacen falta y no se instalan aqui.
+        run: |
+          pip install $(grep -E '^(flask|requests|jsonschema)==' device/requirements.txt | tr '\n' ' ')
+          python -m unittest discover -s device/tests -t device -v
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
