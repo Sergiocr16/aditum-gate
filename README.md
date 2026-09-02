@@ -366,8 +366,8 @@ DS-K1T323*. Resumen del rol del Pi:
 
 - `POST :8080/update-card` — Aditum registra los tokens QR de cada persona
   como tarjetas en los terminales. Con `cardNos` sincroniza las ventanas
-  vigentes (registra las que faltan y borra solo las vencidas, nunca antes de
-  registrar); sin `cardNos`, reemplazo total (legacy). Ver `docs/API.md`.
+  vigentes (registra las que faltan y borra solo las vencidas); sin `cardNos`,
+  reemplazo total (legacy). Ver `docs/API.md`.
 - `POST :8080/cleanup-cards` — borra los visitantes registrados.
 - Limpieza automática nocturna a las `hikvision.nightlyCleanupHour` (2 AM).
   El registro de tarjetas persiste en `hikvision-cards.json`, así que la

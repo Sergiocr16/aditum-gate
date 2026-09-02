@@ -26,6 +26,7 @@ USER_RECORD = "AccessControl/UserInfo/Record"
 CARD_SEARCH = "AccessControl/CardInfo/Search"
 CARD_RECORD = "AccessControl/CardInfo/Record"
 CARD_DELETE = "AccessControl/CardInfo/Delete"
+USER_DELETE = "AccessControl/UserInfo/Delete"
 
 
 class FakeResponse:
@@ -44,11 +45,13 @@ class FakeResponse:
 class FakeTerminal:
     """Simula el ISAPI de un DS-K1T323: usuarios y tarjetas por employee."""
 
-    def __init__(self, users=(), cards=(), auth_ok=True, card_search_status=200):
+    def __init__(self, users=(), cards=(), auth_ok=True, card_search_status=200,
+                 card_limit=MAX_CARDS_PER_EMPLOYEE):
         self.users = set(users)
         self.cards = list(cards)  # [(employeeNo, cardNo)] en orden de registro
         self.auth_ok = auth_ok
         self.card_search_status = card_search_status
+        self.card_limit = card_limit
         self.calls = []  # (method, path, payload)
 
     def cards_of(self, emp):
@@ -85,6 +88,9 @@ class FakeTerminal:
             }})
         if path == CARD_RECORD:
             info = json["CardInfo"]
+            if len(self.cards_of(info["employeeNo"])) >= self.card_limit:
+                return FakeResponse(400, {"statusString": "Invalid Content",
+                                          "subStatusCode": "deviceCardFull"})
             self.cards.append((info["employeeNo"], info["cardNo"]))
             return FakeResponse(200)
         if path == CARD_DELETE:
@@ -95,6 +101,11 @@ class FakeTerminal:
             else:
                 emps = {e["employeeNo"] for e in cond["EmployeeNoList"]}
                 self.cards = [(e, c) for e, c in self.cards if e not in emps]
+            return FakeResponse(200)
+        if path == USER_DELETE:
+            emps = {e["employeeNo"] for e in json["UserInfoDelCond"]["EmployeeNoList"]}
+            self.users -= emps
+            self.cards = [(e, c) for e, c in self.cards if e not in emps]
             return FakeResponse(200)
         raise AssertionError(f"ISAPI inesperado: {method} {path}")
 
@@ -178,6 +189,54 @@ class SyncCardsTests(HikvisionBase):
         self.assertEqual(t.cards_of(EMP), ["A", "B", "C"])
         self.assertEqual(t.paths().count(CARD_SEARCH), 2)  # paginado (10 por pagina)
         self.assertEqual(t.paths().count(CARD_DELETE), 1)
+
+    def test_refresco_al_tope_poda_antes_para_hacer_espacio(self):
+        """Con la persona llena, registrar primero da 400 deviceCardFull: hay que
+        podar la vencida antes. La vigente nunca es sobrante, no se toca."""
+        vivas = [f"V{i}" for i in range(1, 6)]  # el terminal ya esta al tope
+        t = self.attach(FakeTerminal(users=[EMP], cards=[(EMP, v) for v in vivas]))
+        r = self.sync(vivas[1:] + ["V6"])  # la ventana avanza uno
+        self.assertEqual(r["status"], 200)
+        self.assertEqual(r["errors"], [])
+        self.assertEqual(r["registered"], ["V6"])
+        self.assertEqual(r["deleted"], ["V1"])
+        self.assertEqual(t.cards_of(EMP), ["V2", "V3", "V4", "V5", "V6"])
+        paths = t.paths()
+        self.assertLess(paths.index(CARD_DELETE), paths.index(CARD_RECORD))
+
+    def test_ventana_saltada_al_tope_no_deja_a_la_persona_sin_tarjetas(self):
+        """Pi que estuvo caido: llega un conjunto disjunto con la persona llena.
+        Sin podar antes, los 5 registros fallan y el borrado la deja en cero."""
+        viejas = [f"V{i}" for i in range(1, 6)]
+        nuevas = [f"N{i}" for i in range(1, 6)]
+        t = self.attach(FakeTerminal(users=[EMP], cards=[(EMP, v) for v in viejas]))
+        r = self.sync(nuevas)
+        self.assertEqual(r["status"], 200)
+        self.assertEqual(r["errors"], [])
+        self.assertEqual(r["registered"], nuevas)
+        self.assertEqual(r["deleted"], viejas)
+        self.assertEqual(t.cards_of(EMP), nuevas)
+
+    def test_sin_espacio_solo_se_poda_lo_vencido(self):
+        """La poda anticipada nunca borra una tarjeta que sigue en cardNos."""
+        vivas = [f"V{i}" for i in range(1, 6)]
+        t = self.attach(FakeTerminal(users=[EMP], cards=[(EMP, v) for v in vivas]))
+        self.sync(vivas[2:] + ["V6", "V7"])
+        borradas = [j for m, p, j in t.calls if p == CARD_DELETE]
+        self.assertEqual(borradas, [{"CardInfoDelCond": {"CardNoList": [
+            {"cardNo": "V1"}, {"cardNo": "V2"}]}}])
+        self.assertEqual(t.cards_of(EMP), ["V3", "V4", "V5", "V6", "V7"])
+
+    def test_limpieza_nocturna_borra_el_usuario_del_terminal(self):
+        """delete_user va con UserInfoDelCond: con UserInfoDetail el firmware
+        responde 400 y la limpieza dejaba usuarios huerfanos."""
+        t = self.attach(FakeTerminal(users=[EMP], cards=[(EMP, "A")]))
+        self.sync(["A", "B"])
+        results = self.service.cleanup_all()
+        self.assertEqual(results, [{"ip": TERMINAL["ip"], "employeeNo": EMP, "status": 200}])
+        self.assertEqual(t.users, set())
+        self.assertEqual(t.cards_of(EMP), [])
+        self.assertEqual(self.store.snapshot(), {})
 
     def test_401_no_reintenta(self):
         t = self.attach(FakeTerminal(auth_ok=False))

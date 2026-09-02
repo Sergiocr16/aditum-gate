@@ -445,9 +445,15 @@ Si el Pi no tiene Hikvision habilitado → `400`.
   si falta) → consulta sus tarjetas actuales (`CardInfo/Search` por
   `EmployeeNoList`) → registra las de `cardNos` que falten (`CardInfo/Record`)
   → borra en **una sola** llamada solo las de esa persona que no estén en
-  `cardNos` (`CardInfo/Delete` con `CardNoList`). **Nunca borra antes de
-  registrar**: el visitante nunca queda sin tarjeta válida durante el refresco.
+  `cardNos` (`CardInfo/Delete` con `CardNoList`). **Nunca borra una tarjeta que
+  siga en `cardNos`**: el visitante nunca queda sin tarjeta válida durante el
+  refresco.
 - Tope de 5 tarjetas vivas por persona: se conservan las primeras de `cardNos`.
+  Es también el límite del firmware (DS-K1T323 V4.23.41 responde `400`
+  `deviceCardFull` en la tarjeta 6 de una persona), así que cuando las que
+  faltan no caben, las vencidas se podan **antes** de registrar. Solo en ese
+  caso el borrado va primero, y solo sobre tarjetas que ya no están en
+  `cardNos`.
 - Un `401`/`403` del terminal corta el proceso **sin reintentar** (cada intento
   fallido cuenta para el bloqueo por login ilegal del Hikvision: ~7 → 30 min)
   y queda en `errors`. Un terminal que no responde también corta (`status`

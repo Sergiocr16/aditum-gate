@@ -11,8 +11,10 @@ Dos modos de registro conviven:
   - ventanas (payload con cardNos): el backend manda el conjunto COMPLETO de
     tarjetas que deben quedar vivas (vigente primero, luego las ventanas
     siguientes). El Pi consulta las que el terminal ya tiene, registra las
-    que faltan y borra SOLO las que sobran. Nunca borra antes de registrar,
-    asi el visitante nunca queda sin tarjeta valida durante el refresco.
+    que faltan y borra SOLO las que sobran, siempre despues de registrar,
+    asi el visitante nunca queda sin tarjeta valida durante el refresco. La
+    excepcion es el tope de tarjetas por persona del terminal: si no hay
+    espacio se podan las vencidas primero (ver sync_cards).
 
 Un 401/403 del terminal corta el proceso sin reintentar: cada intento
 fallido cuenta para el bloqueo por login ilegal del Hikvision (~7 intentos
@@ -41,6 +43,8 @@ ISAPI_TIMEOUT = (3, 5)
 
 # Tope de tarjetas vivas por persona en un terminal (modo ventanas): se
 # conservan las primeras de cardNos (vigente + siguientes) y se poda el resto.
+# Es tambien el limite del firmware (DS-K1T323 V4.23.41): la tarjeta 6 de una
+# persona devuelve 400 deviceCardFull.
 MAX_CARDS_PER_EMPLOYEE = 5
 # Paginas de CardInfo/Search (10 por pagina) que se recorren como maximo
 SEARCH_PAGE_SIZE = 10
@@ -212,12 +216,7 @@ class HikvisionClient:
     def delete_user(self, ip, user, password, employee_no):
         try:
             url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Delete?format=json"
-            payload = {
-                "UserInfoDetail": {
-                    "mode": "byEmployeeNo",
-                    "EmployeeNoList": [{"employeeNo": employee_no}],
-                }
-            }
+            payload = {"UserInfoDelCond": {"EmployeeNoList": [{"employeeNo": employee_no}]}}
             resp = httpclient.request("PUT", url, json=payload,
                                       auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
             return resp.status_code
@@ -235,10 +234,12 @@ class HikvisionClient:
         """Deja vivas en el terminal exactamente las tarjetas de card_nos.
 
         Orden: asegurar usuario -> consultar tarjetas actuales -> registrar
-        las que faltan -> borrar SOLO las que sobran (una llamada). Con mas
-        de MAX_CARDS_PER_EMPLOYEE en card_nos se conservan las primeras
-        (vigente + siguientes). Un 401/403 o un terminal sin respuesta
-        cortan el proceso sin reintentar.
+        las que faltan -> borrar SOLO las que sobran (una llamada). Si las
+        que faltan no caben bajo MAX_CARDS_PER_EMPLOYEE, las sobrantes se
+        podan antes de registrar (el terminal responde 400 deviceCardFull
+        con la persona llena). Con mas de MAX_CARDS_PER_EMPLOYEE en card_nos
+        se conservan las primeras (vigente + siguientes). Un 401/403 o un
+        terminal sin respuesta cortan el proceso sin reintentar.
 
         Devuelve {"status", "registered", "deleted", "errors"}; status es 200
         sin errores, o el status del primer paso que fallo.
@@ -273,10 +274,27 @@ class HikvisionClient:
             fail("search_cards", status)
             current = []
 
-        # 3. Registrar las que faltan (nunca borrar antes de esto)
-        for card in wanted:
-            if card in current:
-                continue
+        missing = [c for c in wanted if c not in current]
+        surplus = [c for c in current if c not in wanted] if known_state else []
+        pending_surplus = surplus
+
+        # 3. Podar ANTES solo si no hay espacio: el terminal topa en
+        # MAX_CARDS_PER_EMPLOYEE tarjetas por persona (400 deviceCardFull) y
+        # registrar primero fallaria. No rompe la invariante: una sobrante no
+        # esta en card_nos (ya vencio); la vigente esta en ambos conjuntos y
+        # nunca se toca.
+        if surplus and len(current) + len(missing) > MAX_CARDS_PER_EMPLOYEE:
+            pending_surplus = []
+            status = self.delete_cards(ip, user, password, surplus)
+            if _ok(status):
+                result["deleted"] = surplus
+            else:
+                fail("delete_cards", status, cardNos=surplus)
+                if status is None or _is_auth_error(status):
+                    return result
+
+        # 4. Registrar las que faltan
+        for card in missing:
             status = self.register_card(ip, user, password, card, employee_no)
             if _ok(status):
                 result["registered"].append(card)
@@ -285,15 +303,13 @@ class HikvisionClient:
             if status is None or _is_auth_error(status):
                 return result
 
-        # 4. Borrar solo las que sobran (ventanas vencidas o exceso sobre el tope)
-        if known_state:
-            surplus = [c for c in current if c not in wanted]
-            if surplus:
-                status = self.delete_cards(ip, user, password, surplus)
-                if _ok(status):
-                    result["deleted"] = surplus
-                else:
-                    fail("delete_cards", status, cardNos=surplus)
+        # 5. Borrar las sobrantes, si no hubo que podarlas para hacer espacio
+        if pending_surplus:
+            status = self.delete_cards(ip, user, password, pending_surplus)
+            if _ok(status):
+                result["deleted"] = pending_surplus
+            else:
+                fail("delete_cards", status, cardNos=pending_surplus)
         return result
 
 
