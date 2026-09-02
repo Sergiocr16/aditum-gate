@@ -123,6 +123,7 @@ supervisor ni cron de reinicio:
 
 ```bash
 python3 -m compileall -q device scripts/validate_configs.py scripts/configure.py
+python3 -m unittest discover -s device/tests -t device   # tests unitarios (sin red)
 node --check web/server.js && node --check ecosystem.config.js
 for f in scripts/*.sh; do bash -n "$f"; done     # igual que el CI
 python3 scripts/validate_configs.py                  # configs vs schema (pip install jsonschema)
