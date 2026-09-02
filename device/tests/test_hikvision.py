@@ -238,6 +238,27 @@ class SyncCardsTests(HikvisionBase):
         self.assertEqual(t.cards_of(EMP), [])
         self.assertEqual(self.store.snapshot(), {})
 
+    def test_limpieza_conserva_lo_que_no_pudo_borrar(self):
+        """Un terminal caido a las 2 AM no se olvida: olvidarlo dejaria a su
+        usuario en el terminal e invisible para toda limpieza posterior."""
+        vivo = FakeTerminal(users=[EMP], cards=[(EMP, "A")])
+        caido = {"ip": "10.0.0.9", "user": "admin", "password": "otra"}
+
+        def router(method, url, **kwargs):
+            if caido["ip"] in url:
+                raise ConnectionError("terminal apagado")
+            return vivo.request(method, url, **kwargs)
+
+        patcher = mock.patch.object(hikvision.httpclient, "request", side_effect=router)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.service.update_card(card_no="A", employee_no=EMP,
+                                 terminals=[TERMINAL, caido], card_nos=["A"])
+        self.service.cleanup_all()
+        self.assertEqual(vivo.users, set())  # el que respondio se borro
+        self.assertEqual(self.store.snapshot(),  # el caido queda pendiente
+                         {caido["ip"]: {EMP: {"user": "admin", "password": "otra"}}})
+
     def test_401_no_reintenta(self):
         t = self.attach(FakeTerminal(auth_ok=False))
         r = self.sync(["A", "B", "C"])

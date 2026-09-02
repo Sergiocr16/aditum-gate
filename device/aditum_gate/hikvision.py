@@ -352,6 +352,12 @@ class CardStore:
             self._data = {}
             self._save()
 
+    def replace(self, data):
+        """Deja el registro en data (una sola escritura)."""
+        with self._lock:
+            self._data = data
+            self._save()
+
 
 class HikvisionService:
     def __init__(self, settings, store=None):
@@ -382,13 +388,26 @@ class HikvisionService:
         return results
 
     def cleanup_all(self):
+        """Borra los employees registrados y olvida SOLO los que se borraron.
+
+        Un terminal caido a las 2 AM devuelve None: si igual se olvidara la
+        entrada, ese usuario quedaria en el terminal sin nadie que lo
+        recuerde (huerfano invisible para la limpieza siguiente). Borrar un
+        employee que ya no existe devuelve 200, asi que reintentar es barato
+        y las entradas no se acumulan solas.
+        """
         results = []
+        pending = {}
         for ip, employees in self.store.snapshot().items():
             for employee_no, creds in employees.items():
                 status = self.client.delete_user(ip, creds["user"], creds["password"], employee_no)
                 results.append({"ip": ip, "employeeNo": employee_no, "status": status})
-        self.store.clear()
-        log.info("Limpieza Hikvision: %s usuarios borrados", len(results))
+                if not _ok(status):
+                    pending.setdefault(ip, {})[employee_no] = creds
+        self.store.replace(pending)
+        failed = sum(len(e) for e in pending.values())
+        log.info("Limpieza Hikvision: %s usuarios borrados, %s pendientes para la proxima",
+                 len(results) - failed, failed)
         return results
 
     def start_nightly_cleanup(self):
