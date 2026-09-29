@@ -10,7 +10,7 @@ import logging
 
 from aditum_gate.anpr import AnprService
 from aditum_gate.anpr_events import AnprEventForwarder, AnprEventStore
-from aditum_gate.api import create_app
+from aditum_gate.api import create_app, serve
 from aditum_gate.backend import AditumBackend
 from aditum_gate.config_agent import ConfigAgent
 from aditum_gate.gpio_relays import GateController
@@ -64,11 +64,10 @@ def main():
 
     app = create_app(settings, gates, hikvision_service, screen, leds,
                  anpr_service=anpr_service, anpr_store=anpr_store)
-    # threaded=True explicito: es el default de Flask >=1.0, pero el API
-    # DEPENDE de atender requests concurrentes (un pulso de porton de 1 s
-    # o un ISAPI a Hikvision no pueden bloquear el health check) — se
-    # pinnea para que un cambio de default aguas arriba no lo degrade.
-    app.run(host="0.0.0.0", port=API_PORT, threaded=True)
+    # No es app.run(): el servidor propio evita la consulta DNS inversa que
+    # dejaba el puerto reservado sin escuchar (ver api.ApiServer) y un
+    # vigilante sale si el API no atiende en 60 s para que PM2 relance.
+    serve(app, "0.0.0.0", API_PORT)
 
 
 if __name__ == "__main__":

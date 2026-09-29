@@ -6,6 +6,8 @@ solo GET / es publico y minimo. El contrato completo esta en docs/API.md.
 """
 import logging
 import os
+import socket
+import socketserver
 import tempfile
 import threading
 import time
@@ -15,6 +17,7 @@ from datetime import timedelta
 import ipaddress
 
 from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.serving import ThreadedWSGIServer
 
 from . import admin_auth, github_token, health, maintenance
 from .anpr import AnprCameraError, http_status_for, normalize_plate
@@ -27,6 +30,55 @@ from .settings import DEVICE_ID_FILE, DEVICE_TOKEN_FILE
 log = logging.getLogger("aditum.api")
 
 RESTART_RESPONSE_GRACE = 1.0  # segundos para que la respuesta HTTP salga antes del exit
+
+# Si el API no escucha en este plazo desde el arranque, el proceso sale para
+# que PM2 lo relance: PM2 solo ve "online", no si el puerto atiende.
+API_LISTEN_TIMEOUT = 60
+
+
+class ApiServer(ThreadedWSGIServer):
+    """Servidor del API sin la consulta DNS inversa del bind.
+
+    http.server.HTTPServer.server_bind hace socket.getfqdn(host) ENTRE el
+    bind y el listen. Con el DNS del equipo caido o lento, esa consulta
+    bloquea al hilo principal con el puerto reservado pero sin escuchar:
+    nginx recibe "connection refused" y responde 503, los demas threads
+    (poller, lectores) siguen logueando normal, PM2 ve el proceso online y
+    nadie lo relanza. Visto en campo: pedestal pegado en "Reiniciando el
+    servicio" hasta un reboot. El nombre del server no se usa para nada:
+    se fija al host sin resolver.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+
+
+def _listen_watchdog(port):
+    """Sale del proceso si nadie atiende el puerto pasado API_LISTEN_TIMEOUT."""
+    time.sleep(API_LISTEN_TIMEOUT)
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=3):
+            return
+    except OSError as e:
+        log.error("El API no escucha en :%s tras %ss (%s): saliendo para que "
+                  "PM2 relance el proceso", port, API_LISTEN_TIMEOUT, e)
+        logging.shutdown()
+        os._exit(1)
+
+
+def serve(app, host, port):
+    """Atiende el API hasta SIGINT (PM2) — reemplaza a app.run().
+
+    Threaded: el API DEPENDE de atender requests concurrentes (un pulso de
+    porton de 1 s o un ISAPI a Hikvision no pueden bloquear el health check).
+    """
+    threading.Thread(target=_listen_watchdog, args=(port,),
+                     name="api-listen-watchdog", daemon=True).start()
+    server = ApiServer(host, port, app)
+    log.info("API escuchando en %s:%s", host, port)
+    server.serve_forever()
 
 # Atomicidad de PUT /config: el chequeo de deviceId y la reescritura de
 # device-id.txt deben ser inseparables del apply (el server es threaded);
