@@ -44,20 +44,28 @@ fi
 
 # Sin esto git cuelga esperando usuario/clave bajo systemd (sin terminal)
 export GIT_TERMINAL_PROMPT=0
+# Un fetch fallido (sin token, token vencido, sin internet) NO aborta la
+# pasada: las secciones 2-5 reparan con lo que hay en disco, y la 5 (relanzar
+# procesos caidos) es justo la que un equipo pegado necesita. Antes se salia
+# aca y un equipo sin token quedaba con el proceso colgado hasta un reboot
+# manual. El fallo se reporta igual al final (exit 1) para que quede en el
+# journal del timer.
+FETCH_OK=1
 if ! git fetch origin "$BRANCH" --quiet; then
+  FETCH_OK=0
   if command -v github_token_present >/dev/null && github_token_present; then
     log "ERROR: fetch fallido con token presente (revisar vigencia y permisos: sudo bash scripts/set-github-token.sh)"
   else
     log "ERROR: fetch fallido y este equipo no tiene token de GitHub (repo privado: sudo bash scripts/set-github-token.sh)"
   fi
-  exit 1
+  log "Se sigue con el codigo en disco: reparacion de deps, nginx y procesos"
 fi
 
 LOCAL="$(git rev-parse HEAD)"
-REMOTE="$(git rev-parse "origin/$BRANCH")"
+REMOTE="$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")"
 UPDATED=0
 
-if [ "$LOCAL" != "$REMOTE" ]; then
+if [ "$FETCH_OK" = 1 ] && [ "$LOCAL" != "$REMOTE" ]; then
   log "Actualizando $LOCAL -> $REMOTE"
   # checkout -qf cura HEADs en un branch equivocado; nunca clean -x
   # (preserva .venv/, device-id.txt, device-token.txt, config-runtime.json)
@@ -242,3 +250,7 @@ else
   log "HEALTHCHECK FAILED — revisar 'pm2 logs aditum-device' y 'pm2 logs aditum-web'"
   exit 1
 fi
+
+# El fetch fallido se reporta al final, despues de reparar: la pasada
+# hizo lo que pudo pero el equipo sigue sin poder actualizarse.
+[ "$FETCH_OK" = 1 ] || exit 1

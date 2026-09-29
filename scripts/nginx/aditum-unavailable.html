@@ -34,10 +34,15 @@
   <p>Esta página se recargará sola en unos segundos.</p>
 </div>
 <script>
-  // Sondea la raiz (publica en ambos upstreams); cualquier respuesta < 500
-  // significa que el servicio volvio y se recarga la URL original.
+  // Sondea LA MISMA URL que fallo, no la raiz: en pedestales nginx manda
+  // "/" a la pantalla (:3000) y /admin y el API a Flask (:8080). Sondear
+  // "/" con Flask caido decia "ya volvio", recargaba /admin, caia otra vez
+  // en la 503 y quedaba en un loop de recargas girando hasta un reboot.
+  // HEAD para no bajar el HTML entero (/admin pesa ~150 KB) cada 3 s por
+  // el tunel; cualquier respuesta < 500 (200, 401, 405...) significa que
+  // el upstream responde y se recarga la URL original.
   (function retry() {
-    fetch('/', { cache: 'no-store' }).then(function (r) {
+    fetch(location.pathname + location.search, { method: 'HEAD', cache: 'no-store' }).then(function (r) {
       if (r.status < 500) { location.reload(); } else { setTimeout(retry, 3000); }
     }).catch(function () { setTimeout(retry, 3000); });
   })();
