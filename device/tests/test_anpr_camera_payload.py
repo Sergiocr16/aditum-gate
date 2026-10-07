@@ -41,7 +41,8 @@ DETECTION_JPG = (b"\xff\xd8\xff\xe1" + bytes(range(256)) * 2400 + b"\r\n\r\n--x-
                  + b"\x00" * 1000 + b"\xff\xd9")
 
 
-def hikvision_xml(plate="unknown", vehicle_list="otherList", pic_num=2):
+def hikvision_xml(plate="unknown", vehicle_list="otherList", pic_num=2,
+                  uid="0f3a9c2e-7b11-4c22-9d33-444455556666"):
     return ("""<?xml version="1.0" encoding="UTF-8"?>
 <EventNotificationAlert version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
 <ipAddress>%(ip)s</ipAddress>
@@ -72,9 +73,10 @@ def hikvision_xml(plate="unknown", vehicle_list="otherList", pic_num=2):
 <pictureInfo><fileName>detectionPicture.jpg</fileName><type>detectionPicture</type><dataType>0</dataType></pictureInfo>
 </pictureInfoList>
 </ANPR>
-<UUID>0f3a9c2e-7b11-4c22-9d33-444455556666</UUID>
+<UUID>%(uid)s</UUID>
 </EventNotificationAlert>
-""" % {"ip": CAMERA_IP, "plate": plate, "list": vehicle_list, "pic": pic_num}).encode("utf-8")
+""" % {"ip": CAMERA_IP, "plate": plate, "list": vehicle_list, "pic": pic_num,
+       "uid": uid}).encode("utf-8")
 
 
 def hikvision_body(xml, images=((b"licensePlatePicture.jpg", LICENSE_JPG),
@@ -195,6 +197,23 @@ class CameraPayloadTests(unittest.TestCase):
         self.post_raw(body)
         self.assertEqual(self.captures.list()[1], 1)
         self.assertEqual(len(list(self.captures.dir.glob("*.jpg"))), 2)
+
+    def test_varias_placas_con_uuid_de_prefijo_fijo_se_guardan_todas(self):
+        # Lo reportado en campo: placas distintas, una tras otra, y la
+        # bitacora solo mostraba la primera. La camara no numera sus eventos
+        # con UUID aleatorios: solo cambia el final, y la dedupe comparaba el
+        # principio. Cada lectura tiene que quedar con sus dos fotos.
+        plates = ["BCD456", "KLM789", "unknown", "TRP456", "unknown"]
+        for i, plate in enumerate(plates):
+            uid = "0f3a9c2e-7b11-4c22-9d33-%012d" % (100 + i)
+            resp = self.post_raw(hikvision_body(hikvision_xml(plate, "otherList", uid=uid)))
+            self.assertEqual(resp.status_code, 200, resp.data)
+        records, total = self.captures.list()
+        self.assertEqual(total, 5)
+        self.assertEqual(sorted(r["licensePlate"] or "" for r in records),
+                         sorted(p if p != "unknown" else "" for p in plates))
+        self.assertTrue(all(len(r["images"]) == 2 for r in records))
+        self.assertEqual(len(list(self.captures.dir.glob("*.jpg"))), 10)
 
     def test_xml_declara_fotos_que_no_llegaron_avisa_en_el_log(self):
         # La camara dice picNum=2 pero el multipart solo trae el XML (alarm
