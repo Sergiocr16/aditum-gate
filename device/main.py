@@ -58,10 +58,17 @@ def main():
         anpr_store = AnprEventStore()
         if settings.anpr_capture_unrecognized:
             # Bitacora local (foto incluida) de las placas que la camara no
-            # reconocio; el forwarder la purga junto con la cola.
-            anpr_captures = AnprCaptureStore(
-                retention_days=settings.anpr_capture_retention_days,
-                max_mb=settings.anpr_capture_max_mb)
+            # reconocio; el forwarder la purga junto con la cola. Si el
+            # directorio no se puede crear (permisos, disco), el equipo
+            # arranca igual sin bitacora: los portones y la cola no dependen
+            # de ella.
+            try:
+                anpr_captures = AnprCaptureStore(
+                    retention_days=settings.anpr_capture_retention_days,
+                    max_mb=settings.anpr_capture_max_mb)
+            except OSError as e:
+                log.error("Bitacora de placas no reconocidas deshabilitada: "
+                          "no se pudo preparar su directorio (%s)", e)
         AnprEventForwarder(settings, anpr_store, captures=anpr_captures).start()
 
     for scanner in build_scanners(settings, backend, screen, leds):

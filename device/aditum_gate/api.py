@@ -529,8 +529,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             first = next(iter(req.files.values()), None)
             if first is not None:
                 return first.read()
-        if req.mimetype.startswith("multipart/"):
-            return None
+        # Sin parte XML reconocible: el cuerpo tal cual (XML crudo, o un
+        # multipart raro que no parsea y termina en {"ignored": true}, como
+        # siempre: a la camara nunca se le responde 400 por basura).
         return req.get_data() or None
 
     def _is_image_part(name, content_type):
