@@ -727,8 +727,11 @@ byte y comprueba que los JPG se guardan intactos.
 
 Cada registro es un JSON `<fecha-hora>_<placa|SIN-PLACA>_<uid>.json` más sus
 fotos con el mismo prefijo (`…_0-licenseplatepicture.jpg`,
-`…_1-detectionpicture.jpg`). Un reintento de la cámara (mismo `UUID`) no
-duplica. **Purga automática** (la corre el forwarder ANPR una vez por hora):
+`…_1-detectionpicture.jpg`). `<uid>` es una huella (blake2b, 12 hex) del
+`UUID` **completo** del evento: un reintento de la cámara (mismo `UUID`) no
+duplica, y dos lecturas cuyos `UUID` solo difieren al final son dos registros
+(los registros con uid de 8 hex son del formato anterior y siguen siendo
+válidos). **Purga automática** (la corre el forwarder ANPR una vez por hora):
 por edad (`captureRetentionDays`, default **15 días**) y por tamaño
 (`captureMaxMb`, default 500 MB: al pasarse borra las más viejas aunque no
 hayan cumplido la retención, para no llenar la SD). Además, con **menos de
@@ -770,14 +773,14 @@ bitácora, para que el visor sepa qué fechas tienen algo):
   "filters": { "date": "20261007", "time_from": "080000", "time_to": "183059" },
   "days": { "2026-10-07": 12, "2026-10-06": 25 },
   "captures": [
-    { "name": "20261007-081530_SIN-PLACA_0f3a9c2e.json",
+    { "name": "20261007-081530_SIN-PLACA_0f3a9c2e4b17.json",
       "receivedAt": "2026-10-07T08:15:31-06:00",
       "capturedAt": "2026-10-07T08:15:30-06:00",
       "licensePlate": null, "vehicleList": "otherlist", "confidenceLevel": 41,
       "cameraName": "Entrada", "sourceIp": "192.168.100.106",
       "reason": "unreadable", "eventUid": "0f3a9c2e-…", "picturesDeclared": 2,
-      "images": ["20261007-081530_SIN-PLACA_0f3a9c2e_0-licenseplatepicture.jpg",
-                 "20261007-081530_SIN-PLACA_0f3a9c2e_1-detectionpicture.jpg"] }
+      "images": ["20261007-081530_SIN-PLACA_0f3a9c2e4b17_0-licenseplatepicture.jpg",
+                 "20261007-081530_SIN-PLACA_0f3a9c2e4b17_1-detectionpicture.jpg"] }
   ]
 }
 ```

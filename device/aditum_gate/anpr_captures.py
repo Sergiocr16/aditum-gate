@@ -24,11 +24,19 @@ Decisiones:
     forwarder ANPR una vez por hora, junto con la purga de la cola.
   - El nombre de archivo es la unica entrada al disco desde el API: se
     valida contra una regex estricta (SAFE_NAME) antes de servir una foto.
+  - El <uid> del nombre es una HUELLA (blake2b, 12 hex) del eventUid
+    COMPLETO, y con ella se detecta el reintento de la camara. La primera
+    version tomaba los primeros 8 hex del UUID tal cual, y eso en campo
+    guardo UNA sola lectura: los UUID de la camara no son aleatorios en sus
+    primeros caracteres, asi que toda lectura posterior se descartaba como
+    "repetida" sin dejar rastro. Los nombres viejos (8 hex) siguen siendo
+    validos para listar y purgar.
   - Guarda de espacio libre (MIN_FREE_MB): con la SD casi llena las fotos
     dejan de guardarse (el JSON si, pesa nada) aunque el tope en MB no se
     haya alcanzado. Un disco lleno tumba la cola SQLite, los logs y la
     escritura de config: ninguna foto de diagnostico vale eso.
 """
+import hashlib
 import json
 import logging
 import os
@@ -51,13 +59,15 @@ MIN_FREE_MB = 1024          # por debajo de esto no se guardan fotos
 LOW_DISK_LOG_INTERVAL = 600  # segundos entre avisos de disco lleno
 STAMP_FORMAT = "%Y%m%d-%H%M%S"
 MAX_IMAGES_PER_EVENT = 4
-# Nombres que se aceptan para leer del disco: solo lo que genera este modulo.
+UID_BYTES = 6               # 12 hex: suficiente para no confundir dos lecturas
+NO_UID = "00000000"         # evento sin eventUid: se guarda siempre, sin dedupe
+# Nombres que se aceptan para leer del disco: solo lo que genera este modulo
+# (8 hex de uid es el formato viejo, ver cabecera).
 SAFE_NAME = re.compile(
-    r"^(?P<date>[0-9]{8})-(?P<time>[0-9]{6})_(?P<plate>[A-Z0-9-]{1,16})_(?P<uid>[0-9a-f]{8})"
+    r"^(?P<date>[0-9]{8})-(?P<time>[0-9]{6})_(?P<plate>[A-Z0-9-]{1,16})_(?P<uid>[0-9a-f]{8,16})"
     r"(_[0-9]-[a-z0-9-]{1,40})?\.(json|jpg)$")
 _UNSAFE_CHARS = re.compile(r"[^A-Z0-9-]")
 _UNSAFE_PART = re.compile(r"[^a-z0-9-]")
-_NON_HEX = re.compile(r"[^0-9a-f]")
 
 
 def _safe_plate(plate):
@@ -67,6 +77,17 @@ def _safe_plate(plate):
         return NO_PLATE_LABEL
     cleaned = _UNSAFE_CHARS.sub("", plate.upper())[:16]
     return cleaned or NO_PLATE_LABEL
+
+
+def _uid_for_name(event_uid):
+    """Huella hex del eventUid completo (UUID de la camara o uuid4 local)
+    para el nombre de archivo. Dos eventos distintos dan huellas distintas
+    aunque sus UUID compartan prefijo; el mismo UUID (reintento) da la misma.
+    None si el evento no trae identificador."""
+    text = (event_uid or "").strip().lower()
+    if not text:
+        return None
+    return hashlib.blake2b(text.encode("utf-8"), digest_size=UID_BYTES).hexdigest()
 
 
 def _safe_part(name):
@@ -112,10 +133,9 @@ class AnprCaptureStore:
         parse_event_xml (licensePlate None cuando fue ilegible); `images`
         es una lista de (nombre, bytes). Devuelve el registro guardado, o
         None si el evento ya estaba (reintento de la camara)."""
-        # Solo hex del eventUid: el nombre tiene que pasar SAFE_NAME o el
-        # registro no se listaria ni se purgaria nunca.
-        uid = _NON_HEX.sub("", (event.get("eventUid") or "").lower())[:8]
-        uid = uid.ljust(8, "0") if uid else "00000000"
+        # Huella del eventUid: solo hex, para que el nombre pase SAFE_NAME
+        # (si no, el registro no se listaria ni se purgaria nunca).
+        uid = _uid_for_name(event.get("eventUid")) or NO_UID
         received_at = datetime.now().astimezone()
         base = "%s_%s_%s" % (received_at.strftime(STAMP_FORMAT),
                              _safe_plate(event.get("licensePlate")), uid)
@@ -134,7 +154,10 @@ class AnprCaptureStore:
             "images": [],
         }
         with self._lock:
-            if uid != "00000000" and any(self.dir.glob("*_%s.json" % uid)):
+            if uid != NO_UID and any(self.dir.glob("*_%s.json" % uid)):
+                log.info("Lectura no reconocida repetida (reintento de la camara), "
+                         "no se guarda otra vez: eventUid=%s placa=%s",
+                         event.get("eventUid"), event.get("licensePlate"))
                 return None
             if images and not self._has_room_for_images():
                 images = []

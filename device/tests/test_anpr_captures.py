@@ -77,7 +77,8 @@ class CaptureStoreTests(unittest.TestCase):
                                              ("detectionPicture.jpg", JPG)],
                               source_ip="192.168.100.106", reason=REASON_NOT_AUTHORIZED)
         self.assertIsNotNone(rec)
-        self.assertTrue(rec["name"].endswith("_ABC123_0f3a9c2e.json"))
+        self.assertTrue(rec["name"].endswith(
+            "_ABC123_%s.json" % anpr_captures._uid_for_name("0f3a9c2e-aaaa")))
         self.assertEqual(len(rec["images"]), 2)
         self.assertTrue(rec["images"][0].endswith("_0-licenseplatepicture.jpg"))
         self.assertTrue(rec["images"][1].endswith("_1-detectionpicture.jpg"))
@@ -105,18 +106,43 @@ class CaptureStoreTests(unittest.TestCase):
 
     def test_reintento_de_la_camara_no_duplica(self):
         self.store.save(make_event(), [("a.jpg", JPG)])
-        self.assertIsNone(self.store.save(make_event(), [("a.jpg", JPG)]))
+        # Otros modulos de tests apagan el logging global (logging.disable);
+        # assertLogs necesita verlo encendido durante este test.
+        previous = logging.root.manager.disable
+        logging.disable(logging.NOTSET)
+        self.addCleanup(logging.disable, previous)
+        with self.assertLogs("aditum.anpr.captures", level="INFO") as logs:
+            self.assertIsNone(self.store.save(make_event(), [("a.jpg", JPG)]))
+        self.assertIn("repetida", logs.output[0])
         self.assertEqual(len(os.listdir(self.store.dir)), 2)
+
+    def test_uuids_con_el_mismo_prefijo_son_lecturas_distintas(self):
+        # Lo que paso en campo: la camara numera sus eventos con un prefijo
+        # fijo y solo se guardaba la primera lectura. Placas distintas y
+        # UUID distintos tienen que dar registros distintos, aunque los
+        # UUID solo cambien al final.
+        uids = ["0f3a9c2e-0000-0000-0000-00000000000%d" % i for i in range(1, 6)]
+        for i, uid in enumerate(uids):
+            rec = self.store.save(make_event(plate="PLACA%d" % i, uid=uid), [("a.jpg", JPG)])
+            self.assertIsNotNone(rec, uid)
+            self.assertRegex(rec["name"], anpr_captures.SAFE_NAME)
+        self.assertEqual(self.store.list()[1], 5)
+        self.assertEqual(self.store.stats()["count"], 5)
+        # Y el mismo UUID completo si es un reintento
+        self.assertIsNone(self.store.save(make_event(plate="OTRA", uid=uids[2]), []))
+        self.assertEqual(self.store.list()[1], 5)
 
     def test_placa_rara_no_rompe_el_nombre(self):
         rec = self.store.save(make_event(plate="ab/..c 12", uid="deadbeef"), [])
-        self.assertIn("_ABC12_deadbeef.json", rec["name"])
+        self.assertIn("_ABC12_%s.json" % anpr_captures._uid_for_name("deadbeef"), rec["name"])
         self.assertEqual(self.store.list()[0][0]["licensePlate"], "ab/..c 12")
 
     def test_uuid_no_hex_de_la_camara_igual_produce_nombre_valido(self):
         rec = self.store.save(make_event(uid="EV-XYZ_42"), [("a.jpg", JPG)])
         self.assertIsNotNone(rec)
-        self.assertTrue(rec["name"].endswith("_ABC123_e4200000.json"))
+        match = anpr_captures.SAFE_NAME.match(rec["name"])
+        self.assertEqual((match["plate"], len(match["uid"])), ("ABC123", 12))
+        self.assertEqual(match["uid"], anpr_captures._uid_for_name("ev-xyz_42"))
         self.assertEqual(self.store.list()[1], 1)
         self.assertIsNotNone(self.store.file_path(rec["images"][0]))
         self.assertEqual(self.store.clear(), 1)
@@ -175,6 +201,7 @@ class CaptureStoreTests(unittest.TestCase):
         return base
 
     def test_purga_por_edad_borra_json_y_fotos(self):
+        # uid de 8 hex: el formato de los registros que ya hay en la flota
         now = datetime.now()
         old = self._write_dated(now - timedelta(days=16), "OLD111", "aaaaaaaa", JPG)
         fresh = self._write_dated(now - timedelta(days=14), "NEW222", "bbbbbbbb", JPG)
