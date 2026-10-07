@@ -4,8 +4,10 @@ Es el "Entry Point" que el backend de Aditum tiene configurado por punto de
 acceso. TODOS los endpoints exigen el token del dispositivo (ver auth.py);
 solo GET / es publico y minimo. El contrato completo esta en docs/API.md.
 """
+import email.parser
 import logging
 import os
+import re
 import socket
 import socketserver
 import tempfile
@@ -21,6 +23,7 @@ from werkzeug.serving import ThreadedWSGIServer
 
 from . import admin_auth, github_token, health, maintenance
 from .anpr import AnprCameraError, http_status_for, normalize_plate
+from .anpr_captures import REASON_NOT_AUTHORIZED, REASON_UNREADABLE
 from .anpr_events import parse_event_xml, is_authorized
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
@@ -127,7 +130,7 @@ def _write_token_file(token):
 
 
 def create_app(settings, gates, hikvision_service, screen, leds=None,
-               anpr_service=None, anpr_store=None):
+               anpr_service=None, anpr_store=None, anpr_captures=None):
     app = Flask(__name__)
 
     # Sesion del login admin (cookie firmada HttpOnly). El secreto se persiste
@@ -138,6 +141,15 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=False,
         PERMANENT_SESSION_LIFETIME=timedelta(seconds=admin_auth.SESSION_LIFETIME_SECONDS),
+        # Cuerpos grandes: el evento ANPR trae dos JPG (hasta ~1 MB cada
+        # uno) y /sync-plates la lista entera. nginx ya corta en 10 MB; este
+        # es el tope hablando directo al :8080. MAX_FORM_MEMORY_SIZE sube del
+        # default de 500 KB porque, si la camara manda las fotos sin
+        # `filename=`, Werkzeug las trata como campos de formulario en
+        # memoria y con el default responderia 413 y se perderia el evento
+        # entero (ver _raw_multipart_parts).
+        MAX_CONTENT_LENGTH=16 * 1024 * 1024,
+        MAX_FORM_MEMORY_SIZE=16 * 1024 * 1024,
     )
     admin_auth.load_credentials()  # siembra el default si falta
 
@@ -473,6 +485,34 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         except ValueError:
             return False
 
+    def _raw_multipart_parts(req):
+        # Respaldo tolerante al formato de la camara: Werkzeug solo trata una
+        # parte como archivo si trae `filename=` en Content-Disposition; hay
+        # firmwares Hikvision que mandan `name="detectionPicture.jpg"` a
+        # secas, y asi el JPG caeria en request.form decodificado como texto
+        # (irrecuperable). El parser de email lee el cuerpo crudo por
+        # boundary sin esa exigencia y devuelve los bytes intactos. El cuerpo
+        # esta cacheado porque el handler llama get_data() antes de tocar
+        # request.files. Devuelve [(nombre, content_type, bytes)].
+        content_type = req.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("multipart/"):
+            return []
+        head = ("Content-Type: %s\r\nMIME-Version: 1.0\r\n\r\n" % content_type).encode("latin-1", "replace")
+        try:
+            msg = email.parser.BytesParser().parsebytes(head + req.get_data())
+        except Exception as e:
+            log.warning("No se pudo parsear el multipart crudo del evento ANPR: %s", e)
+            return []
+        parts = []
+        for part in msg.walk():
+            if part.is_multipart():
+                continue
+            name = (part.get_param("filename", header="content-disposition")
+                    or part.get_param("name", header="content-disposition") or "")
+            payload = part.get_payload(decode=True) or b""
+            parts.append((str(name), part.get_content_type().lower(), payload))
+        return parts
+
     def _extract_event_xml(req):
         # La camara postea multipart/form-data con el XML en una parte
         # (tipicamente anpr.xml) + jpgs; tambien se acepta XML crudo.
@@ -482,10 +522,60 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                 filename = part.filename or ""
                 if "xml" in content_type or filename.endswith(".xml"):
                     return part.read()
+        for name, content_type, data in _raw_multipart_parts(req):
+            if "xml" in content_type or name.lower().endswith(".xml"):
+                return data
+        if req.files:
             first = next(iter(req.files.values()), None)
             if first is not None:
                 return first.read()
+        # Sin parte XML reconocible: el cuerpo tal cual (XML crudo, o un
+        # multipart raro que no parsea y termina en {"ignored": true}, como
+        # siempre: a la camara nunca se le responde 400 por basura).
         return req.get_data() or None
+
+    def _is_image_part(name, content_type):
+        return "image" in content_type or name.lower().endswith((".jpg", ".jpeg"))
+
+    def _extract_event_images(req):
+        # Las fotos del evento (licensePlatePicture.jpg = recorte de la
+        # placa, detectionPicture.jpg = escena) viajan como partes del mismo
+        # multipart. items(multi=True): la camara puede repetir el nombre.
+        images = []
+        for key, part in req.files.items(multi=True):
+            if not _is_image_part(part.filename or key or "", (part.content_type or "").lower()):
+                continue
+            try:
+                part.stream.seek(0)
+            except (AttributeError, OSError, ValueError):
+                pass
+            images.append((part.filename or key, part.read()))
+        if not images:
+            # Partes sin filename= (ver _raw_multipart_parts)
+            images = [(name, data) for name, content_type, data in _raw_multipart_parts(req)
+                      if _is_image_part(name, content_type) and data]
+        return images
+
+    def _capture_unrecognized(event, source_ip, reason):
+        # Bitacora local con foto (anpr_captures). Nunca puede tumbar el
+        # handler: la cola de eventos sigue aunque el disco falle.
+        if anpr_captures is None:
+            return
+        try:
+            images = _extract_event_images(request)
+            declared = event.get("pictureCount")
+            if declared and not images:
+                # La camara dice en el XML (<picNum>) que adjunto fotos y no
+                # llegaron: casi siempre es la camara posteando sin "picture"
+                # o un proxy que recorto el cuerpo. Es lo que hay que mirar
+                # en sitio cuando la bitacora sale sin fotos.
+                log.warning("Evento ANPR %s declara %s foto(s) en el XML pero el "
+                            "multipart no trajo ninguna (Content-Type=%s, %s bytes)",
+                            event.get("eventUid"), declared, request.mimetype,
+                            request.content_length)
+            anpr_captures.save(event, images, source_ip=source_ip, reason=reason)
+        except Exception:
+            log.exception("No se pudo guardar la placa no reconocida")
 
     @app.route("/update-plate", methods=["POST"])
     def update_plate():
@@ -565,12 +655,26 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             log.warning("Evento ANPR rechazado desde IP no permitida: %s",
                         source_ip)
             return jsonify({"error": "forbidden"}), 403
+        # Cachear el cuerpo crudo ANTES de que Werkzeug parsee el form: asi
+        # _raw_multipart_parts puede releerlo si las partes vienen sin filename.
+        request.get_data()
         xml_bytes = _extract_event_xml(request)
         if not xml_bytes:
             return jsonify({"error": "empty body"}), 400
         event = parse_event_xml(xml_bytes)
         if event is None:
             return jsonify({"ignored": True})
+        if event["licensePlate"] is None:
+            # Placa ilegible ("unknown"): no hay nada que encolar, pero la
+            # foto es justo lo que hace falta para saber que vio la camara.
+            _capture_unrecognized(event, source_ip, REASON_UNREADABLE)
+            log.info("Evento ANPR sin placa legible desde=%s", source_ip)
+            return jsonify({"ignored": "placa ilegible"})
+        if not is_authorized(event):
+            # Fuera del allow list: se guarda con foto haya o no filtro, para
+            # poder revisar en sitio si fue una lectura mala de una placa
+            # que si esta autorizada.
+            _capture_unrecognized(event, source_ip, REASON_NOT_AUTHORIZED)
         # Switch anpr.onlyAuthorized (default true): solo se encolan lecturas
         # del allow list (whiteList). En false se encolan todas para revisar.
         if settings.anpr_only_authorized and not is_authorized(event):
@@ -678,6 +782,73 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
         deleted = anpr_store.delete_pending()
         log.warning("Cola ANPR: %s pendientes borradas via /anpr-status/pending", deleted)
+        return jsonify({"deleted": deleted})
+
+    # ------------------------------------------------------------
+    # Bitacora local de placas NO reconocidas (anpr_captures): JSON + fotos
+    # de la camara, en disco. Diagnostico: nada de esto sale hacia Aditum.
+    # ------------------------------------------------------------
+
+    def _capture_filters(args):
+        """Query string del visor -> filtros del store. Lo invalido se ignora
+        (no se filtra por ese campo) en vez de responder 400: es una pantalla
+        de diagnostico, no un contrato con el backend."""
+        filters = {}
+        date = (args.get("date") or "").replace("-", "")
+        if re.fullmatch(r"[0-9]{8}", date):
+            filters["date"] = date
+        for key, name, fill in (("from", "time_from", "00"), ("to", "time_to", "59")):
+            raw = args.get(key) or ""
+            m = re.fullmatch(r"([0-9]{2}):([0-9]{2})(?::([0-9]{2}))?", raw)
+            if m:
+                filters[name] = m.group(1) + m.group(2) + (m.group(3) or fill)
+        plate = re.sub(r"[^A-Z0-9-]", "", (args.get("plate") or "").upper())[:16]
+        if plate:
+            filters["plate"] = plate
+        if args.get("reason") in (REASON_UNREADABLE, REASON_NOT_AUTHORIZED):
+            filters["reason"] = args.get("reason")
+        return filters
+
+    @app.route("/anpr-captures")
+    def anpr_captures_list():
+        # Lista paginada y filtrable (fecha, rango de horas, placa, motivo)
+        # para el visor del editor. Los filtros van sobre la hora en que la
+        # Pi RECIBIO el evento (la del nombre de archivo), que es la misma
+        # de la camara salvo reloj desfasado; capturedAt viaja igual.
+        if anpr_captures is None:
+            return jsonify({"error": "Bitacora de placas no reconocidas deshabilitada"}), 404
+        try:
+            limit = max(1, min(int(request.args.get("limit", 50)), 500))
+            offset = max(0, int(request.args.get("offset", 0)))
+        except ValueError:
+            limit, offset = 50, 0
+        filters = _capture_filters(request.args)
+        captures, total = anpr_captures.list(limit, offset, **filters)
+        return jsonify(dict(anpr_captures.stats(), captures=captures, total=total,
+                            limit=limit, offset=offset, filters=filters,
+                            days=anpr_captures.days()))
+
+    @app.route("/anpr-captures/<name>")
+    def anpr_capture_file(name):
+        # Sirve una foto (o el JSON) por nombre. El nombre se valida contra
+        # el patron que genera el propio modulo: no hay forma de salir del
+        # directorio ni de leer otro archivo.
+        if anpr_captures is None:
+            return jsonify({"error": "Bitacora de placas no reconocidas deshabilitada"}), 404
+        path = anpr_captures.file_path(name)
+        if path is None:
+            return jsonify({"error": "not found"}), 404
+        resp = send_from_directory(str(anpr_captures.dir), path.name)
+        resp.headers["Cache-Control"] = "private, max-age=3600"
+        return resp
+
+    @app.route("/anpr-captures", methods=["DELETE"])
+    def anpr_captures_clear():
+        if anpr_captures is None:
+            return jsonify({"error": "Bitacora de placas no reconocidas deshabilitada"}), 404
+        deleted = anpr_captures.clear()
+        log.warning("Bitacora de placas no reconocidas: %s registro(s) borrados "
+                    "via DELETE /anpr-captures", deleted)
         return jsonify({"deleted": deleted})
 
     # ------------------------------------------------------------

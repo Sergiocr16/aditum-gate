@@ -117,8 +117,9 @@ def _text_of(root, name):
 
 
 # La camara emite "unknown" como placa cuando el OCR no la pudo leer. Es una
-# no-lectura (como un heartbeat): no se encola ni se reenvia a Aditum. Se
-# compara en minusculas por si el firmware varia el casing.
+# no-lectura: no se encola ni se reenvia a Aditum, pero SI se guarda su foto
+# en la bitacora de no reconocidas (anpr_captures). Se compara en minusculas
+# por si el firmware varia el casing.
 _NO_PLATE_SENTINELS = {"unknown"}
 
 
@@ -140,8 +141,9 @@ def is_authorized(event):
 def parse_event_xml(xml_bytes):
     """Extrae los campos del EventNotificationAlert de la camara.
 
-    Devuelve dict o None si el XML no es un evento ANPR con placa (los
-    heartbeats/videoloss que mandan los alarm hosts se ignoran en silencio).
+    Devuelve dict o None si el XML no es un evento ANPR (los heartbeats/
+    videoloss que mandan los alarm hosts se ignoran en silencio). Un evento
+    ANPR cuya placa fue ilegible se devuelve con licensePlate None.
     """
     try:
         root = ET.fromstring(xml_bytes)
@@ -152,9 +154,13 @@ def parse_event_xml(xml_bytes):
     if event_type != "ANPR":
         return None
 
+    # Placa ilegible ("unknown" o ausente): el evento SI se devuelve, con
+    # licensePlate None, para que el caller pueda guardar la foto en la
+    # bitacora de no reconocidas. Encolarlo es responsabilidad del caller
+    # (nunca lo hace: Aditum no acepta una lectura sin placa).
     plate = _text_of(root, "licensePlate") or _text_of(root, "originalLicensePlate")
-    if not plate or plate.strip().lower() in _NO_PLATE_SENTINELS:
-        return None
+    if plate and plate.strip().lower() in _NO_PLATE_SENTINELS:
+        plate = None
 
     # <vehicleListName>: resultado del match de la camara contra sus listas —
     # whiteList/allowList (autorizada), blackList/blockList (vetada) u otherList
@@ -181,6 +187,13 @@ def parse_event_xml(xml_bytes):
     camera_name = (_text_of(root, "channelName") or _text_of(root, "deviceID")
                    or _text_of(root, "ipAddress") or "")
 
+    # <picNum>: cuantas fotos dice la camara que adjunto al multipart. Sirve
+    # para detectar en el log un evento que deberia traer foto y no la trajo.
+    picture_count = None
+    raw_pic_num = _text_of(root, "picNum")
+    if raw_pic_num and raw_pic_num.isdigit():
+        picture_count = int(raw_pic_num)
+
     return {
         "eventUid": camera_uuid or str(uuid.uuid4()),
         "licensePlate": plate,
@@ -188,6 +201,7 @@ def parse_event_xml(xml_bytes):
         "confidenceLevel": confidence,
         "cameraName": camera_name,
         "vehicleList": vehicle_list,
+        "pictureCount": picture_count,
     }
 
 
@@ -390,10 +404,13 @@ class AnprEventForwarder(threading.Thread):
     El evento que falla DEFER_AFTER veces cede el turno para que la cola no
     quede congelada detras de el."""
 
-    def __init__(self, settings, store):
+    def __init__(self, settings, store, captures=None):
         super().__init__(name="anpr-forwarder", daemon=True)
         self.settings = settings
         self.store = store
+        # Bitacora de placas no reconocidas (anpr_captures): se purga aca,
+        # en el mismo ciclo horario que la cola, para no sumar otro thread.
+        self.captures = captures
         self._backoff = BACKOFF_INITIAL
         self._last_purge = 0.0
 
@@ -491,3 +508,8 @@ class AnprEventForwarder(threading.Thread):
                 self.store.purge_processed(self.settings.anpr_purge_days)
             except Exception:
                 log.exception("Fallo la purga de eventos ANPR")
+            if self.captures is not None:
+                try:
+                    self.captures.purge()
+                except Exception:
+                    log.exception("Fallo la purga de placas no reconocidas")

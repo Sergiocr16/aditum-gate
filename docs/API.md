@@ -86,6 +86,8 @@ Reglas:
 | `/anpr-event` | POST | especial | Lecturas de placa que postea la cámara (IP de la LAN) |
 | `/anpr-status` | GET | T/S | Estado del ANPR: cámara, cola y últimas lecturas |
 | `/anpr-status/pending` | DELETE | T/S | Vaciar la cola de lecturas sin enviar |
+| `/anpr-captures` | GET / DELETE | T/S | Bitácora local de placas no reconocidas (con foto) / vaciarla |
+| `/anpr-captures/<archivo>` | GET | T/S | Una foto (o el JSON) de esa bitácora |
 | `/anpr-test` | POST | T/S | Probar la conexión con la cámara y consultar su lista de placas |
 | `/sync-plates` | POST | T/S | Cargar la lista de placas autorizadas del condominio |
 | `/update-plate` | POST | T/S | Alta/baja de una placa suelta |
@@ -509,11 +511,14 @@ que hablan con la cámara (`/update-plate`, `/sync-plates`, `/anpr-test`) y
 | `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola (y solo del allow list si `anpr.onlyAuthorized`): no abre portones ni toca configuración |
 | `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
 | `/anpr-status/pending` | DELETE | token | Borra las lecturas **pendientes** de enviar (no toca las confirmadas/descartadas). Botón "Borrar pendientes" del editor, para limpiar tras pruebas o un cutover |
+| `/anpr-captures` | GET / DELETE | token | **Bitácora local de placas no reconocidas**: lecturas ilegibles o fuera del allow list, con las fotos que mandó la cámara. `DELETE` la vacía. Ver sección abajo |
+| `/anpr-captures/<archivo>` | GET | token | Una foto (`image/jpeg`) o el JSON de un registro de esa bitácora |
 | `/anpr-test` | POST | token | **Diagnóstico y consulta**: habla directo con una cámara sin pasar por Aditum. `CHECK`/`LIST`/`FIND` solo leen; `ADD`/`DELETE` escriben |
 
 Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en
 `/update-plate` y `/sync-plates`; `404` en `/anpr-event`, `/anpr-status`,
-`/anpr-status/pending` y `/anpr-test`.
+`/anpr-status/pending`, `/anpr-captures` y `/anpr-test`. `/anpr-captures`
+responde `404` también con `anpr.captureUnrecognized = false`.
 
 **`POST /update-plate`** — cuerpo:
 
@@ -657,7 +662,9 @@ Solo se encolan lecturas del **allow list**: el evento trae
 `<vehicleListName>` con el resultado del match de la cámara, y el Pi descarta lo
 que no sea el allow list cuando
 `anpr.onlyAuthorized = true` (default; switch en el editor). En `false` se
-encolan todas para revisar. Las placas ilegibles (`unknown`) se ignoran siempre.
+encolan todas para revisar. Las placas ilegibles (`unknown`) no se encolan
+nunca (Aditum no acepta una lectura sin placa), pero **sí quedan en la
+bitácora local de no reconocidas** con su foto (ver abajo).
 
 El allow list llega con **dos nombres segun el firmware**: `whiteList` en los
 viejos y `allowList` en los nuevos (Hikvision renombro whiteList/blackList a
@@ -674,13 +681,124 @@ si falta, la pantalla lo advierte, porque las lecturas se encolarían sin poder
 enviarse.
 
 ```json
-"anpr": { "enabled": true, "purgeDays": 7 }
+"anpr": { "enabled": true, "purgeDays": 7,
+          "captureUnrecognized": true, "captureRetentionDays": 15, "captureMaxMb": 500 }
 ```
 
 `purgeDays` rige por igual para las confirmadas y las descartadas: una sola
 retención para todo lo ya procesado (la edad de una descartada se mide por
 `received_at`, que no tiene `sent_at`). En `0` se borra apenas se procesa. Lo
 **pendiente no se borra nunca**: se reintenta hasta que Aditum responda OK.
+
+#### Bitácora local de placas no reconocidas (`/anpr-captures`)
+
+Cuando una placa **no abre**, la cola de eventos solo dice *qué leyó* la
+cámara (o nada, si fue ilegible); para saber *qué vio* hace falta la foto.
+La cámara la manda en el mismo multipart del evento
+(`licensePlatePicture.jpg` = recorte de la placa, `detectionPicture.jpg` =
+escena completa) y el Pi la guarda en disco, en `anpr-captures/` (fuera de
+git), para **toda lectura no reconocida**:
+
+| Caso | `reason` | Qué se guarda |
+|---|---|---|
+| El OCR no pudo leer la placa (`unknown`) | `unreadable` | Fecha/hora, `licensePlate: null`, lista, fotos |
+| Placa leída pero **fuera del allow list** (`blackList`, `otherList`…) | `not_authorized` | Fecha/hora, placa tal cual la leyó, lista, fotos |
+
+Se guarda **independientemente de `onlyAuthorized`** (con el filtro apagado
+la lectura se encola igual, y además queda su foto). Lo que la cámara matcheó
+contra el allow list no se guarda: eso ya está en la cola. Nada de esta
+bitácora **se reenvía a Aditum** ni abre portones: es diagnóstico en sitio.
+
+**Cómo llega la foto.** La cámara postea `multipart/form-data` (boundary
+literal `boundary` en los firmwares Hikvision) con tres partes: `anpr.xml`
+(`application/xml`), `licensePlatePicture.jpg` y `detectionPicture.jpg`
+(`image/jpeg`). El Pi acepta las partes **con o sin `filename=`** en
+`Content-Disposition` (Werkzeug solo trata como archivo las que lo traen;
+sin él, se releen del cuerpo crudo), cualquier boundary, partes con el mismo
+nombre, y XML crudo sin multipart. Límites: nginx corta en 10 MB y Flask en
+16 MB (`MAX_CONTENT_LENGTH`/`MAX_FORM_MEMORY_SIZE`, subido del default de
+500 KB que haría responder `413` a una escena sin `filename`). El XML trae
+`<picNum>` con cuántas fotos adjuntó la cámara: se guarda como
+`picturesDeclared` y, si el multipart no trajo ninguna, queda un WARNING en
+el log (`declara N foto(s) en el XML pero el multipart no trajo ninguna`):
+casi siempre es el alarm server de la cámara configurado sin *picture*. La
+prueba `device/tests/test_anpr_camera_payload.py` replica el cuerpo byte a
+byte y comprueba que los JPG se guardan intactos.
+
+Cada registro es un JSON `<fecha-hora>_<placa|SIN-PLACA>_<uid>.json` más sus
+fotos con el mismo prefijo (`…_0-licenseplatepicture.jpg`,
+`…_1-detectionpicture.jpg`). Un reintento de la cámara (mismo `UUID`) no
+duplica. **Purga automática** (la corre el forwarder ANPR una vez por hora):
+por edad (`captureRetentionDays`, default **15 días**) y por tamaño
+(`captureMaxMb`, default 500 MB: al pasarse borra las más viejas aunque no
+hayan cumplido la retención, para no llenar la SD). Además, con **menos de
+1 GB libre** en el disco se guarda solo el JSON del evento, sin fotos
+(`imagesSkipped: "disco lleno"` en el registro y aviso en el log): un disco
+lleno tumba la cola SQLite y la escritura de config, y ninguna foto de
+diagnóstico vale eso. `captureUnrecognized: false` apaga la bitácora por
+completo.
+
+Para dimensionar `captureMaxMb`: una foto de escena de una cámara Hikvision
+ANPR pesa típicamente 150–500 KB y el recorte de placa 5–30 KB, así que cada
+lectura no reconocida ronda los **300 KB**. La respuesta de `/anpr-captures`
+trae `count` y `bytes` (el peso real promedio en ese equipo) y `diskFreeMb`.
+
+**`GET /anpr-captures`** — lista paginada y filtrable, del más nuevo al más
+viejo. Query string (todo opcional; un valor mal formado se ignora en vez
+de responder `400`):
+
+| Parámetro | Formato | Filtra por |
+|---|---|---|
+| `date` | `YYYY-MM-DD` | Día (hora local del equipo) |
+| `from` / `to` | `HH:MM` | Rango de horas, inclusive (`to` cierra en `HH:MM:59`) |
+| `plate` | texto | Subcadena de la placa leída (se normaliza a `[A-Z0-9-]`) |
+| `reason` | `unreadable` \| `not_authorized` | Motivo |
+| `limit` / `offset` | enteros (`limit` ≤ 500, default 50) | Paginación |
+
+Los filtros de fecha y hora van sobre la hora en que **el equipo recibió** el
+evento (la del nombre del archivo), que es la de la cámara salvo reloj
+desfasado; `capturedAt` viaja igual en cada registro. La respuesta trae
+`total` (cuántos cumplen los filtros), `filters` (los que se aplicaron de
+verdad, normalizados) y `days` (cuántos registros hay por día en toda la
+bitácora, para que el visor sepa qué fechas tienen algo):
+
+```json
+{
+  "count": 37, "bytes": 8123456, "retentionDays": 15, "maxMb": 500,
+  "diskFreeMb": 9876, "minFreeMb": 1024,
+  "total": 12, "limit": 50, "offset": 0,
+  "filters": { "date": "20261007", "time_from": "080000", "time_to": "183059" },
+  "days": { "2026-10-07": 12, "2026-10-06": 25 },
+  "captures": [
+    { "name": "20261007-081530_SIN-PLACA_0f3a9c2e.json",
+      "receivedAt": "2026-10-07T08:15:31-06:00",
+      "capturedAt": "2026-10-07T08:15:30-06:00",
+      "licensePlate": null, "vehicleList": "otherlist", "confidenceLevel": 41,
+      "cameraName": "Entrada", "sourceIp": "192.168.100.106",
+      "reason": "unreadable", "eventUid": "0f3a9c2e-…", "picturesDeclared": 2,
+      "images": ["20261007-081530_SIN-PLACA_0f3a9c2e_0-licenseplatepicture.jpg",
+                 "20261007-081530_SIN-PLACA_0f3a9c2e_1-detectionpicture.jpg"] }
+  ]
+}
+```
+
+`capturedAt` es la hora del evento según la cámara; `receivedAt`, cuándo lo
+recibió el Pi. `images` puede venir vacío si la cámara no adjunta fotos
+(revisar en la cámara que el alarm server envíe *picture*).
+
+**`GET /anpr-captures/<archivo>`** devuelve el JPG (`image/jpeg`) o el JSON.
+Solo acepta nombres con el formato que genera el propio Pi: cualquier otro
+(`../`, otro archivo del repo) responde `404`. El editor (`/admin` → ANPR →
+*Bitácora de placas no reconocidas* → **Ver bitácora**) abre la página de la
+bitácora dentro del mismo editor (no está en el menú lateral; se vuelve con
+*Volver a ANPR*): filtros por fecha (con los días que tienen registros como
+accesos directos), rango de horas, placa y motivo; miniaturas con la escena
+y el recorte de la placa; y al tocar una, la foto en grande con flechas para
+recorrer los resultados. Desde la terminal:
+`scp pi@<ip>:/home/pi/aditum-gate/anpr-captures/*.jpg .` (ruta de instalación por defecto).
+
+**`DELETE /anpr-captures`** vacía la bitácora (`{"deleted": n}`). Botón
+*Borrar bitácora* del editor.
 
 **`POST /anpr-test`** — para validar la instalación en sitio, desde `/admin` →
 **ANPR** → *Probar la conexión con una cámara*:

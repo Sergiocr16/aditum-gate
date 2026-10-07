@@ -106,7 +106,10 @@
       "properties": {
         "enabled": { "type": "boolean", "default": false, "description": "Apagado por defecto: la lectura de placas es opt-in por equipo (necesita una camara ANPR en la LAN posteando a /anpr-event). Una config sin bloque anpr queda sin ANPR" },
         "purgeDays": { "type": "integer", "minimum": 0, "maximum": 90, "default": 7, "description": "Dias que se conservan las lecturas ya confirmadas por Aditum antes de borrarlas. 0 = borrarlas apenas Aditum confirma (la cola queda solo con lo pendiente)" },
-        "onlyAuthorized": { "type": "boolean", "default": true, "description": "true (default): solo se encolan lecturas del allow list de la camara, que segun el firmware se llama whiteList o allowList. false: se encolan todas (allow list/blackList/otherList) para revisar. Las placas ilegibles (unknown) se ignoran siempre." }
+        "onlyAuthorized": { "type": "boolean", "default": true, "description": "true (default): solo se encolan lecturas del allow list de la camara, que segun el firmware se llama whiteList o allowList. false: se encolan todas (allow list/blackList/otherList) para revisar. Las placas ilegibles (unknown) se ignoran siempre." },
+        "captureUnrecognized": { "type": "boolean", "default": true, "description": "true (default): cada lectura NO reconocida (placa ilegible o fuera del allow list) se guarda en la Pi con la foto que manda la camara (anpr-captures/), para diagnosticar en sitio que vio la camara. false: no se guarda nada" },
+        "captureRetentionDays": { "type": "integer", "minimum": 1, "maximum": 90, "default": 15, "description": "Dias que se conservan las lecturas no reconocidas y sus fotos antes de borrarlas automaticamente" },
+        "captureMaxMb": { "type": "integer", "minimum": 10, "maximum": 4000, "default": 500, "description": "Tope en MB de la bitacora de placas no reconocidas: al superarlo se borran las mas viejas aunque no hayan cumplido la retencion (protege la SD de la Pi)" }
       }
     },
     "polling": {
