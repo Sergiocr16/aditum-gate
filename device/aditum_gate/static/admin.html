@@ -296,6 +296,55 @@
   .tbl .cam{ font:12px/1.1 var(--mono); color:var(--mut); }
   .tbl .when{ color:var(--txt); white-space:nowrap; font-variant-numeric:tabular-nums; }
   .tbl .reason{ display:block; margin-top:4px; font-size:11px; line-height:1.35; color:var(--mut); }
+  /* Seccion ANPR: cajas de politicas lado a lado */
+  .subbox{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px 16px 16px; background:#fafcff; min-width:0; }
+  .subbox .hsub{ margin:0 0 10px; }
+  .subbox .check{ background:#fff; }
+  .blkhead{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .blkhead .hsub{ margin:0; }
+  /* Bitacora de placas no reconocidas (sub-pagina de ANPR) */
+  .caps-filters{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:16px; }
+  .caps-filters .field{ margin:0; flex:0 0 auto; }
+  .caps-filters .field label{ margin-bottom:4px; }
+  .caps-filters input[type=date],.caps-filters input[type=time]{ width:100%; min-height:40px; border:1px solid var(--line-2); border-radius:var(--radius-sm); padding:0 10px; color:var(--txt); background:#fff; font:14px/1.4 var(--sans); }
+  .caps-filters input[type=text],.caps-filters select{ min-height:40px; font-size:14px; }
+  .caps-filters .f-date{ width:160px; } .caps-filters .f-time{ width:140px; } .caps-filters .f-plate{ width:130px; } .caps-filters .f-reason{ width:190px; }
+  .caps-days{ display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+  .caps-days .chip{ cursor:pointer; user-select:none; }
+  .caps-days .chip:hover{ border-color:#aebbcf; }
+  .caps-days .chip.on{ background:var(--pri-50); color:var(--pri-700); border-color:#b9d1ee; }
+  .caps-info{ margin-top:10px; font-size:12.5px; color:var(--mut); line-height:1.5; }
+  .caps{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; margin-top:12px; }
+  .cap{ border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--card); overflow:hidden; cursor:pointer; box-shadow:var(--shadow-sm); }
+  .cap:hover{ border-color:#aebbcf; }
+  .cap .cap-img{ display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#1b1b1b; }
+  .cap .cap-img.cap-plate{ aspect-ratio:auto; max-height:64px; object-fit:contain; background:#fff; border-top:1px solid var(--line); }
+  .cap .cap-none{ display:flex; align-items:center; justify-content:center; aspect-ratio:4/3; color:var(--mut); font-size:12px; background:#f3f7fc; }
+  .cap .cap-meta{ padding:8px 10px; font-size:12px; color:var(--mut); line-height:1.45; }
+  .cap .cap-meta .plate{ font:700 13px/1.1 var(--mono); letter-spacing:.03em; color:var(--ink); }
+  .cap .cap-meta .badge{ margin-left:6px; }
+  .caps-more{ text-align:center; margin:18px 0 6px; }
+  .lightbox{ position:fixed; inset:0; z-index:58; background:rgba(5,12,22,.94); display:flex; flex-direction:column; color:#fff; }
+  .lightbox[hidden]{ display:none; }
+  .lightbox .lb-bar{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 16px; flex:none; }
+  .lightbox .lb-bar .lb-meta{ flex:1; min-width:0; }
+  .lightbox .lb-bar .row{ flex:none; }
+  .lightbox .lb-meta{ font-size:13px; line-height:1.5; color:#c9d3e0; }
+  .lightbox .lb-meta .plate{ font:700 18px/1.1 var(--mono); letter-spacing:.04em; color:#fff; margin-right:8px; }
+  .lightbox .lb-main{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:0 60px; position:relative; }
+  /* El contenedor de la foto ocupa todo el alto y la foto se estira a el (tambien si es chica) */
+  .lightbox .lb-main > div{ width:100%; height:100%; min-height:0; display:flex; align-items:center; justify-content:center; }
+  .lightbox .lb-main img{ width:100%; height:100%; min-width:0; object-fit:contain; }
+  .lightbox .lb-main .cap-none{ color:#9aa6b8; font-size:14px; }
+  .lightbox .lb-nav{ position:absolute; top:50%; transform:translateY(-50%); min-height:0; width:46px; height:72px; padding:0; border:0; border-radius:10px; background:rgba(255,255,255,.14); color:#fff; font-size:28px; line-height:1; box-shadow:none; }
+  .lightbox .lb-nav:hover{ background:rgba(255,255,255,.26); }
+  .lightbox .lb-nav:disabled{ opacity:.25; cursor:default; }
+  .lightbox .lb-prev{ left:8px; } .lightbox .lb-next{ right:8px; }
+  .lightbox .lb-crop{ flex:none; text-align:center; padding:8px 16px 12px; }
+  .lightbox .lb-crop:empty{ display:none; }
+  .lightbox .lb-crop img{ max-height:90px; max-width:92%; background:#fff; border-radius:4px; }
+  .lightbox .lb-pos{ font-size:12px; color:#9aa6b8; }
+  @media (max-width:640px){ .lightbox .lb-main{ padding:0; } .lightbox .lb-nav{ width:38px; height:60px; font-size:24px; background:rgba(255,255,255,.22); } .lightbox .lb-prev{ left:4px; } .lightbox .lb-next{ right:4px; } .caps-filters .f-date,.caps-filters .f-time,.caps-filters .f-plate,.caps-filters .f-reason{ width:100%; } .caps-filters .field{ flex:1 1 140px; } }
   .badge.warn{ background:var(--warn-bg); color:var(--warn); border:1px solid var(--warn-line); }
 
   /* ---------- Inline message ---------- */
@@ -549,41 +598,97 @@
 
       <div class="cond" id="anprCond" style="margin-top:20px">
 
-        <div class="field">
-          <label for="f_apiBase">URL de Aditum <span class="muted">(a dónde se envían las lecturas · solo lectura)</span> <span class="key">api.baseUrl</span></label>
-          <input type="text" id="f_apiBase" placeholder="https://caseta.aditumcr.com/api" readonly title="Fija: siempre la API de Aditum. Se administra desde el backend." style="opacity:.65; cursor:not-allowed">
-          <div class="hint">Base del API. Las lecturas se envían a <code id="anprPostUrl" class="key"></code>,
-            autenticadas con el <b>token de este equipo</b> (se asigna en la sección <b>Seguridad</b>).
-            <span id="anprTokenState"></span></div>
-        </div>
-
-        <div class="field" style="margin-top:18px">
-          <label>URL para configurar en la cámara <span class="muted">(solo lectura)</span></label>
-          <div class="row">
-            <input type="text" id="anprCamUrl" readonly style="flex:1; min-width:240px">
-            <button class="sec sm" id="btnCopyAnprUrl" type="button">Copiar</button>
+        <!-- 1. Conexion: a donde envia este equipo y a donde apunta la camara -->
+        <div class="hsub" style="margin-top:0">Conexión</div>
+        <div class="grid">
+          <div class="field" style="margin:0">
+            <label for="f_apiBase">URL de Aditum <span class="muted">(solo lectura)</span> <span class="key">api.baseUrl</span></label>
+            <input type="text" id="f_apiBase" placeholder="https://caseta.aditumcr.com/api" readonly title="Fija: siempre la API de Aditum. Se administra desde el backend." style="opacity:.65; cursor:not-allowed">
+            <div class="hint">Las lecturas se envían a <code id="anprPostUrl" class="key"></code>, autenticadas con el
+              <b>token de este equipo</b> (sección <b>Seguridad</b>). <span id="anprTokenState"></span></div>
           </div>
-          <div class="hint">En la cámara: <b>Event → Alarm Setting → Alarm Server → Add</b>.
-            Destination = la IP de este equipo, URL = <code>/anpr-event</code>, Protocol = <b>HTTP</b>,
-            Port = <b>80</b>, ANR habilitado. No lleva token: el evento no sale de la red local.
-            La <b>dirección y las credenciales de la cámara</b> no se configuran acá: se administran en
-            Aditum (<i>Acceso y ANPR</i>) y llegan en cada envío de placas.</div>
+          <div class="field" style="margin:0">
+            <label for="anprCamUrl">URL para configurar en la cámara <span class="muted">(solo lectura)</span></label>
+            <div class="row">
+              <input type="text" id="anprCamUrl" readonly style="flex:1; min-width:200px">
+              <button class="sec sm" id="btnCopyAnprUrl" type="button">Copiar</button>
+            </div>
+            <div class="hint">En la cámara: <b>Event → Alarm Setting → Alarm Server → Add</b>. Destination = la IP de
+              este equipo, URL = <code>/anpr-event</code>, Protocol = <b>HTTP</b>, Port = <b>80</b>, ANR habilitado.
+              No lleva token: el evento no sale de la red local. La <b>dirección y las credenciales de la cámara</b>
+              se administran en Aditum (<i>Acceso y ANPR</i>) y llegan en cada envío de placas.</div>
+          </div>
         </div>
 
-        <div class="field" style="margin-top:20px; max-width:260px">
-          <label for="f_anprPurge">Guardar lecturas ya enviadas <span class="muted">(días)</span> <span class="key">purgeDays</span></label>
-          <input type="number" id="f_anprPurge" min="0" max="90" value="7">
-          <div class="hint">Apenas Aditum confirma una lectura, sale de la cola. Con <b>0</b> se borra
-            en el acto; con más días queda como evidencia para revisar. <b>Lo pendiente no se borra
-            nunca</b>: se reintenta hasta que Aditum lo confirme.</div>
+        <!-- 2. Politicas: que se guarda en este equipo y por cuanto tiempo -->
+        <div class="cond" style="margin-top:22px">
+          <div class="hsub" style="margin-top:0">Qué se guarda en este equipo</div>
+          <div class="grid">
+            <div class="subbox">
+              <div class="hsub">Lecturas que se envían a Aditum</div>
+              <label class="check"><input type="checkbox" id="f_anprOnlyAuth"> Recibir solo placas autorizadas (allow list)</label>
+              <div class="hint">Activado (recomendado): solo se encolan las lecturas que la cámara matcheó contra su
+                allow list. Desactivado: se encolan <b>todas</b> para revisar.</div>
+              <div class="field" style="margin:14px 0 0">
+                <label for="f_anprPurge">Guardar las ya enviadas <span class="muted">(días)</span> <span class="key">purgeDays</span></label>
+                <input type="number" id="f_anprPurge" min="0" max="90" value="7" style="max-width:200px">
+                <div class="hint">Con <b>0</b> se borran apenas Aditum confirma; con más días quedan como evidencia.
+                  <b>Lo pendiente no se borra nunca</b>: se reintenta hasta que Aditum lo confirme.</div>
+              </div>
+            </div>
+            <div class="subbox">
+              <div class="hsub">Placas no reconocidas (con foto)</div>
+              <label class="check"><input type="checkbox" id="f_anprCapture"> Guardar las no reconocidas con su foto <span class="key">captureUnrecognized</span></label>
+              <div class="hint">Lo que la cámara <b>no pudo leer</b> o <b>no está en su allow list</b> queda en este equipo con
+                fecha, hora, placa (si la hubo) y las fotos de la cámara, para ver en sitio <i>qué vio</i>. No se envía a Aditum.</div>
+              <div class="row" style="margin-top:14px; align-items:flex-start">
+                <div class="field" style="flex:1 1 120px; margin:0">
+                  <label for="f_anprCaptureDays">Conservar <span class="muted">(días)</span> <span class="key">captureRetentionDays</span></label>
+                  <input type="number" id="f_anprCaptureDays" min="1" max="90" value="15">
+                </div>
+                <div class="field" style="flex:1 1 120px; margin:0">
+                  <label for="f_anprCaptureMb">Tope en disco <span class="muted">(MB)</span> <span class="key">captureMaxMb</span></label>
+                  <input type="number" id="f_anprCaptureMb" min="10" max="4000" value="500">
+                </div>
+              </div>
+              <div class="hint">Se borran solas al cumplir los días; si antes se pasa el tope, salen primero las más viejas.</div>
+            </div>
+          </div>
         </div>
 
-        <div class="field" style="margin-top:24px">
-          <label>Probar la conexión con una cámara</label>
+        <!-- 3. Operacion: la cola de envios -->
+        <div class="cond" style="margin-top:22px">
+          <div class="blkhead">
+            <div class="hsub">Estado de la cola</div>
+            <div class="row">
+              <button class="sec sm danger" id="btnAnprClear" type="button">Borrar pendientes</button>
+              <button class="sec sm" id="btnAnprStatus" type="button">Actualizar</button>
+            </div>
+          </div>
+          <div id="anprStatusBody"><p class="hint">Sin consultar.</p></div>
+        </div>
+
+        <!-- 4. Operacion: bitacora de no reconocidas (resumen; el visor es su propia pagina) -->
+        <div class="cond" id="capturesBlock" style="margin-top:22px">
+          <div class="blkhead">
+            <div class="hsub">Bitácora de placas no reconocidas</div>
+            <div class="row">
+              <button class="sec sm danger" id="btnAnprCapturesClear" type="button">Borrar bitácora</button>
+              <button class="sec sm" id="btnAnprCapturesRefresh" type="button">Actualizar</button>
+              <button class="sm" id="btnAnprCaptures" type="button">Ver bitácora</button>
+            </div>
+          </div>
+          <div id="anprCapturesBody"><p class="hint">Sin consultar.</p></div>
+          <div class="hint">«Ver bitácora» abre las fotos: filtrá por fecha, rango de horas, placa o motivo.</div>
+        </div>
+
+        <!-- 5. Diagnostico: hablar con una camara sin pasar por Aditum -->
+        <div class="cond" style="margin-top:22px">
+          <div class="hsub" style="margin-top:0">Probar la conexión con una cámara</div>
           <p class="hint" style="margin:0 0 10px">Habla directo con la cámara desde este equipo, sin pasar
             por Aditum: sirve para validar la instalación. Las credenciales se usan solo para la prueba,
             <b>no se guardan</b> (en operación normal llegan desde Aditum en cada envío).</p>
-          <div class="row">
+          <div class="row" style="align-items:flex-start">
             <div class="field" style="flex:1; min-width:150px">
               <label for="f_testIp">IP de la cámara</label>
               <input type="text" id="f_testIp" placeholder="192.168.68.64">
@@ -616,25 +721,37 @@
             «Agregar»/«Quitar» sí la modifican: usá una placa de prueba y acordate de quitarla al terminar.</p></div>
         </div>
 
-        <div class="field" style="margin-top:22px">
-          <label class="check"><input type="checkbox" id="f_anprOnlyAuth"> Recibir solo placas autorizadas (allow list)</label>
-          <div class="hint">Activado (recomendado): solo se guardan las lecturas que la cámara matcheó
-            contra su lista blanca. Desactivado: se guardan <b>todas</b> las lecturas para revisar. Las
-            placas ilegibles se ignoran siempre.</div>
-        </div>
-
-        <div class="field" style="margin-top:22px">
-          <div class="row" style="justify-content:space-between; align-items:center">
-            <label style="margin:0">Estado de la cola</label>
-            <div class="row">
-              <button class="sec sm danger" id="btnAnprClear" type="button">Borrar pendientes</button>
-              <button class="sec sm" id="btnAnprStatus" type="button">Actualizar</button>
-            </div>
-          </div>
-          <div id="anprStatusBody"><p class="hint">Sin consultar.</p></div>
-        </div>
-
       </div>
+    </div>
+
+    <div class="card" id="sec-placas">
+    <div class="card" id="sec-placas">
+      <div class="dashhead">
+        <h2>Bitácora de placas no reconocidas</h2>
+        <span class="spacer"></span>
+        <button class="sec sm" id="btnCapsBack" type="button">← Volver a ANPR</button>
+        <button class="sec sm" id="btnCapsRefresh" type="button">Actualizar</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Lecturas que la cámara <b>no pudo leer</b> o que <b>no están en su allow list</b>, con la
+        foto que mandó la cámara. Se guardan en este equipo y se borran solas (retención y tope en <i>ANPR</i>).
+        Tocá una foto para verla en grande.</p>
+      <div class="caps-filters">
+        <div class="field f-date"><label for="cv_date">Fecha</label><input type="date" id="cv_date"></div>
+        <div class="field f-time"><label for="cv_from">Desde</label><input type="time" id="cv_from"></div>
+        <div class="field f-time"><label for="cv_to">Hasta</label><input type="time" id="cv_to"></div>
+        <div class="field f-plate"><label for="cv_plate">Placa</label><input type="text" id="cv_plate" placeholder="SJB" autocomplete="off" autocapitalize="characters"></div>
+        <div class="field f-reason"><label for="cv_reason">Motivo</label>
+          <select id="cv_reason"><option value="">Todos</option><option value="unreadable">Placa ilegible</option><option value="not_authorized">Fuera del allow list</option></select></div>
+        <div class="row">
+          <button class="sm" id="btnCapsSearch" type="button">Buscar</button>
+          <button class="sec sm" id="btnCapsToday" type="button">Hoy</button>
+          <button class="sec sm" id="btnCapsReset" type="button">Limpiar</button>
+        </div>
+      </div>
+      <div class="caps-days" id="capsDays"></div>
+      <div class="caps-info" id="capsInfo"></div>
+      <div id="capsGrid"><p class="hint">Consultando…</p></div>
+      <div class="caps-more"><button class="sec sm" id="btnCapsMore" type="button" hidden>Cargar más</button></div>
     </div>
 
     <div class="card" id="sec-red">
@@ -765,6 +882,31 @@
     <div class="row" style="justify-content:flex-end">
       <button class="sec sm" id="btnClearCancel" type="button">Cancelar</button>
       <button class="sec sm danger" id="btnClearConfirm" type="button">Sí, borrar pendientes</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="capsLb" hidden>
+  <div class="lb-bar">
+    <div class="lb-meta" id="capsLbMeta"></div>
+    <div class="row"><span class="lb-pos" id="capsLbPos"></span><button class="sec sm" id="btnCapsLbClose" type="button">Cerrar</button></div>
+  </div>
+  <div class="lb-main">
+    <button class="lb-nav lb-prev" id="btnCapsLbPrev" type="button" aria-label="Anterior">&#8249;</button>
+    <div id="capsLbMain"></div>
+    <button class="lb-nav lb-next" id="btnCapsLbNext" type="button" aria-label="Siguiente">&#8250;</button>
+  </div>
+  <div class="lb-crop" id="capsLbCrop"></div>
+</div>
+
+<div class="modal-back" id="capturesModal" hidden>
+  <div class="modal">
+    <h3>Borrar la bitácora de placas no reconocidas</h3>
+    <p>Se borran <b>todas</b> las lecturas no reconocidas guardadas en este equipo, con sus fotos.
+       La cola de envíos a Aditum no se toca. No se puede deshacer.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="sec sm" id="btnCapturesCancel" type="button">Cancelar</button>
+      <button class="sec sm danger" id="btnCapturesConfirm" type="button">Sí, borrar la bitácora</button>
     </div>
   </div>
 </div>
@@ -923,6 +1065,9 @@
     setChk('f_anprEnabled', anpr.enabled === true);
     setChk('f_anprOnlyAuth', anpr.onlyAuthorized !== false);
     setVal('f_anprPurge', anpr.purgeDays !== undefined ? anpr.purgeDays : 7);
+    setChk('f_anprCapture', anpr.captureUnrecognized !== false);
+    setVal('f_anprCaptureDays', anpr.captureRetentionDays !== undefined ? anpr.captureRetentionDays : 15);
+    setVal('f_anprCaptureMb', anpr.captureMaxMb !== undefined ? anpr.captureMaxMb : 500);
     refreshAnprUrls();
 
     applyConditionalVisibility();
@@ -1282,6 +1427,152 @@
     }
   }
 
+  // ---------- Bitacora de placas no reconocidas ----------
+  const capImg = (n) => '/anpr-captures/' + encodeURIComponent(n);
+  // La escena completa va grande; el recorte de la placa, chico debajo
+  function capScene(c) { const imgs = c.images || []; return imgs.find((n) => /detection/i.test(n)) || imgs.find((n) => !/licenseplate/i.test(n)) || imgs[0] || null; }
+  function capCrop(c) { const imgs = c.images || [], s = capScene(c); return imgs.find((n) => /licenseplate/i.test(n) && n !== s) || null; }
+  function capWhen(c) { return String(c.capturedAt || c.receivedAt || '').replace('T', ' ').slice(0, 19); }
+  function capReasonHTML(c) {
+    return c.reason === 'unreadable' ? '<span class="badge bad">Ilegible</span>'
+      : '<span class="badge warn">' + esc(c.vehicleList || 'fuera del allow list') + '</span>';
+  }
+  function capMbText(bytes) { const mb = (bytes || 0) / (1024 * 1024); return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB'; }
+  // Espacio libre y peso promedio: para dimensionar captureMaxMb con datos reales del equipo
+  function capDiskChipsHTML(d) {
+    const avgKb = d.count ? Math.round((d.bytes || 0) / d.count / 1024) : 0;
+    const freeGb = d.diskFreeMb === null || d.diskFreeMb === undefined ? null : d.diskFreeMb / 1024;
+    const low = freeGb !== null && d.diskFreeMb < (d.minFreeMb || 1024) * 2;
+    return (avgKb ? '<span class="chip">Promedio: <b>' + avgKb + ' KB</b> por lectura</span>' : '') +
+      (freeGb === null ? '' : '<span class="chip' + (low ? ' bad' : '') + '">Libre en disco: <b>' + (freeGb < 10 ? freeGb.toFixed(1) : Math.round(freeGb)) + ' GB</b>' +
+        (low ? ' · con menos de ' + ((d.minFreeMb || 1024) / 1024) + ' GB se dejan de guardar fotos' : '') + '</span>');
+  }
+
+  // Resumen en la seccion ANPR (cuantas hay, cuanto pesan)
+  async function loadAnprCaptures() {
+    const body = $('anprCapturesBody');
+    body.innerHTML = '<p class="hint">Consultando…</p>';
+    try {
+      const r = await fetch('/anpr-captures?limit=1', fetchOpts());
+      if (r.status === 404) {
+        body.innerHTML = '<p class="hint">La bitácora está apagada en este equipo (guardá la config con la opción activada y reiniciá).</p>';
+        return;
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const last = (d.captures || [])[0];
+      body.innerHTML = '<div class="chips" style="margin:8px 0">' +
+        '<span class="chip">Guardadas: <b>' + (d.count || 0) + '</b></span>' +
+        '<span class="chip">En disco: <b>' + capMbText(d.bytes) + '</b> de ' + d.maxMb + '</span>' +
+        '<span class="chip">Se conservan <b>' + d.retentionDays + ' días</b></span>' +
+        capDiskChipsHTML(d) +
+        (last ? '<span class="chip">Última: <b>' + esc(capWhen(last)) + '</b></span>' : '') +
+        '</div>' + (!d.count ? '<p class="hint">Todavía no hay placas no reconocidas guardadas.</p>' : '');
+    } catch (e) {
+      body.innerHTML = '<p class="hint txt-bad">No se pudo consultar la bitácora: ' + esc(String(e.message || e)) + '</p>';
+    }
+  }
+
+  // Visor: overlay con filtros (fecha, horas, placa, motivo), paginacion
+  // y lightbox. Los filtros los aplica el equipo (query de /anpr-captures).
+  const capsView = { items: [], total: 0, limit: 48, current: -1, days: {} };
+  const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const dayLabel = (iso) => parseInt(iso.slice(8, 10), 10) + ' ' + MESES[parseInt(iso.slice(5, 7), 10) - 1];
+  const localToday = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  function capsFilters() {
+    return { date: $('cv_date').value, from: $('cv_from').value, to: $('cv_to').value,
+      plate: $('cv_plate').value.trim().toUpperCase(), reason: $('cv_reason').value };
+  }
+  function capsQuery(offset) {
+    const p = new URLSearchParams({ limit: capsView.limit, offset: offset });
+    const f = capsFilters();
+    Object.keys(f).forEach((k) => { if (f[k]) p.set(k, f[k]); });
+    return '/anpr-captures?' + p.toString();
+  }
+  function capsFilterText() {
+    const f = capsFilters(), parts = [];
+    if (f.date) parts.push(dayLabel(f.date) + ' ' + f.date.slice(0, 4));
+    if (f.from || f.to) parts.push((f.from || '00:00') + '–' + (f.to || '23:59'));
+    if (f.plate) parts.push('placa «' + f.plate + '»');
+    if (f.reason) parts.push(f.reason === 'unreadable' ? 'solo ilegibles' : 'solo fuera del allow list');
+    return parts.length ? parts.join(' · ') : 'sin filtros';
+  }
+  function capCardHTML(c, i) {
+    const scene = capScene(c), crop = capCrop(c);
+    const pic = scene ? '<img class="cap-img" loading="lazy" src="' + capImg(scene) + '" alt="Foto del evento">'
+      : '<div class="cap-none">La cámara no mandó foto</div>';
+    const cropPic = crop ? '<img class="cap-img cap-plate" loading="lazy" src="' + capImg(crop) + '" alt="Recorte de la placa">' : '';
+    return '<div class="cap" data-i="' + i + '">' + pic + cropPic + '<div class="cap-meta">' +
+      '<span class="plate">' + esc(c.licensePlate || '— sin placa —') + '</span>' + capReasonHTML(c) + '<br>' +
+      '<span class="when">' + esc(capWhen(c)) + '</span><br>' +
+      (c.confidenceLevel !== null && c.confidenceLevel !== undefined ? 'confianza ' + esc(c.confidenceLevel) + '% · ' : '') +
+      '<span class="cam">' + esc(c.sourceIp || c.cameraName || '—') + '</span>' +
+      '</div></div>';
+  }
+  function renderCapsDays() {
+    const keys = Object.keys(capsView.days).sort().reverse().slice(0, 31);
+    const sel = $('cv_date').value;
+    $('capsDays').innerHTML = keys.map((k) =>
+      '<span class="chip' + (k === sel ? ' on' : '') + '" data-day="' + k + '">' + dayLabel(k) + ' <b>' + capsView.days[k] + '</b></span>').join('');
+  }
+  function renderCapsGrid() {
+    $('capsGrid').innerHTML = capsView.items.length
+      ? '<div class="caps">' + capsView.items.map(capCardHTML).join('') + '</div>'
+      : '<p class="hint">Ninguna lectura no reconocida con esos filtros.</p>';
+    $('btnCapsMore').hidden = capsView.items.length >= capsView.total;
+  }
+  async function capsSearch(reset) {
+    if (reset) { capsView.items = []; capsView.total = 0; $('capsGrid').innerHTML = '<p class="hint">Consultando…</p>'; }
+    const more = $('btnCapsMore'); more.disabled = true;
+    try {
+      const r = await fetch(capsQuery(capsView.items.length), fetchOpts());
+      if (r.status === 404) {
+        $('capsGrid').innerHTML = '<p class="hint">La bitácora está apagada en este equipo (guardá la config con la opción activada y reiniciá).</p>';
+        $('capsInfo').textContent = ''; return;
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      capsView.total = d.total || 0;
+      capsView.items = capsView.items.concat(d.captures || []);
+      capsView.days = d.days || {};
+      renderCapsDays();
+      renderCapsGrid();
+      $('capsInfo').innerHTML = 'Mostrando <b>' + capsView.items.length + '</b> de <b>' + capsView.total + '</b> (' + esc(capsFilterText()) + ')' +
+        ' · en total <b>' + (d.count || 0) + '</b> guardadas, ' + capMbText(d.bytes) + ' de ' + d.maxMb + ', se conservan ' + d.retentionDays + ' días' +
+        (d.diskFreeMb !== null && d.diskFreeMb !== undefined ? ' · libre en disco: ' + (d.diskFreeMb / 1024).toFixed(1) + ' GB' : '');
+      if (!$('capsLb').hidden) renderCapsLightbox();
+    } catch (e) {
+      $('capsGrid').innerHTML = '<p class="hint txt-bad">No se pudo consultar la bitácora: ' + esc(String(e.message || e)) + '</p>';
+    } finally {
+      more.disabled = false;
+    }
+  }
+  function renderCapsLightbox() {
+    const i = capsView.current, c = capsView.items[i];
+    if (!c) { closeCapsLightbox(); return; }
+    const scene = capScene(c), crop = capCrop(c);
+    $('capsLbMeta').innerHTML = '<span class="plate">' + esc(c.licensePlate || '— sin placa —') + '</span>' + capReasonHTML(c) +
+      '<br>' + esc(capWhen(c)) + (c.confidenceLevel !== null && c.confidenceLevel !== undefined ? ' · confianza ' + esc(c.confidenceLevel) + '%' : '') +
+      ' · ' + esc(c.cameraName || '') + (c.sourceIp ? ' (' + esc(c.sourceIp) + ')' : '');
+    $('capsLbMain').innerHTML = scene ? '<img src="' + capImg(scene) + '" alt="Foto del evento">' : '<div class="cap-none">La cámara no mandó foto</div>';
+    $('capsLbCrop').innerHTML = crop ? '<img src="' + capImg(crop) + '" alt="Recorte de la placa">' : '';
+    $('capsLbPos').textContent = (i + 1) + ' / ' + capsView.total;
+    $('btnCapsLbPrev').disabled = i <= 0;
+    $('btnCapsLbNext').disabled = i >= capsView.items.length - 1 && capsView.items.length >= capsView.total;
+  }
+  function openCapsLightbox(i) { capsView.current = i; $('capsLb').hidden = false; renderCapsLightbox(); }
+  function closeCapsLightbox() { $('capsLb').hidden = true; capsView.current = -1; }
+  async function capsLbStep(delta) {
+    const n = capsView.current + delta;
+    if (n < 0) return;
+    if (n >= capsView.items.length) {
+      if (capsView.items.length >= capsView.total) return;
+      await capsSearch(false);  // la siguiente pagina, sin perder el lugar
+      if (n >= capsView.items.length) return;
+    }
+    capsView.current = n; renderCapsLightbox();
+  }
+
   function addGate() {
     syncGatesFromDOM();
     const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
@@ -1355,14 +1646,17 @@
   }
   function refreshPages() {
     if (secTypeHidden[currentSec]) currentSec = 'sec-tipo'; // la activa quedo excluida
+    // La bitacora de placas no esta en el menu: es una sub-pagina de ANPR (se
+    // entra con "Ver bitacora"), asi que ANPR sigue marcada mientras se la ve.
+    const navSec = currentSec === 'sec-placas' ? 'sec-anpr' : currentSec;
     document.querySelectorAll('.secnav a[data-sec]').forEach((a) => {
       const sec = a.dataset.sec, el = $(sec);
-      const active = sec === currentSec;
-      if (el) el.hidden = !active;
-      a.classList.toggle('active', active);
+      if (el) el.hidden = sec !== currentSec;
+      a.classList.toggle('active', sec === navSec);
     });
+    $('sec-placas').hidden = currentSec !== 'sec-placas';
     // Guardar solo en paginas de configuracion y solo con cambios o mensaje activo
-    const configPage = currentSec !== 'sec-salud' && currentSec !== 'sec-seguridad';
+    const configPage = currentSec !== 'sec-salud' && currentSec !== 'sec-seguridad' && currentSec !== 'sec-placas';
     document.querySelector('.savebar').hidden = !configPage || (!formDirty && !msg.textContent);
   }
   function selectSection(secId) {
@@ -1371,6 +1665,8 @@
     if (!formDirty) show('', ''); // limpia mensajes viejos al navegar
     refreshPages();
     if (secId === 'sec-salud') loadHealth();
+    if (secId === 'sec-placas') capsSearch(true);
+    if (secId === 'sec-anpr' && $('f_anprEnabled').checked && $('f_anprCapture').checked) loadAnprCaptures();
     window.scrollTo(0, 0);
   }
   function setSectionVisible(secId, visible) {
@@ -1398,6 +1694,9 @@
     $('npCond').hidden = !$('f_npEnabled').checked;
     $('wdCond').hidden = !$('f_wdEnabled').checked;
     $('anprCond').hidden = !$('f_anprEnabled').checked;
+    // Bitacora de placas: su bloque y su sub-pagina solo existen con la captura encendida
+    $('capturesBlock').hidden = !$('f_anprCapture').checked;
+    if (currentSec === 'sec-placas' && !($('f_anprEnabled').checked && $('f_anprCapture').checked)) currentSec = 'sec-anpr';
 
     refreshPages();
   }
@@ -1464,6 +1763,9 @@
       enabled: $('f_anprEnabled').checked,
       onlyAuthorized: $('f_anprOnlyAuth').checked,
       purgeDays: toInt($('f_anprPurge').value, 7),
+      captureUnrecognized: $('f_anprCapture').checked,
+      captureRetentionDays: toInt($('f_anprCaptureDays').value, 15),
+      captureMaxMb: toInt($('f_anprCaptureMb').value, 500),
     };
 
     // Poller pull de respaldo: fijo, sin opciones en la UI
@@ -1962,6 +2264,60 @@
   $('f_deviceType').addEventListener('change', () => { syncScannersFromDOM(); applyConditionalVisibility(); renderScanners(); });
   $('f_scannerType').addEventListener('change', () => { syncScannersFromDOM(); renderScanners(); });
   $('btnAnprStatus').addEventListener('click', loadAnprStatus);
+  $('btnAnprCapturesRefresh').addEventListener('click', loadAnprCaptures);
+  $('btnAnprCaptures').addEventListener('click', () => selectSection('sec-placas'));
+  $('btnCapsRefresh').addEventListener('click', () => capsSearch(true));
+  $('btnCapsBack').addEventListener('click', () => selectSection('sec-anpr'));
+  $('btnCapsSearch').addEventListener('click', () => capsSearch(true));
+  $('btnCapsMore').addEventListener('click', () => capsSearch(false));
+  $('btnCapsToday').addEventListener('click', () => { $('cv_date').value = localToday(); capsSearch(true); });
+  $('btnCapsReset').addEventListener('click', () => {
+    ['cv_date', 'cv_from', 'cv_to', 'cv_plate', 'cv_reason'].forEach((id) => { $(id).value = ''; });
+    capsSearch(true);
+  });
+  ['cv_date', 'cv_from', 'cv_to', 'cv_reason'].forEach((id) => $(id).addEventListener('change', () => capsSearch(true)));
+  $('cv_plate').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); capsSearch(true); } });
+  $('capsDays').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-day]');
+    if (!chip) return;
+    $('cv_date').value = $('cv_date').value === chip.dataset.day ? '' : chip.dataset.day;
+    capsSearch(true);
+  });
+  $('capsGrid').addEventListener('click', (e) => {
+    const card = e.target.closest('.cap[data-i]');
+    if (card) openCapsLightbox(parseInt(card.dataset.i, 10));
+  });
+  $('btnCapsLbClose').addEventListener('click', closeCapsLightbox);
+  $('btnCapsLbPrev').addEventListener('click', () => capsLbStep(-1));
+  $('btnCapsLbNext').addEventListener('click', () => capsLbStep(1));
+  $('capsLb').addEventListener('click', (e) => { if (e.target === $('capsLb') || e.target === $('capsLbMain')) closeCapsLightbox(); });
+  document.addEventListener('keydown', (e) => {
+    if (!$('capsLb').hidden) {
+      if (e.key === 'Escape') closeCapsLightbox();
+      else if (e.key === 'ArrowLeft') capsLbStep(-1);
+      else if (e.key === 'ArrowRight') capsLbStep(1);
+    }
+  });
+  $('btnAnprCapturesClear').addEventListener('click', () => { $('capturesModal').hidden = false; });
+  $('btnCapturesCancel').addEventListener('click', () => { $('capturesModal').hidden = true; });
+  $('capturesModal').addEventListener('click', (e) => { if (e.target === $('capturesModal')) $('capturesModal').hidden = true; });
+  $('btnCapturesConfirm').addEventListener('click', async () => {
+    $('capturesModal').hidden = true;
+    const b = $('btnAnprCapturesClear'), orig = b.textContent;
+    b.disabled = true; b.textContent = 'Borrando…';
+    try {
+      const r = await fetch('/anpr-captures', fetchOpts({ method: 'DELETE' }));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      show('ok', (d.deleted || 0) + ' lectura(s) no reconocida(s) borrada(s).');
+      loadAnprCaptures();
+      if (currentSec === 'sec-placas') capsSearch(true);
+    } catch (e) {
+      show('err', 'No se pudo borrar la bitácora: ' + (e.message || e));
+    } finally {
+      b.disabled = false; b.textContent = orig;
+    }
+  });
   $('btnAnprCheck').addEventListener('click', () => runAnprTest('CHECK'));
   $('btnAnprFind').addEventListener('click', () => runAnprTest('FIND'));
   $('btnAnprList').addEventListener('click', () => runAnprTest('LIST'));
@@ -1981,7 +2337,7 @@
       $('anprCamUrl').select();
     }
   });
-  ['f_npEnabled', 'f_wdEnabled', 'f_hikEnabled', 'f_anprEnabled'].forEach((id) =>
+  ['f_npEnabled', 'f_wdEnabled', 'f_hikEnabled', 'f_anprEnabled', 'f_anprCapture'].forEach((id) =>
     $(id).addEventListener('change', applyConditionalVisibility));
 
 

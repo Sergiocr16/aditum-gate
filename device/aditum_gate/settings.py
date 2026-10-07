@@ -19,6 +19,8 @@ DEVICE_ID_FILE = REPO_ROOT / "device-id.txt"
 DEVICE_TOKEN_FILE = REPO_ROOT / "device-token.txt"
 CARD_STORE_FILE = REPO_ROOT / "hikvision-cards.json"
 ANPR_EVENTS_DB_FILE = REPO_ROOT / "anpr-events.db"
+# Bitacora local de placas no reconocidas (JSON + JPG de la camara)
+ANPR_CAPTURES_DIR = REPO_ROOT / "anpr-captures"
 
 SCREEN_BASE_URL = "http://localhost:3000"
 
@@ -108,6 +110,12 @@ class Settings:
         # true: solo se encolan lecturas del allow list (whiteList/allowList).
         # false: todas.
         self.anpr_only_authorized = anpr.get("onlyAuthorized", True)
+        # Bitacora local de placas NO reconocidas (ilegibles o fuera del allow
+        # list) con la foto que manda la camara, para diagnosticar en sitio
+        # por que una placa no abre. Purga automatica por dias y por tamano.
+        self.anpr_capture_unrecognized = anpr.get("captureUnrecognized", True)
+        self.anpr_capture_retention_days = anpr.get("captureRetentionDays", 15)
+        self.anpr_capture_max_mb = anpr.get("captureMaxMb", 500)
 
 
 def load_settings():

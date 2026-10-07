@@ -15,6 +15,7 @@ hikvision-cards.json
 anpr-events.db
 anpr-events.db-wal
 anpr-events.db-shm
+anpr-captures/
 
 # Credenciales del login admin del editor local (hash + secreto de sesion)
 admin-credentials.json
