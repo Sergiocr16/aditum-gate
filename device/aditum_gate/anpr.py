@@ -67,8 +67,13 @@ DEFAULT_CHANNEL = 1
 # El feature autoriza placas del condominio, asi que siempre se escribe "1".
 ALLOW_LIST_GROUP = "1"
 # Vigencia: las placas del condominio no expiran en la practica, pero la camara
-# exige un rango de fechas (YYYY-MM-DD). Inicio = hoy; fin = hoy + estos anios.
-# Las entradas ya presentes conservan sus fechas al reescribir la lista.
+# exige un rango de fechas (YYYY-MM-DD) y lo evalua contra SU PROPIO reloj.
+# El inicio es una fecha fija en el pasado, nunca "hoy": con la fecha del Pi
+# como inicio, una camara con el reloj atrasado (zona horaria mal puesta, sin
+# NTP) ve las placas recien sincronizadas como "todavia no vigentes" y las
+# reporta otherList aunque esten en la lista blanca, hasta que su reloj
+# alcance esa fecha. Fin = hoy + estos anios.
+VALIDITY_START = "2000-01-01"
 VALIDITY_YEARS = 20
 
 # Columnas del CSV export/import (orden fijo del header del firmware).
@@ -211,16 +216,17 @@ class AnprCameraClient:
 
     @staticmethod
     def _new_row(plate_normalized):
-        """Fila nueva de allowlist para `plate_normalized`, vigente desde hoy y
-        por VALIDITY_YEARS (sin expiracion practica). El No. se renumera antes
-        de importar."""
+        """Fila nueva de allowlist para `plate_normalized`, vigente desde
+        VALIDITY_START (fecha fija en el pasado, independiente del reloj de la
+        camara) y hasta hoy + VALIDITY_YEARS (sin expiracion practica). El No.
+        se renumera antes de importar."""
         today = datetime.now()
         try:
             end = today.replace(year=today.year + VALIDITY_YEARS)
         except ValueError:  # 29-feb en anio destino no bisiesto -> 28-feb
             end = today.replace(year=today.year + VALIDITY_YEARS, day=28)
         return ["", plate_normalized, ALLOW_LIST_GROUP,
-                today.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), ""]
+                VALIDITY_START, end.strftime("%Y-%m-%d"), ""]
 
     @staticmethod
     def _renumber(rows):

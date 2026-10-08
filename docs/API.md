@@ -538,6 +538,16 @@ viajan en el payload (el Pi es *stateless*: las usa y las descarta, igual que
 **`POST /sync-plates`** — igual, con `"plates": [{plate, plateNormalized}, …]`
 en vez de una placa; deja la cámara exactamente con esa lista.
 
+**Vigencia que se escribe en la cámara.** Cada placa se carga en la lista
+blanca (grupo `1`) con vigencia **fija desde `2000-01-01`** y hasta hoy + 20
+años. El inicio NO es "hoy" a propósito: la cámara evalúa la vigencia contra
+su **propio** reloj, y una cámara con la hora atrasada (zona horaria mal
+puesta, sin NTP) vería las placas recién sincronizadas como "todavía no
+vigentes" y las reportaría `otherList` aunque estén en la lista blanca,
+hasta que su reloj alcanzara la fecha del Pi. Con el inicio en el pasado la
+vigencia no depende de que los dos relojes coincidan. Igual conviene tener la
+cámara en hora: `capturedAt` de cada lectura es la hora de la cámara.
+
 **Idempotencia** (obligatoria por contrato): `ADD` de una placa ya presente
 responde `200` con `detail: "already_present_noop"`, y `DELETE` de una
 inexistente `200` con `"not_found_noop"`. El backend recalcula el estado
@@ -840,7 +850,7 @@ no las que se devuelven. Con más de 5000 se devuelven las primeras y
 { "ok": true, "action": "FIND", "plateNormalized": "ABC123", "found": true,
   "total": 412,
   "match": { "plate": "ABC123", "group": "allowlist",
-             "validFrom": "2026-01-01", "validTo": "2046-01-01" } }
+             "validFrom": "2000-01-01", "validTo": "2046-01-01" } }
 ```
 
 `match` es `null` cuando `found` es `false`. Devuelve la fila y no solo un
