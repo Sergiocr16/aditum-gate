@@ -6,9 +6,13 @@ Correr desde la raiz del repo (sin red: el ISAPI se simula):
 import logging
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import requests
+from urllib3.exceptions import ConnectTimeoutError, MaxRetryError, NewConnectionError, ProtocolError
 
 from aditum_gate import admin_auth, hikvision, httpclient
 from aditum_gate import api as api_module
@@ -411,6 +415,119 @@ class ParallelAndAuthTests(HikvisionBase):
         self.assertEqual(adapter.max_retries.total, 0)
         # La sesion del backend conserva sus reintentos
         self.assertEqual(httpclient.get_session().get_adapter("https://x/").max_retries.total, 3)
+
+    def test_legacy_corta_en_el_primer_401(self):
+        """Con el digest reutilizado, cada llamada posterior con credenciales
+        malas costaria DOS logins fallidos; produccion hacia 3 llamadas."""
+        t = self.attach(FakeTerminal(auth_ok=False))
+        r = self.service.update_card(card_no="A", employee_no=EMP, terminals=[TERMINAL])[0]
+        self.assertEqual(r["status"], 401)
+        self.assertEqual(t.paths(), [USER_SEARCH])
+        self.assertEqual(self.store.snapshot(), {})
+
+    def test_cooldown_no_aplica_con_otras_credenciales(self):
+        t = self.attach(FakeTerminal(auth_ok=False))
+        self.sync(["A"])
+        self.assertEqual(len(t.calls), 1)
+        t.auth_ok = True  # el backend corrigio la contrasena del terminal
+        corregida = dict(TERMINAL, password="corregida")
+        r = self.service.update_card(card_no="A", employee_no=EMP, terminals=[corregida], card_nos=["A"])[0]
+        self.assertEqual(r["status"], 200)
+        self.assertEqual(len(t.calls), 1 + 4)  # user search + record, card search + record
+        # las credenciales viejas siguen en cooldown
+        r2 = self.sync(["A"])
+        self.assertEqual(r2["errors"][0]["step"], "auth_cooldown")
+        self.assertEqual(len(t.calls), 5)
+
+    def test_mismo_employee_y_terminal_se_sincroniza_de_a_uno(self):
+        t = FakeTerminal(users=[EMP])
+
+        def lento(method, url, **kwargs):
+            resp = t.request(method, url, **kwargs)
+            if CARD_SEARCH in url:
+                time.sleep(0.05)  # ventana para que el otro hilo vea el mismo estado
+            return resp
+
+        patcher = mock.patch.object(hikvision.httpclient, "isapi_request", side_effect=lento)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(self.sync(["A", "B"]))) for _ in range(2)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        self.assertEqual([r["status"] for r in results], [200, 200])
+        self.assertEqual(t.cards_of(EMP), ["A", "B"])  # sin duplicados
+        self.assertEqual(sorted(len(r["registered"]) for r in results), [0, 2])
+
+    def test_store_guarda_si_el_registro_no_respondio_tras_crear_usuario(self):
+        t = FakeTerminal()
+
+        def sin_respuesta(method, url, **kwargs):
+            if CARD_RECORD in url:
+                raise requests.ConnectionError("read timeout")
+            return t.request(method, url, **kwargs)
+
+        patcher = mock.patch.object(hikvision.httpclient, "isapi_request", side_effect=sin_respuesta)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        r = self.sync(["A"])
+        self.assertIsNone(r["status"])
+        self.assertIn(EMP, t.users)  # el usuario SI quedo creado en el terminal
+        esperado = {TERMINAL["ip"]: {EMP: {"user": "admin", "password": "secreto"}}}
+        self.assertEqual(self.store.snapshot(), esperado)
+        # modo legacy: mismo criterio
+        self.store = CardStore(Path(self.tmp.name) / "cards2.json")
+        self.service = HikvisionService(mock.Mock(nightly_cleanup_hour=2), store=self.store)
+        r = self.service.update_card(card_no="A", employee_no=EMP, terminals=[TERMINAL])[0]
+        self.assertIsNone(r["status"])
+        self.assertEqual(self.store.snapshot(), esperado)
+
+    def test_excepcion_en_un_terminal_no_tumba_a_los_demas(self):
+        otro = {"ip": "10.0.0.6", "user": "admin", "password": "otra"}
+        self.attach(FakeTerminal())
+        original = self.store.add
+
+        def add(ip, *args):
+            if ip == otro["ip"]:
+                raise OSError("disco lleno")
+            return original(ip, *args)
+
+        with mock.patch.object(self.store, "add", side_effect=add):
+            results = self.service.update_card(card_no="A", employee_no=EMP,
+                                               terminals=[TERMINAL, otro], card_nos=["A"])
+        self.assertEqual([r["ip"] for r in results], [TERMINAL["ip"], otro["ip"]])
+        self.assertEqual(results[0]["status"], 200)
+        self.assertIsNone(results[1]["status"])
+        self.assertEqual(results[1]["errors"], [{"step": "internal", "status": None}])
+        self.assertEqual((results[1]["registered"], results[1]["deleted"]), ([], []))
+
+    def test_isapi_request_reintenta_una_vez_si_el_keepalive_estaba_cerrado(self):
+        ok = FakeResponse(200)
+        for causa in (ProtocolError("Connection aborted.", ConnectionResetError(104, "reset")),
+                      MaxRetryError(None, "/x", reason=ProtocolError("Connection aborted."))):
+            with self.subTest(causa=type(causa).__name__):
+                session = mock.Mock()
+                session.request.side_effect = [requests.ConnectionError(causa), ok]
+                with mock.patch.object(httpclient, "get_isapi_session", return_value=session):
+                    self.assertIs(httpclient.isapi_request("POST", "http://10.0.0.5/ISAPI/x"), ok)
+                self.assertEqual(session.request.call_count, 2)
+
+    def test_isapi_request_no_reintenta_timeouts_ni_terminal_apagado(self):
+        casos = (
+            requests.ConnectTimeout(MaxRetryError(None, "/x", reason=ConnectTimeoutError(None, "t"))),
+            requests.ReadTimeout("read"),
+            requests.ConnectionError(MaxRetryError(None, "/x", reason=NewConnectionError(None, "unreachable"))),
+        )
+        for exc in casos:
+            with self.subTest(exc=type(exc).__name__):
+                session = mock.Mock()
+                session.request.side_effect = exc
+                with mock.patch.object(httpclient, "get_isapi_session", return_value=session):
+                    with self.assertRaises(type(exc)):
+                        httpclient.isapi_request("POST", "http://10.0.0.5/ISAPI/x")
+                self.assertEqual(session.request.call_count, 1)
 
     def test_terminal_sin_ip_se_salta_y_no_rompe_el_orden(self):
         t = self.attach(FakeTerminal())

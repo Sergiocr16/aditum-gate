@@ -37,6 +37,7 @@ nocturna sobreviva reinicios del proceso (antes vivian en memoria y el cron
 de reinicio cada 10 minutos dejaba tarjetas huerfanas en los terminales).
 """
 import functools
+import hashlib
 import json
 import logging
 import math
@@ -182,14 +183,16 @@ class HikvisionClient:
             return None
 
     def ensure_user(self, ip, user, password, employee_no, auth=None):
-        """Legacy: busca el usuario y, si no esta, lo crea. Mismo comportamiento
-        de siempre (sin respuesta en la busqueda -> None, sin intentar crear)."""
+        """Legacy: busca el usuario y, si no esta, lo crea. Sin respuesta en la
+        busqueda -> None, sin intentar crear. Un 401/403 en la busqueda se
+        devuelve tal cual: intentar crear con las mismas credenciales solo
+        sumaria otro login fallido al bloqueo del terminal."""
         auth = self._auth_or(auth, user, password)
         status, exists = self.user_exists(ip, user, password, employee_no, auth=auth)
         if exists:
             return 200
-        if status is None:
-            return None
+        if status is None or _is_auth_error(status):
+            return status
         return self.create_user(ip, user, password, employee_no, auth=auth)
 
     def register_card(self, ip, user, password, card_no, employee_no, auth=None):
@@ -259,10 +262,20 @@ class HikvisionClient:
             return None
 
     def update_card(self, ip, user, password, card_no, employee_no, auth=None):
-        """Legacy: reemplazo total (borrar todas las del employee y registrar una)."""
+        """Legacy: reemplazo total (borrar todas las del employee y registrar una).
+
+        Un 401/403 o un terminal sin respuesta cortan en el primer paso, como
+        en sync_cards: con el digest reutilizado cada llamada posterior con
+        credenciales malas costaria DOS logins fallidos (preventivo + reenvio)
+        y el terminal se bloquea a los ~7.
+        """
         auth = self._auth_or(auth, user, password)
-        self.ensure_user(ip, user, password, employee_no, auth=auth)
-        self.delete_card(ip, user, password, employee_no, auth=auth)
+        status = self.ensure_user(ip, user, password, employee_no, auth=auth)
+        if status is None or _is_auth_error(status):
+            return status
+        status = self.delete_card(ip, user, password, employee_no, auth=auth)
+        if status is None or _is_auth_error(status):
+            return status
         return self.register_card(ip, user, password, card_no, employee_no, auth=auth)
 
     def sync_cards(self, ip, user, password, card_nos, employee_no):
@@ -384,8 +397,11 @@ class CardStore:
         os.chmod(self.path, 0o600)  # contiene credenciales de terminales
 
     def add(self, ip, employee_no, user, password):
+        entry = {"user": user, "password": password}
         with self._lock:
-            self._data.setdefault(ip, {})[employee_no] = {"user": user, "password": password}
+            if self._data.get(ip, {}).get(employee_no) == entry:
+                return  # sin cambios: no reescribir el JSON en cada ventana (desgaste de la SD)
+            self._data.setdefault(ip, {})[employee_no] = entry
             self._save()
 
     def snapshot(self):
@@ -409,28 +425,42 @@ class HikvisionService:
         self.settings = settings
         self.client = HikvisionClient()
         self.store = store if store is not None else CardStore()
-        self._auth_blocked = {}  # ip -> until (time.monotonic())
+        self._auth_blocked = {}  # (ip, user, hash(password)) -> until (time.monotonic())
         self._auth_lock = threading.Lock()
+        self._sync_locks = {}  # (ip, employee_no) -> Lock: un sync a la vez por par
 
-    # ---- cooldown de autenticacion por IP ----
+    # ---- cooldown de autenticacion por IP + credencial ----
 
-    def _auth_cooldown_remaining(self, ip):
-        """Segundos que faltan para volver a intentar contra ip (0 = libre)."""
+    @staticmethod
+    def _auth_key(ip, user, password):
+        """La clave incluye las credenciales: si el backend corrige la
+        contrasena del terminal, el siguiente /update-card la prueba de
+        inmediato en vez de esperar los 300 s. La contrasena va hasheada para
+        que la clave nunca termine en un log."""
+        digest = hashlib.sha256(password.encode("utf-8")).hexdigest()[:16]
+        return (ip, user, digest)
+
+    def _auth_cooldown_remaining(self, key):
+        """Segundos que faltan para volver a intentar con esa clave (0 = libre)."""
         with self._auth_lock:
-            until = self._auth_blocked.get(ip)
+            until = self._auth_blocked.get(key)
             if until is None:
                 return 0
             remaining = until - time.monotonic()
             if remaining <= 0:
-                del self._auth_blocked[ip]
+                del self._auth_blocked[key]
                 return 0
             return remaining
 
-    def _block_auth(self, ip):
+    def _block_auth(self, key):
         with self._auth_lock:
-            self._auth_blocked[ip] = time.monotonic() + AUTH_COOLDOWN_SECONDS
+            self._auth_blocked[key] = time.monotonic() + AUTH_COOLDOWN_SECONDS
         log.warning("Hikvision %s: login rechazado, sin intentos por %ss",
-                    ip, AUTH_COOLDOWN_SECONDS)
+                    key[0], AUTH_COOLDOWN_SECONDS)
+
+    def _sync_lock_for(self, ip, employee_no):
+        with self._auth_lock:
+            return self._sync_locks.setdefault((ip, employee_no), threading.Lock())
 
     def _cooldown_result(self, ip, employee_no, remaining, card_nos):
         retry_after = max(1, int(math.ceil(remaining)))
@@ -446,13 +476,36 @@ class HikvisionService:
     # ---- sincronizacion ----
 
     def _sync_terminal(self, terminal, card_no, employee_no, card_nos):
-        """Procesa UN terminal (corre en un hilo del executor). None si no tiene ip."""
+        """Procesa UN terminal (corre en un hilo del executor). None si no tiene ip.
+
+        Un mismo (ip, employeeNo) se sincroniza de a uno: dos /update-card
+        solapados (Flask es threaded y el backend reintenta tras su timeout)
+        verian las mismas tarjetas faltantes y el segundo cobraria 400 por
+        duplicado. Una excepcion inesperada (p. ej. disco lleno al guardar el
+        store) no tumba los results de los demas terminales: ese terminal
+        responde status null con step "internal".
+        """
         ip = terminal.get("ip")
         if not ip:
             return None
         user = terminal.get("user", "admin")
         password = terminal.get("password", "")
-        remaining = self._auth_cooldown_remaining(ip)
+        started = time.perf_counter()
+        try:
+            with self._sync_lock_for(ip, employee_no):
+                return self._run_terminal(ip, user, password, card_no, employee_no, card_nos)
+        except Exception:
+            log.exception("Hikvision %s employee %s: error inesperado en el sync", ip, employee_no)
+            result = {"ip": ip, "status": None, "employeeNo": employee_no,
+                      "elapsedMs": int((time.perf_counter() - started) * 1000)}
+            if card_nos is not None:
+                result.update({"registered": [], "deleted": [],
+                               "errors": [{"step": "internal", "status": None}]})
+            return result
+
+    def _run_terminal(self, ip, user, password, card_no, employee_no, card_nos):
+        key = self._auth_key(ip, user, password)
+        remaining = self._auth_cooldown_remaining(key)
         if remaining > 0:
             return self._cooldown_result(ip, employee_no, remaining, card_nos)
 
@@ -461,7 +514,6 @@ class HikvisionService:
             status = self.client.update_card(ip, user, password, card_no, employee_no)
             result = {"ip": ip, "status": status, "employeeNo": employee_no,
                       "elapsedMs": int((time.perf_counter() - started) * 1000)}
-            user_ok = status is not None and not _is_auth_error(status)
         else:
             sync = self.client.sync_cards(ip, user, password, card_nos, employee_no)
             status = sync["status"]
@@ -470,16 +522,17 @@ class HikvisionService:
                       "errors": sync["errors"], "elapsedMs": sync["elapsedMs"]}
             if sync["errors"]:
                 log.warning("Hikvision %s employee %s: %s", ip, employee_no, sync["errors"])
-            # El usuario quedo creado (o existia) si no fallo ensure_user
-            user_ok = status == 200 or sync["errors"][0]["step"] != "ensure_user"
 
         if _is_auth_error(status):
-            self._block_auth(ip)
-        # El store alimenta la limpieza nocturna: solo se guarda si el usuario
-        # existe en el terminal. Antes se guardaba aunque fallara el login y
-        # la limpieza insistia cada noche contra usuarios que nunca existieron,
-        # sumando intentos fallidos al bloqueo por login ilegal del terminal.
-        if user_ok:
+            # Login rechazado: el usuario seguro NO quedo creado. Sin store la
+            # limpieza nocturna no insiste contra el terminal sumando intentos
+            # fallidos al bloqueo por login ilegal (asi era antes: se guardaba
+            # siempre).
+            self._block_auth(key)
+        else:
+            # Cualquier otro fallo (timeout, 5xx) pudo ocurrir DESPUES de crear
+            # el usuario: se guarda igual para que la limpieza nocturna no deje
+            # employees huerfanos en el terminal.
             self.store.add(ip, employee_no, user, password)
         return result
 
