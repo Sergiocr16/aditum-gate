@@ -461,6 +461,24 @@ Si el Pi no tiene Hikvision habilitado → `400`.
   y queda en `errors`. Un terminal que no responde también corta (`status`
   `null`). Si falla `CardInfo/Search` por otro motivo, registra todo lo pedido
   y no borra nada (estado desconocido).
+- **Cooldown de autenticación por IP**: tras un `401`/`403` el Pi no vuelve a
+  tocar ese terminal durante 300 s. Mientras dure, cada `/update-card` que lo
+  incluya responde para ese terminal `status: 401` con un único error
+  `{"step": "auth_cooldown", "status": 401, "retryAfterSeconds": <s>}` sin
+  hacer ninguna llamada ISAPI (el backend reintenta cada ventana de 22 s; sin
+  cooldown esos reintentos solo aceleran el bloqueo del terminal). Vencido el
+  plazo se intenta normalmente.
+- **Terminales en paralelo**: los `terminals` de un mismo payload se
+  sincronizan a la vez (hasta 4 hilos); el tiempo de la respuesta es el del
+  terminal más lento, no la suma. `results` conserva el orden del payload
+  (omitiendo los que no traen `ip`).
+- Las llamadas ISAPI **no reintentan** a nivel HTTP (sesión sin `Retry`): un
+  terminal apagado cuesta un solo `connect timeout` (3 s), no ~15 s. El digest
+  se negocia una vez por terminal y se reutiliza en todo el sync (una ida y
+  vuelta por llamada en vez de `401` + reenvío).
+- El Pi solo recuerda el `employeeNo` para la limpieza nocturna si el usuario
+  quedó creado (o ya existía) en el terminal: un sync que falló en el login no
+  deja rastro.
 - Idempotente: repetir el mismo payload no registra ni borra nada.
 
 Respuesta:
@@ -469,23 +487,33 @@ Respuesta:
 {
   "cardNo": "<vigente>",
   "cardNos": ["<vigente>", "<+1>", "<+2>"],
+  "elapsedMs": 412,
   "results": [
     {"ip": "192.168.1.50", "status": 200, "employeeNo": "12345",
-     "registered": ["<+2>"], "deleted": ["<vencida>"], "errors": []}
+     "registered": ["<+2>"], "deleted": ["<vencida>"], "errors": [],
+     "elapsedMs": 405}
   ]
 }
 ```
 
 `status` es `200` sin errores; si no, el HTTP del primer paso que falló. Cada
 error es `{"step": "ensure_user" | "search_cards" | "register_card" |
-"delete_cards", "status": <http|null>, ...}` (con `cardNo` o `cardNos` según
-el paso).
+"delete_cards" | "auth_cooldown", "status": <http|null>, ...}` (con `cardNo`
+o `cardNos` según el paso; `retryAfterSeconds` en `auth_cooldown`).
+
+`elapsedMs` (entero, milisegundos) viene en dos niveles: el de la raíz es el
+tiempo total que tardó el Pi en atender el `POST` (terminales en paralelo); el
+de cada `results[]` es el tiempo contra ese terminal en particular (`0` cuando
+respondió desde el cooldown sin llamar). Sirve para ubicar qué terminal
+atrasa la confirmación al teléfono.
 
 #### `POST /update-card` — payload legacy (sin `cardNos`)
 
 `{"cardNo", "employeeNo", "terminals"}` → reemplazo total: borra todas las
-tarjetas del `employeeNo` en el terminal y registra `cardNo`. Sin cambios.
-Respuesta: `{"cardNo", "results": [{"ip", "status", "employeeNo"}]}`.
+tarjetas del `employeeNo` en el terminal y registra `cardNo`. Sin cambios en
+el flujo ISAPI. Respuesta: `{"cardNo", "elapsedMs", "results": [{"ip",
+"status", "employeeNo", "elapsedMs"}]}`. Aplica el mismo cooldown por IP (el
+terminal en cooldown responde `status: 401` sin llamar, `elapsedMs: 0`).
 
 ### ANPR local-first (cámaras de placas)
 
