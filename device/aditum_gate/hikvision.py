@@ -18,18 +18,34 @@ Dos modos de registro conviven:
 
 Un 401/403 del terminal corta el proceso sin reintentar: cada intento
 fallido cuenta para el bloqueo por login ilegal del Hikvision (~7 intentos
--> 30 min sin acceso al terminal).
+-> 30 min sin acceso al terminal). Ademas la IP queda en cooldown
+(AUTH_COOLDOWN_SECONDS) para que los reintentos del backend no sigan
+sumando intentos fallidos.
+
+Rendimiento (el telefono espera la respuesta de /update-card):
+  - Los terminales de un mismo payload se procesan en paralelo (hasta
+    MAX_PARALLEL_TERMINALS hilos); el orden de results es el del payload.
+  - Las llamadas ISAPI van por httpclient.isapi_request (sesion sin
+    reintentos de urllib3).
+  - El HTTPDigestAuth se crea UNA vez por terminal y sync: requests guarda
+    el ultimo nonce (thread-local) y manda Authorization preventivo en la
+    siguiente llamada, asi cada ISAPI cuesta una sola ida y vuelta en vez
+    de 401 + reenvio.
 
 CardStore persiste los employees registrados a disco para que la limpieza
 nocturna sobreviva reinicios del proceso (antes vivian en memoria y el cron
 de reinicio cada 10 minutos dejaba tarjetas huerfanas en los terminales).
 """
+import functools
+import hashlib
 import json
 import logging
+import math
 import os
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from requests.auth import HTTPDigestAuth
@@ -50,6 +66,12 @@ MAX_CARDS_PER_EMPLOYEE = 5
 SEARCH_PAGE_SIZE = 10
 MAX_SEARCH_PAGES = 5
 AUTH_ERROR_STATUSES = (401, 403)
+# Terminales de un mismo /update-card que se sincronizan a la vez
+MAX_PARALLEL_TERMINALS = 4
+# Tras un 401/403 no se vuelve a tocar esa IP durante este lapso: ~7 fallos
+# de login seguidos bloquean el terminal 30 min y el backend viejo reintenta
+# cada ventana de 22 s, asi que sin cooldown el Pi solo se bloquea mas rapido.
+AUTH_COOLDOWN_SECONDS = 300
 
 
 def _is_auth_error(status):
@@ -79,32 +101,40 @@ class HikvisionClient:
     def _auth(user, password):
         return HTTPDigestAuth(user, password)
 
-    def delete_card(self, ip, user, password, employee_no):
+    def _auth_or(self, auth, user, password):
+        """Reutiliza el HTTPDigestAuth recibido o crea uno (compatibilidad con
+        cleanup_all y las llamadas sueltas)."""
+        return auth if auth is not None else self._auth(user, password)
+
+    def delete_card(self, ip, user, password, employee_no, auth=None):
         """Borra TODAS las tarjetas del employee (modo legacy)."""
+        auth = self._auth_or(auth, user, password)
         try:
             url = f"http://{ip}/ISAPI/AccessControl/CardInfo/Delete?format=json"
             payload = {"CardInfoDelCond": {"EmployeeNoList": [{"employeeNo": employee_no}]}}
-            resp = httpclient.request("PUT", url, json=payload,
-                                      auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+            resp = httpclient.isapi_request("PUT", url, json=payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
             return resp.status_code
         except Exception as e:
             log.error("Error borrando tarjeta en %s: %s", ip, e)
             return None
 
-    def delete_cards(self, ip, user, password, card_nos):
+    def delete_cards(self, ip, user, password, card_nos, auth=None):
         """Borra tarjetas puntuales por numero (una sola llamada)."""
+        auth = self._auth_or(auth, user, password)
         try:
             url = f"http://{ip}/ISAPI/AccessControl/CardInfo/Delete?format=json"
             payload = {"CardInfoDelCond": {"CardNoList": [{"cardNo": c} for c in card_nos]}}
-            resp = httpclient.request("PUT", url, json=payload,
-                                      auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+            resp = httpclient.isapi_request("PUT", url, json=payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
             return resp.status_code
         except Exception as e:
             log.error("Error borrando tarjetas en %s: %s", ip, e)
             return None
 
-    def user_exists(self, ip, user, password, employee_no):
+    def user_exists(self, ip, user, password, employee_no, auth=None):
         """(status del UserInfo/Search, existe). status None = sin respuesta."""
+        auth = self._auth_or(auth, user, password)
         try:
             search_url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Search?format=json"
             search_payload = {
@@ -115,8 +145,8 @@ class HikvisionClient:
                     "EmployeeNoList": [{"employeeNo": employee_no}],
                 }
             }
-            resp = httpclient.request("POST", search_url, json=search_payload,
-                                      auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+            resp = httpclient.isapi_request("POST", search_url, json=search_payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 return 200, data.get("UserInfoSearch", {}).get("totalMatches", 0) > 0
@@ -125,7 +155,8 @@ class HikvisionClient:
             log.error("Error buscando usuario en %s: %s", ip, e)
             return None, False
 
-    def create_user(self, ip, user, password, employee_no):
+    def create_user(self, ip, user, password, employee_no, auth=None):
+        auth = self._auth_or(auth, user, password)
         try:
             url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Record?format=json"
             payload = {
@@ -144,24 +175,28 @@ class HikvisionClient:
                     "localUIRight": False,
                 }
             }
-            resp = httpclient.request("POST", url, json=payload,
-                                      auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+            resp = httpclient.isapi_request("POST", url, json=payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
             return resp.status_code
         except Exception as e:
             log.error("Error creando usuario en %s: %s", ip, e)
             return None
 
-    def ensure_user(self, ip, user, password, employee_no):
-        """Legacy: busca el usuario y, si no esta, lo crea. Mismo comportamiento
-        de siempre (sin respuesta en la busqueda -> None, sin intentar crear)."""
-        status, exists = self.user_exists(ip, user, password, employee_no)
+    def ensure_user(self, ip, user, password, employee_no, auth=None):
+        """Legacy: busca el usuario y, si no esta, lo crea. Sin respuesta en la
+        busqueda -> None, sin intentar crear. Un 401/403 en la busqueda se
+        devuelve tal cual: intentar crear con las mismas credenciales solo
+        sumaria otro login fallido al bloqueo del terminal."""
+        auth = self._auth_or(auth, user, password)
+        status, exists = self.user_exists(ip, user, password, employee_no, auth=auth)
         if exists:
             return 200
-        if status is None:
-            return None
-        return self.create_user(ip, user, password, employee_no)
+        if status is None or _is_auth_error(status):
+            return status
+        return self.create_user(ip, user, password, employee_no, auth=auth)
 
-    def register_card(self, ip, user, password, card_no, employee_no):
+    def register_card(self, ip, user, password, card_no, employee_no, auth=None):
+        auth = self._auth_or(auth, user, password)
         try:
             url = f"http://{ip}/ISAPI/AccessControl/CardInfo/Record?format=json"
             payload = {
@@ -171,20 +206,21 @@ class HikvisionClient:
                     "cardType": "normalCard",
                 }
             }
-            resp = httpclient.request("POST", url, json=payload,
-                                      auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+            resp = httpclient.isapi_request("POST", url, json=payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
             return resp.status_code
         except Exception as e:
             log.error("Error registrando tarjeta en %s: %s", ip, e)
             return None
 
-    def search_cards(self, ip, user, password, employee_no):
+    def search_cards(self, ip, user, password, employee_no, auth=None):
         """(status, [cardNo, ...]) de las tarjetas del employee en el terminal.
 
         La lista es None si el terminal no respondio 200 (estado desconocido:
         el caller no debe borrar nada). Recorre paginas mientras el terminal
         responda "MORE".
         """
+        auth = self._auth_or(auth, user, password)
         url = f"http://{ip}/ISAPI/AccessControl/CardInfo/Search?format=json"
         cards = []
         position = 0
@@ -198,8 +234,8 @@ class HikvisionClient:
                         "EmployeeNoList": [{"employeeNo": employee_no}],
                     }
                 }
-                resp = httpclient.request("POST", url, json=payload,
-                                          auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+                resp = httpclient.isapi_request("POST", url, json=payload,
+                                                auth=auth, timeout=ISAPI_TIMEOUT)
                 if resp.status_code != 200:
                     return resp.status_code, None
                 data = resp.json().get("CardInfoSearch", {})
@@ -213,22 +249,34 @@ class HikvisionClient:
             log.error("Error consultando tarjetas en %s: %s", ip, e)
             return None, None
 
-    def delete_user(self, ip, user, password, employee_no):
+    def delete_user(self, ip, user, password, employee_no, auth=None):
+        auth = self._auth_or(auth, user, password)
         try:
             url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Delete?format=json"
             payload = {"UserInfoDelCond": {"EmployeeNoList": [{"employeeNo": employee_no}]}}
-            resp = httpclient.request("PUT", url, json=payload,
-                                      auth=self._auth(user, password), timeout=ISAPI_TIMEOUT)
+            resp = httpclient.isapi_request("PUT", url, json=payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
             return resp.status_code
         except Exception as e:
             log.error("Error borrando usuario en %s: %s", ip, e)
             return None
 
-    def update_card(self, ip, user, password, card_no, employee_no):
-        """Legacy: reemplazo total (borrar todas las del employee y registrar una)."""
-        self.ensure_user(ip, user, password, employee_no)
-        self.delete_card(ip, user, password, employee_no)
-        return self.register_card(ip, user, password, card_no, employee_no)
+    def update_card(self, ip, user, password, card_no, employee_no, auth=None):
+        """Legacy: reemplazo total (borrar todas las del employee y registrar una).
+
+        Un 401/403 o un terminal sin respuesta cortan en el primer paso, como
+        en sync_cards: con el digest reutilizado cada llamada posterior con
+        credenciales malas costaria DOS logins fallidos (preventivo + reenvio)
+        y el terminal se bloquea a los ~7.
+        """
+        auth = self._auth_or(auth, user, password)
+        status = self.ensure_user(ip, user, password, employee_no, auth=auth)
+        if status is None or _is_auth_error(status):
+            return status
+        status = self.delete_card(ip, user, password, employee_no, auth=auth)
+        if status is None or _is_auth_error(status):
+            return status
+        return self.register_card(ip, user, password, card_no, employee_no, auth=auth)
 
     def sync_cards(self, ip, user, password, card_nos, employee_no):
         """Deja vivas en el terminal exactamente las tarjetas de card_nos.
@@ -241,33 +289,43 @@ class HikvisionClient:
         se conservan las primeras (vigente + siguientes). Un 401/403 o un
         terminal sin respuesta cortan el proceso sin reintentar.
 
-        Devuelve {"status", "registered", "deleted", "errors"}; status es 200
-        sin errores, o el status del primer paso que fallo.
+        Devuelve {"status", "registered", "deleted", "errors", "elapsedMs"};
+        status es 200 sin errores, o el status del primer paso que fallo.
+        elapsedMs es el tiempo total contra este terminal (en todos los
+        caminos de salida, tambien los cortes tempranos).
         """
+        started = time.perf_counter()
         wanted = normalize_card_nos(card_nos)[:MAX_CARDS_PER_EMPLOYEE]
-        result = {"status": 200, "registered": [], "deleted": [], "errors": []}
+        result = {"status": 200, "registered": [], "deleted": [], "errors": [], "elapsedMs": 0}
+        # Un solo digest para todo el sync: tras el primer 401 requests ya
+        # manda Authorization preventivo (1 ida y vuelta por ISAPI).
+        auth = self._auth(user, password)
 
         def fail(step, status, **extra):
             result["errors"].append({"step": step, "status": status, **extra})
             if result["status"] == 200:
                 result["status"] = status
 
+        def done():
+            result["elapsedMs"] = int((time.perf_counter() - started) * 1000)
+            return result
+
         # 1. Usuario
-        status, exists = self.user_exists(ip, user, password, employee_no)
+        status, exists = self.user_exists(ip, user, password, employee_no, auth=auth)
         if status is None or _is_auth_error(status):
             fail("ensure_user", status)
-            return result
+            return done()
         if not exists:
-            status = self.create_user(ip, user, password, employee_no)
+            status = self.create_user(ip, user, password, employee_no, auth=auth)
             if not _ok(status):
                 fail("ensure_user", status)
-                return result
+                return done()
 
         # 2. Tarjetas actuales del employee
-        status, current = self.search_cards(ip, user, password, employee_no)
+        status, current = self.search_cards(ip, user, password, employee_no, auth=auth)
         if status is None or _is_auth_error(status):
             fail("search_cards", status)
-            return result
+            return done()
         known_state = current is not None
         if not known_state:
             # Estado desconocido: registrar todo lo pedido y no borrar nada
@@ -285,32 +343,32 @@ class HikvisionClient:
         # nunca se toca.
         if surplus and len(current) + len(missing) > MAX_CARDS_PER_EMPLOYEE:
             pending_surplus = []
-            status = self.delete_cards(ip, user, password, surplus)
+            status = self.delete_cards(ip, user, password, surplus, auth=auth)
             if _ok(status):
                 result["deleted"] = surplus
             else:
                 fail("delete_cards", status, cardNos=surplus)
                 if status is None or _is_auth_error(status):
-                    return result
+                    return done()
 
         # 4. Registrar las que faltan
         for card in missing:
-            status = self.register_card(ip, user, password, card, employee_no)
+            status = self.register_card(ip, user, password, card, employee_no, auth=auth)
             if _ok(status):
                 result["registered"].append(card)
                 continue
             fail("register_card", status, cardNo=card)
             if status is None or _is_auth_error(status):
-                return result
+                return done()
 
         # 5. Borrar las sobrantes, si no hubo que podarlas para hacer espacio
         if pending_surplus:
-            status = self.delete_cards(ip, user, password, pending_surplus)
+            status = self.delete_cards(ip, user, password, pending_surplus, auth=auth)
             if _ok(status):
                 result["deleted"] = pending_surplus
             else:
                 fail("delete_cards", status, cardNos=pending_surplus)
-        return result
+        return done()
 
 
 class CardStore:
@@ -339,8 +397,11 @@ class CardStore:
         os.chmod(self.path, 0o600)  # contiene credenciales de terminales
 
     def add(self, ip, employee_no, user, password):
+        entry = {"user": user, "password": password}
         with self._lock:
-            self._data.setdefault(ip, {})[employee_no] = {"user": user, "password": password}
+            if self._data.get(ip, {}).get(employee_no) == entry:
+                return  # sin cambios: no reescribir el JSON en cada ventana (desgaste de la SD)
+            self._data.setdefault(ip, {})[employee_no] = entry
             self._save()
 
     def snapshot(self):
@@ -364,27 +425,135 @@ class HikvisionService:
         self.settings = settings
         self.client = HikvisionClient()
         self.store = store if store is not None else CardStore()
+        self._auth_blocked = {}  # (ip, user, hash(password)) -> until (time.monotonic())
+        self._auth_lock = threading.Lock()
+        self._sync_locks = {}  # (ip, employee_no) -> Lock: un sync a la vez por par
+
+    # ---- cooldown de autenticacion por IP + credencial ----
+
+    @staticmethod
+    def _auth_key(ip, user, password):
+        """La clave incluye las credenciales: si el backend corrige la
+        contrasena del terminal, el siguiente /update-card la prueba de
+        inmediato en vez de esperar los 300 s. La contrasena va hasheada para
+        que la clave nunca termine en un log."""
+        digest = hashlib.sha256(password.encode("utf-8")).hexdigest()[:16]
+        return (ip, user, digest)
+
+    def _auth_cooldown_remaining(self, key):
+        """Segundos que faltan para volver a intentar con esa clave (0 = libre)."""
+        with self._auth_lock:
+            until = self._auth_blocked.get(key)
+            if until is None:
+                return 0
+            remaining = until - time.monotonic()
+            if remaining <= 0:
+                del self._auth_blocked[key]
+                return 0
+            return remaining
+
+    def _block_auth(self, key):
+        with self._auth_lock:
+            self._auth_blocked[key] = time.monotonic() + AUTH_COOLDOWN_SECONDS
+        log.warning("Hikvision %s: login rechazado, sin intentos por %ss",
+                    key[0], AUTH_COOLDOWN_SECONDS)
+
+    def _sync_lock_for(self, ip, employee_no):
+        with self._auth_lock:
+            return self._sync_locks.setdefault((ip, employee_no), threading.Lock())
+
+    def _cooldown_result(self, ip, employee_no, remaining, card_nos):
+        retry_after = max(1, int(math.ceil(remaining)))
+        log.warning("Hikvision %s employee %s: en cooldown de autenticacion, %ss restantes",
+                    ip, employee_no, retry_after)
+        result = {"ip": ip, "status": 401, "employeeNo": employee_no, "elapsedMs": 0}
+        if card_nos is not None:
+            result.update({"registered": [], "deleted": [],
+                           "errors": [{"step": "auth_cooldown", "status": 401,
+                                       "retryAfterSeconds": retry_after}]})
+        return result
+
+    # ---- sincronizacion ----
+
+    def _sync_terminal(self, terminal, card_no, employee_no, card_nos):
+        """Procesa UN terminal (corre en un hilo del executor). None si no tiene ip.
+
+        Un mismo (ip, employeeNo) se sincroniza de a uno: dos /update-card
+        solapados (Flask es threaded y el backend reintenta tras su timeout)
+        verian las mismas tarjetas faltantes y el segundo cobraria 400 por
+        duplicado. Una excepcion inesperada (p. ej. disco lleno al guardar el
+        store) no tumba los results de los demas terminales: ese terminal
+        responde status null con step "internal".
+        """
+        ip = terminal.get("ip")
+        if not ip:
+            return None
+        user = terminal.get("user", "admin")
+        password = terminal.get("password", "")
+        started = time.perf_counter()
+        try:
+            with self._sync_lock_for(ip, employee_no):
+                return self._run_terminal(ip, user, password, card_no, employee_no, card_nos)
+        except Exception:
+            log.exception("Hikvision %s employee %s: error inesperado en el sync", ip, employee_no)
+            result = {"ip": ip, "status": None, "employeeNo": employee_no,
+                      "elapsedMs": int((time.perf_counter() - started) * 1000)}
+            if card_nos is not None:
+                result.update({"registered": [], "deleted": [],
+                               "errors": [{"step": "internal", "status": None}]})
+            return result
+
+    def _run_terminal(self, ip, user, password, card_no, employee_no, card_nos):
+        key = self._auth_key(ip, user, password)
+        remaining = self._auth_cooldown_remaining(key)
+        if remaining > 0:
+            return self._cooldown_result(ip, employee_no, remaining, card_nos)
+
+        if card_nos is None:
+            started = time.perf_counter()
+            status = self.client.update_card(ip, user, password, card_no, employee_no)
+            result = {"ip": ip, "status": status, "employeeNo": employee_no,
+                      "elapsedMs": int((time.perf_counter() - started) * 1000)}
+        else:
+            sync = self.client.sync_cards(ip, user, password, card_nos, employee_no)
+            status = sync["status"]
+            result = {"ip": ip, "status": status, "employeeNo": employee_no,
+                      "registered": sync["registered"], "deleted": sync["deleted"],
+                      "errors": sync["errors"], "elapsedMs": sync["elapsedMs"]}
+            if sync["errors"]:
+                log.warning("Hikvision %s employee %s: %s", ip, employee_no, sync["errors"])
+
+        if _is_auth_error(status):
+            # Login rechazado: el usuario seguro NO quedo creado. Sin store la
+            # limpieza nocturna no insiste contra el terminal sumando intentos
+            # fallidos al bloqueo por login ilegal (asi era antes: se guardaba
+            # siempre).
+            self._block_auth(key)
+        else:
+            # Cualquier otro fallo (timeout, 5xx) pudo ocurrir DESPUES de crear
+            # el usuario: se guarda igual para que la limpieza nocturna no deje
+            # employees huerfanos en el terminal.
+            self.store.add(ip, employee_no, user, password)
+        return result
 
     def update_card(self, card_no, employee_no, terminals, card_nos=None):
-        """card_nos None -> legacy (reemplazo); lista -> sincronizacion por ventanas."""
-        results = []
-        for terminal in terminals:
-            ip = terminal.get("ip")
-            user = terminal.get("user", "admin")
-            password = terminal.get("password", "")
-            if not ip:
-                continue
-            if card_nos is None:
-                status = self.client.update_card(ip, user, password, card_no, employee_no)
-                results.append({"ip": ip, "status": status, "employeeNo": employee_no})
-            else:
-                sync = self.client.sync_cards(ip, user, password, card_nos, employee_no)
-                results.append({"ip": ip, "status": sync["status"], "employeeNo": employee_no,
-                                "registered": sync["registered"], "deleted": sync["deleted"],
-                                "errors": sync["errors"]})
-                if sync["errors"]:
-                    log.warning("Hikvision %s employee %s: %s", ip, employee_no, sync["errors"])
-            self.store.add(ip, employee_no, user, password)
+        """card_nos None -> legacy (reemplazo); lista -> sincronizacion por ventanas.
+
+        Los terminales se procesan en paralelo (hasta MAX_PARALLEL_TERMINALS);
+        results conserva el orden del payload y omite los que no tienen ip.
+        """
+        started = time.perf_counter()
+        targets = list(terminals)
+        if not targets:
+            return []
+        worker = functools.partial(self._sync_terminal, card_no=card_no,
+                                   employee_no=employee_no, card_nos=card_nos)
+        workers = min(MAX_PARALLEL_TERMINALS, len(targets))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="hikvision-sync") as executor:
+            results = [r for r in executor.map(worker, targets) if r is not None]
+        total_ms = int((time.perf_counter() - started) * 1000)
+        log.info("update-card employee=%s terminals=%d elapsed=%dms",
+                 employee_no, len(results), total_ms)
         return results
 
     def cleanup_all(self):

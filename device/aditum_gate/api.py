@@ -443,13 +443,16 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         card_no = data.get("cardNo") or (card_nos[0] if card_nos else None)
         if not card_no:
             return jsonify({"error": "cardNo and terminals required"}), 400
+        started = time.perf_counter()
         results = hikvision_service.update_card(
             card_no=card_no,
             employee_no=data.get("employeeNo", "99999"),
             terminals=data["terminals"],
             card_nos=card_nos,
         )
-        body = {"cardNo": card_no, "results": results}
+        # Tiempo total del Pi (terminales en paralelo); cada result trae el suyo
+        body = {"cardNo": card_no, "results": results,
+                "elapsedMs": int((time.perf_counter() - started) * 1000)}
         if card_nos is not None:
             body["cardNos"] = card_nos
         return jsonify(body)
