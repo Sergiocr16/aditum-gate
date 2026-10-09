@@ -616,6 +616,35 @@ class ParallelAndAuthTests(HikvisionBase):
         self.assertEqual(len(t.calls), 3)  # v3, v2, v1 rechazadas; no se llega a la buena
         self.assertEqual(t.users, {EMP})
 
+    def test_limpieza_renueva_el_digest_si_el_terminal_vence_el_nonce_a_mitad_del_listado(self):
+        t = FakeTerminal(users=[str(i) for i in range(120)])
+        inner = t.request
+        rechazos = {"n": 0}
+
+        def nonce_vencido(method, url, **kwargs):
+            payload = kwargs.get("json") or {}
+            cond = payload.get("UserInfoSearchCond") or {}
+            # la tercera pagina (posicion 60) responde 401 UNA vez, como un nonce vencido
+            if USER_SEARCH in url and cond.get("searchResultPosition") == 60 and rechazos["n"] == 0:
+                rechazos["n"] += 1
+                return FakeResponse(401, {"userCheck": {"statusValue": 401}})
+            return inner(method, url, **kwargs)
+
+        patcher = mock.patch.object(hikvision.httpclient, "isapi_request", side_effect=nonce_vencido)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
+        self.service.cleanup_all()
+        self.assertEqual(t.users, set())
+        self.assertEqual(len(t.auth_objects), 2)  # el original y el renovado
+
+    def test_limpieza_401_en_la_primera_pagina_no_renueva(self):
+        t = self.attach(FakeTerminal(users=[EMP], password="otra"))
+        self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
+        self.service.cleanup_all()
+        self.assertEqual(len(t.calls), 1)
+        self.assertEqual(t.users, {EMP})
+
     def test_limpieza_borra_en_lotes(self):
         t = self.attach(FakeTerminal(users=[str(i) for i in range(120)]))
         self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
