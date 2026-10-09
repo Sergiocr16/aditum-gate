@@ -692,6 +692,22 @@ class UpdateCardEndpointTests(HikvisionBase):
                            "registered": ["A", "B", "C"], "deleted": [], "errors": []}])
         self.assertEqual(t.cards_of(EMP), ["A", "B", "C"])
 
+    def test_cleanup_cards_barre_y_resume_por_lector(self):
+        t = self.attach(FakeTerminal(users=["10000001", "10000002"], staff=["777"]))
+        self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
+
+        resp = self.client.post("/cleanup-cards")
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["summary"]["deleted"], 2)
+        self.assertEqual(body["summary"]["failed"], 0)
+        self.assertEqual(body["summary"]["terminals"],
+                         [{"ip": TERMINAL["ip"], "deleted": 2, "failed": 0, "status": 200}])
+        self.assertIsInstance(body["summary"]["elapsedMs"], int)
+        self.assertEqual(t.users, set())
+        self.assertEqual(t.staff, {"777"})
+
     def test_payload_legacy_sin_cardnos(self):
         t = self.attach(FakeTerminal(users=[EMP], cards=[(EMP, "X")]))
         resp = self.client.post("/update-card", json={

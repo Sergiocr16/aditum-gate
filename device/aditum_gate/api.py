@@ -459,9 +459,33 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
 
     @app.route("/cleanup-cards", methods=["POST"])
     def cleanup_cards():
+        # Protegido por el before_request global (sesion admin o bearer). Mismo
+        # barrido que la limpieza nocturna, disparado a mano desde el panel:
+        # borra en cada terminal conocido todos los usuarios de Aditum (nombre
+        # "Bienvenido"), no los de planta. Los pases vigentes se re-registran
+        # solos en su siguiente rotacion (<= 22 s).
         if hikvision_service is None:
             return jsonify({"error": "Hikvision deshabilitado en este dispositivo"}), 400
-        return jsonify({"results": hikvision_service.cleanup_all()})
+        started = time.perf_counter()
+        results = hikvision_service.cleanup_all()
+        terminals = {}
+        for r in results:
+            t = terminals.setdefault(r["ip"], {"ip": r["ip"], "deleted": 0, "failed": 0, "status": 200})
+            if r["status"] is not None and 200 <= r["status"] < 300:
+                t["deleted"] += 1
+            else:
+                t["failed"] += 1
+                t["status"] = r["status"]
+        log.warning("Limpieza Hikvision manual via /cleanup-cards: %s", list(terminals.values()))
+        return jsonify({
+            "results": results,
+            "summary": {
+                "deleted": sum(t["deleted"] for t in terminals.values()),
+                "failed": sum(t["failed"] for t in terminals.values()),
+                "terminals": list(terminals.values()),
+                "elapsedMs": int((time.perf_counter() - started) * 1000),
+            },
+        })
 
     # ------------------------------------------------------------
     # ANPR local-first (TAR-1034/TAR-1035): la lista de placas vive en la
