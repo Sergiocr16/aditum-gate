@@ -781,7 +781,7 @@
       </div>
       <div class="row" style="margin-top:14px; align-items:center; gap:12px">
         <button class="sec sm danger" id="btnHikCleanup" type="button">Limpiar lectores ahora</button>
-        <span class="hint" id="hikCleanupMsg">Borra en cada lector los usuarios creados por Aditum (invitaciones y residentes). Los usuarios de planta no se tocan.</span>
+        <span class="hint" id="hikCleanupMsg">Vacía cada lector (todos los usuarios, también los cargados a mano). Es lo mismo que hace la limpieza nocturna.</span>
       </div>
     </div>
 
@@ -880,10 +880,9 @@
 <div class="modal-back" id="hikCleanModal" hidden>
   <div class="modal">
     <h3>Limpiar lectores Hikvision</h3>
-    <p>Se borran en cada lector <b>todos los usuarios creados por Aditum</b> (nombre "Bienvenido":
-       invitaciones y residentes) con sus tarjetas. Los usuarios de planta con nombre real no se tocan.
-       Un pase que esté en uso se vuelve a registrar solo en su siguiente cambio de código (menos de
-       22 s). Puede tardar hasta un minuto si el lector tiene miles de usuarios.</p>
+    <p>Se <b>vacía cada lector</b>: todos los usuarios con sus tarjetas, huellas y caras, incluidos
+       los que se hayan cargado a mano en el equipo. Un pase que esté en uso se vuelve a registrar
+       solo en su siguiente cambio de código (menos de 22 s). Suele tardar unos segundos.</p>
     <div class="row" style="justify-content:flex-end">
       <button class="sec sm" id="btnHikCleanCancel" type="button">Cancelar</button>
       <button class="sec sm danger" id="btnHikCleanConfirm" type="button">Sí, limpiar lectores</button>
@@ -2278,7 +2277,8 @@
       const s = (st.last && st.last.summary) || {};
       if (s.error) throw new Error(s.error);
       const porLector = (s.terminals || []).map((t) =>
-        t.ip + ': ' + t.deleted + ' borrado(s)' + (t.failed ? ', ' + t.failed + ' fallido(s) (HTTP ' + (t.status === null ? 'sin respuesta' : t.status) + ')' : '')
+        t.ip + ': ' + (t.failed ? 'falló (HTTP ' + (t.status === null ? 'sin respuesta' : t.status) + ')'
+                                : t.deleted + ' borrado(s)' + (t.mode === 'sweep' ? ' (barrido selectivo)' : ''))
       ).join(' · ');
       const texto = (s.deleted || 0) + ' usuario(s) borrado(s)' + (s.failed ? ', ' + s.failed + ' fallido(s)' : '')
         + ' en ' + ((s.elapsedMs || 0) / 1000).toFixed(1) + ' s' + (porLector ? ' — ' + porLector : '');
