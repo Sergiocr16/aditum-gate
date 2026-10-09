@@ -296,6 +296,7 @@ class HikvisionClient:
         url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Search?format=json"
         found = []
         position = 0
+        renewed = False
         try:
             for _ in range(MAX_USER_PAGES):
                 payload = {"UserInfoSearchCond": {
@@ -305,7 +306,17 @@ class HikvisionClient:
                 }}
                 resp = httpclient.isapi_request("POST", url, json=payload,
                                                 auth=auth, timeout=ISAPI_TIMEOUT)
+                if resp.status_code == 401 and position > 0 and not renewed:
+                    # El digest ya autentico (hubo paginas anteriores): el terminal
+                    # vencio el nonce tras N usos. Se renueva la autenticacion y se
+                    # repite SOLO esta pagina, una vez.
+                    log.warning("Hikvision %s user_list: 401 en la posicion %s tras autenticar; "
+                                "se renueva el digest", ip, position)
+                    auth = self._auth(user, password)
+                    renewed = True
+                    continue
                 if resp.status_code != 200:
+                    log.warning("Hikvision %s user_list: corte en la posicion %s", ip, position)
                     return self._status_of("user_list", ip, resp), None
                 data = resp.json().get("UserInfoSearch", {}) or {}
                 page = data.get("UserInfo", []) or []
