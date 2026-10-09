@@ -83,6 +83,8 @@ DELETE_BATCH_SIZE = 50
 # de una vez por terminal en este lapso (cada barrido corta las tarjetas vigentes
 # hasta la siguiente rotacion de cada pase).
 EMERGENCY_PURGE_INTERVAL_SECONDS = 600
+# Credenciales distintas que la limpieza prueba por terminal antes de rendirse.
+MAX_CLEANUP_CREDENTIALS = 3
 
 
 def _is_auth_error(status):
@@ -729,6 +731,27 @@ class HikvisionService:
                  ip, len(deleted), len(failed))
         return {"ip": ip, "status": status, "deleted": deleted, "failed": failed}
 
+    @staticmethod
+    def _credential_candidates(learned, employees):
+        """Credenciales a probar contra un terminal, en orden: la aprendida en el
+        ultimo sync que autentico y, detras, hasta MAX_CLEANUP_CREDENTIALS
+        DISTINTAS del store de la mas nueva a la mas vieja. El store puede mezclar
+        la contrasena actual con una cambiada hace meses (una entrada existente
+        que vuelve a sincronizar actualiza sus credenciales pero conserva su
+        posicion): probar unas pocas distintas cuesta a lo sumo unos 401, nunca
+        uno por entrada."""
+        candidates = []
+        seen = set()
+        for creds in ([learned] if learned else []) + list(reversed(list(employees.values()))):
+            key = (creds.get("user"), creds.get("password"))
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(creds)
+            if len(candidates) >= MAX_CLEANUP_CREDENTIALS:
+                break
+        return candidates
+
     def cleanup_all(self):
         """Limpieza nocturna: barre cada terminal conocido con sus credenciales
         VIGENTES y borra todos los usuarios de Aditum, no solo los del store.
@@ -746,13 +769,17 @@ class HikvisionService:
         pending = {}
         for ip in sorted(set(snapshot) | set(terminals)):
             employees = snapshot.get(ip, {})
-            # Sin credencial aprendida (ningun sync desde el arranque) se usa la entrada
-            # MAS RECIENTE del store: la mas vieja es la que mas probablemente trae una
-            # contrasena ya cambiada.
-            creds = terminals.get(ip) or (list(employees.values())[-1] if employees else None)
-            if not creds:
+            candidates = self._credential_candidates(terminals.get(ip), employees)
+            if not candidates:
                 continue
-            swept = self.cleanup_terminal(ip, creds["user"], creds["password"])
+            swept = None
+            for creds in candidates:
+                swept = self.cleanup_terminal(ip, creds["user"], creds["password"])
+                if swept["failed"] is None and _is_auth_error(swept["status"]):
+                    continue  # esa credencial ya no sirve: probar la siguiente distinta
+                if swept["failed"] is not None:
+                    self.store.remember_terminal(ip, creds["user"], creds["password"])
+                break
             if swept["failed"] is None:
                 for employee_no in employees:
                     results.append({"ip": ip, "employeeNo": employee_no, "status": swept["status"]})

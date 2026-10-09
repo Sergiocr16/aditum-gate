@@ -594,13 +594,27 @@ class ParallelAndAuthTests(HikvisionBase):
         # un solo listado (3 usuarios caben en una pagina) + un borrado en lote
         self.assertEqual(t.paths().count(USER_DELETE), 1)
 
-    def test_limpieza_sin_credencial_aprendida_usa_la_entrada_mas_reciente(self):
-        t = self.attach(FakeTerminal(users=[EMP, "10991594"], password="nueva"))
-        self.store.add(TERMINAL["ip"], "10991594", "admin", "vieja")  # la mas vieja: contrasena cambiada
-        self.store.add(TERMINAL["ip"], EMP, "admin", "nueva")         # la mas reciente
+    def test_limpieza_sin_credencial_aprendida_prueba_las_distintas_del_store(self):
+        """La ultima entrada del store puede traer la contrasena vieja (una entrada
+        existente que re-sincroniza actualiza sus credenciales pero no su posicion):
+        se prueban las credenciales distintas, de la mas nueva a la mas vieja."""
+        t = self.attach(FakeTerminal(users=[EMP, "10991594", "11049651"], password="nueva"))
+        self.store.add(TERMINAL["ip"], "10991594", "admin", "vieja")
+        self.store.add(TERMINAL["ip"], EMP, "admin", "nueva")
+        self.store.add(TERMINAL["ip"], "11049651", "admin", "vieja")  # la ultima: contrasena vieja
         self.service.cleanup_all()
         self.assertEqual(t.users, set())
         self.assertEqual(self.store.snapshot(), {})
+        self.assertEqual(sum(1 for m, p_, j in t.calls if p_ == USER_SEARCH), 2)  # un 401 y el bueno
+        self.assertEqual(self.store.terminals(), {TERMINAL["ip"]: {"user": "admin", "password": "nueva"}})
+
+    def test_limpieza_prueba_como_maximo_tres_credenciales(self):
+        t = self.attach(FakeTerminal(users=[EMP], password="buena"))
+        for i, pw in enumerate(["buena", "v1", "v2", "v3"]):
+            self.store.add(TERMINAL["ip"], str(i), "admin", pw)  # la buena quedo primera = mas vieja
+        self.service.cleanup_all()
+        self.assertEqual(len(t.calls), 3)  # v3, v2, v1 rechazadas; no se llega a la buena
+        self.assertEqual(t.users, {EMP})
 
     def test_limpieza_borra_en_lotes(self):
         t = self.attach(FakeTerminal(users=[str(i) for i in range(120)]))
