@@ -746,7 +746,10 @@ class HikvisionService:
         pending = {}
         for ip in sorted(set(snapshot) | set(terminals)):
             employees = snapshot.get(ip, {})
-            creds = terminals.get(ip) or (next(iter(employees.values())) if employees else None)
+            # Sin credencial aprendida (ningun sync desde el arranque) se usa la entrada
+            # MAS RECIENTE del store: la mas vieja es la que mas probablemente trae una
+            # contrasena ya cambiada.
+            creds = terminals.get(ip) or (list(employees.values())[-1] if employees else None)
             if not creds:
                 continue
             swept = self.cleanup_terminal(ip, creds["user"], creds["password"])
