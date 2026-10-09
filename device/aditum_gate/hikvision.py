@@ -72,6 +72,17 @@ MAX_PARALLEL_TERMINALS = 4
 # de login seguidos bloquean el terminal 30 min y el backend viejo reintenta
 # cada ventana de 22 s, asi que sin cooldown el Pi solo se bloquea mas rapido.
 AUTH_COOLDOWN_SECONDS = 300
+# Nombre con el que Aditum crea TODOS sus usuarios en el terminal: es la marca que
+# distingue lo nuestro (invitaciones, residentes) de los usuarios de planta que el
+# administrador carga a mano con nombre real. La limpieza solo toca los nuestros.
+ADITUM_USER_NAME = "Bienvenido"
+USER_PAGE_SIZE = 30
+MAX_USER_PAGES = 1000          # 30 000 usuarios: muy por encima de cualquier terminal
+DELETE_BATCH_SIZE = 50
+# Si un alta responde "lleno", se barre el terminal en el acto y se reintenta; no mas
+# de una vez por terminal en este lapso (cada barrido corta las tarjetas vigentes
+# hasta la siguiente rotacion de cada pase).
+EMERGENCY_PURGE_INTERVAL_SECONDS = 600
 
 
 def _is_auth_error(status):
@@ -97,17 +108,20 @@ def normalize_card_nos(card_nos):
 class HikvisionClient:
     """Operaciones ISAPI contra un terminal."""
 
+    def __init__(self):
+        self._tl = threading.local()
+
     @staticmethod
     def _auth(user, password):
         return HTTPDigestAuth(user, password)
 
-    @staticmethod
-    def _status_of(step, ip, resp):
+    def _status_of(self, step, ip, resp):
         """Status HTTP de una respuesta ISAPI. En un rechazo (no 2xx) deja en el log el
         cuerpo del terminal (statusString / subStatusCode / errorMsg), que es lo unico
         que dice POR QUE rechazo: sin eso un 400 en ensure_user es indistinguible de
-        un employeeNo invalido, un usuario duplicado o un campo que el firmware no
-        acepta. El cuerpo de error del Hikvision nunca trae credenciales."""
+        un employeeNo invalido, un usuario duplicado o un terminal lleno. El cuerpo
+        de error del Hikvision nunca trae credenciales. Queda ademas en un
+        thread-local para que sync_cards lo anexe como `detail` del error."""
         status = resp.status_code
         if not _ok(status):
             try:
@@ -115,7 +129,13 @@ class HikvisionClient:
             except Exception:
                 body = "?"
             log.warning("Hikvision %s %s: HTTP %s %s", ip, step, status, body)
+            self._tl.last_body = body
         return status
+
+    def _take_last_body(self):
+        body = getattr(self._tl, "last_body", None)
+        self._tl.last_body = None
+        return body if body and body not in ("{}", "?") else None
 
     def _auth_or(self, auth, user, password):
         """Reutiliza el HTTPDigestAuth recibido o crea uno (compatibilidad con
@@ -265,6 +285,54 @@ class HikvisionClient:
             log.error("Error consultando tarjetas en %s: %s", ip, e)
             return None, None
 
+    def list_aditum_users(self, ip, user, password, auth=None):
+        """(status, [employeeNo, ...]) de los usuarios creados por Aditum en el terminal
+        (name == ADITUM_USER_NAME y employeeNo numerico). La lista es None si no se
+        pudo recorrer completo (status != 200 o sin respuesta): el caller no borra
+        a ciegas. Un solo digest para todas las paginas."""
+        auth = self._auth_or(auth, user, password)
+        url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Search?format=json"
+        found = []
+        position = 0
+        try:
+            for _ in range(MAX_USER_PAGES):
+                payload = {"UserInfoSearchCond": {
+                    "searchID": "aditum-cleanup",
+                    "searchResultPosition": position,
+                    "maxResults": USER_PAGE_SIZE,
+                }}
+                resp = httpclient.isapi_request("POST", url, json=payload,
+                                                auth=auth, timeout=ISAPI_TIMEOUT)
+                if resp.status_code != 200:
+                    return self._status_of("user_list", ip, resp), None
+                data = resp.json().get("UserInfoSearch", {}) or {}
+                page = data.get("UserInfo", []) or []
+                for entry in page:
+                    employee_no = str(entry.get("employeeNo", ""))
+                    if entry.get("name") == ADITUM_USER_NAME and employee_no.isdigit():
+                        found.append(employee_no)
+                position += len(page)
+                if not page or data.get("responseStatusStrg") != "MORE":
+                    return 200, found
+            log.warning("Hikvision %s: listado de usuarios cortado en %s paginas", ip, MAX_USER_PAGES)
+            return 200, found
+        except Exception as e:
+            log.error("Error listando usuarios en %s: %s", ip, e)
+            return None, None
+
+    def delete_users(self, ip, user, password, employee_nos, auth=None):
+        """Borra varios employees (y sus tarjetas) en una sola llamada."""
+        auth = self._auth_or(auth, user, password)
+        try:
+            url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Delete?format=json"
+            payload = {"UserInfoDelCond": {"EmployeeNoList": [{"employeeNo": e} for e in employee_nos]}}
+            resp = httpclient.isapi_request("PUT", url, json=payload,
+                                            auth=auth, timeout=ISAPI_TIMEOUT)
+            return self._status_of("delete_users", ip, resp)
+        except Exception as e:
+            log.error("Error borrando usuarios en %s: %s", ip, e)
+            return None
+
     def delete_user(self, ip, user, password, employee_no, auth=None):
         auth = self._auth_or(auth, user, password)
         try:
@@ -318,6 +386,9 @@ class HikvisionClient:
         auth = self._auth(user, password)
 
         def fail(step, status, **extra):
+            detail = self._take_last_body()
+            if detail:
+                extra["detail"] = detail  # cuerpo del rechazo (subStatusCode), nunca credenciales
             result["errors"].append({"step": step, "status": status, **extra})
             if result["status"] == 200:
                 result["status"] = status
@@ -387,8 +458,17 @@ class HikvisionClient:
         return done()
 
 
+TERMINALS_KEY = "__terminals__"
+
+
 class CardStore:
-    """Registro persistente de employees activos por terminal: {ip: {employeeNo: {user, password}}}."""
+    """Registro persistente de employees activos por terminal: {ip: {employeeNo: {user, password}}}.
+
+    Bajo TERMINALS_KEY guarda ademas las credenciales VIGENTES de cada terminal (las del
+    ultimo sync que autentico): la limpieza nocturna barre con esas, no con las que
+    cada entrada traia el dia que se creo (si el administrador cambio la contrasena
+    del lector, esas quedaron viejas y la limpieza respondia 401 para siempre).
+    """
 
     def __init__(self, path=CARD_STORE_FILE):
         self.path = path
@@ -420,9 +500,23 @@ class CardStore:
             self._data.setdefault(ip, {})[employee_no] = entry
             self._save()
 
+    def remember_terminal(self, ip, user, password):
+        entry = {"user": user, "password": password}
+        with self._lock:
+            terminals = self._data.setdefault(TERMINALS_KEY, {})
+            if terminals.get(ip) == entry:
+                return
+            terminals[ip] = entry
+            self._save()
+
+    def terminals(self):
+        """{ip: {user, password}} vigentes."""
+        with self._lock:
+            return json.loads(json.dumps(self._data.get(TERMINALS_KEY, {})))
+
     def snapshot(self):
         with self._lock:
-            return json.loads(json.dumps(self._data))
+            return {ip: json.loads(json.dumps(e)) for ip, e in self._data.items() if ip != TERMINALS_KEY}
 
     def clear(self):
         with self._lock:
@@ -430,9 +524,12 @@ class CardStore:
             self._save()
 
     def replace(self, data):
-        """Deja el registro en data (una sola escritura)."""
+        """Deja el registro de employees en data (una sola escritura); conserva las credenciales."""
         with self._lock:
-            self._data = data
+            terminals = self._data.get(TERMINALS_KEY)
+            self._data = dict(data)
+            if terminals:
+                self._data[TERMINALS_KEY] = terminals
             self._save()
 
 
@@ -444,6 +541,7 @@ class HikvisionService:
         self._auth_blocked = {}  # (ip, user, hash(password)) -> until (time.monotonic())
         self._auth_lock = threading.Lock()
         self._sync_locks = {}  # (ip, employee_no) -> Lock: un sync a la vez por par
+        self._purged_at = {}   # ip -> time.monotonic() de la ultima purga de emergencia
 
     # ---- cooldown de autenticacion por IP + credencial ----
 
@@ -539,6 +637,20 @@ class HikvisionService:
             if sync["errors"]:
                 log.warning("Hikvision %s employee %s: %s", ip, employee_no, sync["errors"])
 
+            if self._looks_full(sync) and self._may_purge(ip):
+                # Terminal lleno (cuota de usuarios o tarjetas): sin esto el
+                # condominio queda sin QR hasta la limpieza nocturna. Se barren
+                # los usuarios de Aditum y se reintenta UNA vez.
+                log.warning("Hikvision %s: terminal lleno (%s); purga de emergencia",
+                            ip, sync["errors"][0].get("detail"))
+                self.cleanup_terminal(ip, user, password)
+                sync = self.client.sync_cards(ip, user, password, card_nos, employee_no)
+                status = sync["status"]
+                result = {"ip": ip, "status": status, "employeeNo": employee_no,
+                          "registered": sync["registered"], "deleted": sync["deleted"],
+                          "errors": sync["errors"], "elapsedMs": sync["elapsedMs"],
+                          "purged": True}
+
         if _is_auth_error(status):
             # Login rechazado: el usuario seguro NO quedo creado. Sin store la
             # limpieza nocturna no insiste contra el terminal sumando intentos
@@ -550,7 +662,26 @@ class HikvisionService:
             # el usuario: se guarda igual para que la limpieza nocturna no deje
             # employees huerfanos en el terminal.
             self.store.add(ip, employee_no, user, password)
+            if status is not None:
+                # El terminal autentico con estas credenciales: son las vigentes.
+                self.store.remember_terminal(ip, user, password)
         return result
+
+    @staticmethod
+    def _looks_full(sync):
+        errors = sync.get("errors") or []
+        if not errors or errors[0].get("step") != "ensure_user" or errors[0].get("status") != 400:
+            return False
+        return "full" in str(errors[0].get("detail", "")).lower()
+
+    def _may_purge(self, ip):
+        now = time.monotonic()
+        with self._auth_lock:
+            last = self._purged_at.get(ip)
+            if last is not None and now - last < EMERGENCY_PURGE_INTERVAL_SECONDS:
+                return False
+            self._purged_at[ip] = now
+            return True
 
     def update_card(self, card_no, employee_no, terminals, card_nos=None):
         """card_nos None -> legacy (reemplazo); lista -> sincronizacion por ventanas.
@@ -572,27 +703,70 @@ class HikvisionService:
                  employee_no, len(results), total_ms)
         return results
 
-    def cleanup_all(self):
-        """Borra los employees registrados y olvida SOLO los que se borraron.
+    def cleanup_terminal(self, ip, user, password):
+        """Barre UN terminal: lista todos sus usuarios y borra en lote los de Aditum
+        (name == ADITUM_USER_NAME), esten o no en el store. Devuelve
+        {"status", "deleted": [...], "failed": [...] | None}; failed None = no se
+        pudo listar (nada se borro). Un 401/403 corta en el acto: insistir solo
+        suma intentos al bloqueo por login ilegal del terminal."""
+        auth = self.client._auth(user, password)
+        status, found = self.client.list_aditum_users(ip, user, password, auth=auth)
+        if found is None:
+            return {"ip": ip, "status": status, "deleted": [], "failed": None}
+        deleted, failed = [], []
+        for i in range(0, len(found), DELETE_BATCH_SIZE):
+            batch = found[i:i + DELETE_BATCH_SIZE]
+            st = self.client.delete_users(ip, user, password, batch, auth=auth)
+            if _ok(st):
+                deleted.extend(batch)
+                continue
+            failed.extend(batch)
+            if st is None or _is_auth_error(st):
+                failed.extend(found[i + DELETE_BATCH_SIZE:])
+                status = st
+                break
+        log.info("Limpieza Hikvision %s: %s usuarios de Aditum borrados, %s fallidos",
+                 ip, len(deleted), len(failed))
+        return {"ip": ip, "status": status, "deleted": deleted, "failed": failed}
 
-        Un terminal caido a las 2 AM devuelve None: si igual se olvidara la
-        entrada, ese usuario quedaria en el terminal sin nadie que lo
-        recuerde (huerfano invisible para la limpieza siguiente). Borrar un
-        employee que ya no existe devuelve 200, asi que reintentar es barato
-        y las entradas no se acumulan solas.
+    def cleanup_all(self):
+        """Limpieza nocturna: barre cada terminal conocido con sus credenciales
+        VIGENTES y borra todos los usuarios de Aditum, no solo los del store.
+
+        El store es la lista de lo que este Pi registro; lo que quedo de antes
+        (otro proceso, un sync cortado, el store en memoria de versiones viejas)
+        no esta ahi y era lo que llenaba el terminal hasta que rechazaba altas.
+        Las entradas de un terminal que no se pudo listar (apagado, 401) se
+        conservan para la proxima; un terminal listado queda con las que no se
+        pudieron borrar.
         """
+        snapshot = self.store.snapshot()
+        terminals = self.store.terminals()
         results = []
         pending = {}
-        for ip, employees in self.store.snapshot().items():
-            for employee_no, creds in employees.items():
-                status = self.client.delete_user(ip, creds["user"], creds["password"], employee_no)
-                results.append({"ip": ip, "employeeNo": employee_no, "status": status})
-                if not _ok(status):
-                    pending.setdefault(ip, {})[employee_no] = creds
+        for ip in sorted(set(snapshot) | set(terminals)):
+            employees = snapshot.get(ip, {})
+            creds = terminals.get(ip) or (next(iter(employees.values())) if employees else None)
+            if not creds:
+                continue
+            swept = self.cleanup_terminal(ip, creds["user"], creds["password"])
+            if swept["failed"] is None:
+                for employee_no in employees:
+                    results.append({"ip": ip, "employeeNo": employee_no, "status": swept["status"]})
+                if employees:
+                    pending[ip] = employees
+                continue
+            for employee_no in swept["deleted"]:
+                results.append({"ip": ip, "employeeNo": employee_no, "status": 200})
+            for employee_no in swept["failed"]:
+                results.append({"ip": ip, "employeeNo": employee_no, "status": swept["status"]})
+                if employee_no in employees:
+                    pending.setdefault(ip, {})[employee_no] = employees[employee_no]
         self.store.replace(pending)
         failed = sum(len(e) for e in pending.values())
+        deleted = sum(1 for r in results if _ok(r["status"]))
         log.info("Limpieza Hikvision: %s usuarios borrados, %s pendientes para la proxima",
-                 len(results) - failed, failed)
+                 deleted, failed)
         return results
 
     def start_nightly_cleanup(self):
