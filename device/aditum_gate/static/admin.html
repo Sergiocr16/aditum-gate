@@ -2265,8 +2265,18 @@
     try {
       const r = await fetch('/cleanup-cards', fetchOpts({ method: 'POST' }));
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
-      const s = d.summary || {};
+      if (!r.ok && r.status !== 409) throw new Error(d.error || ('HTTP ' + r.status));
+      // Corre en segundo plano en el Pi: se consulta el avance hasta que termine (max 15 min).
+      let st = d;
+      for (let i = 0; i < 450 && (st.running || !(st.last && st.last.summary)); i++) {
+        await new Promise((res) => setTimeout(res, 2000));
+        const g = await fetch('/cleanup-cards', fetchOpts({ cache: 'no-store' }));
+        if (!g.ok) throw new Error('HTTP ' + g.status);
+        st = await g.json();
+        $('hikCleanupMsg').textContent = 'Limpiando… ' + Math.round(i * 2) + ' s';
+      }
+      const s = (st.last && st.last.summary) || {};
+      if (s.error) throw new Error(s.error);
       const porLector = (s.terminals || []).map((t) =>
         t.ip + ': ' + t.deleted + ' borrado(s)' + (t.failed ? ', ' + t.failed + ' fallido(s) (HTTP ' + (t.status === null ? 'sin respuesta' : t.status) + ')' : '')
       ).join(' · ');

@@ -665,7 +665,7 @@ class ParallelAndAuthTests(HikvisionBase):
         self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
         self.service.cleanup_all()
         self.assertEqual(t.users, set())
-        self.assertEqual(t.paths().count(USER_DELETE), 3)  # 50 + 50 + 20
+        self.assertEqual(t.paths().count(USER_DELETE), 6)  # lotes de 20
         self.assertEqual(t.paths().count(USER_SEARCH), 4)  # 4 paginas de 30
 
     def test_limpieza_con_credenciales_rechazadas_no_insiste(self):
@@ -763,9 +763,16 @@ class UpdateCardEndpointTests(HikvisionBase):
         self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
 
         resp = self.client.post("/cleanup-cards")
+        self.assertEqual(resp.status_code, 202)
+        self.assertTrue(resp.get_json()["running"] or resp.get_json()["last"])
+        self.service.wait_cleanup()
 
-        self.assertEqual(resp.status_code, 200)
-        body = resp.get_json()
+        status = self.client.get("/cleanup-cards")
+        self.assertEqual(status.status_code, 200)
+        body = status.get_json()
+        self.assertFalse(body["running"])
+        body = body["last"]
+        self.assertIsNotNone(body["finishedAt"])
         self.assertEqual(body["summary"]["deleted"], 2)
         self.assertEqual(body["summary"]["failed"], 0)
         self.assertEqual(body["summary"]["terminals"],
