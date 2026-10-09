@@ -594,6 +594,14 @@ class ParallelAndAuthTests(HikvisionBase):
         # un solo listado (3 usuarios caben en una pagina) + un borrado en lote
         self.assertEqual(t.paths().count(USER_DELETE), 1)
 
+    def test_limpieza_sin_credencial_aprendida_usa_la_entrada_mas_reciente(self):
+        t = self.attach(FakeTerminal(users=[EMP, "10991594"], password="nueva"))
+        self.store.add(TERMINAL["ip"], "10991594", "admin", "vieja")  # la mas vieja: contrasena cambiada
+        self.store.add(TERMINAL["ip"], EMP, "admin", "nueva")         # la mas reciente
+        self.service.cleanup_all()
+        self.assertEqual(t.users, set())
+        self.assertEqual(self.store.snapshot(), {})
+
     def test_limpieza_borra_en_lotes(self):
         t = self.attach(FakeTerminal(users=[str(i) for i in range(120)]))
         self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
