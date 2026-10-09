@@ -59,6 +59,10 @@ ISAPI_TIMEOUT = (3, 5)
 # Borrar un lote de usuarios con sus tarjetas tarda mas que una ISAPI normal (medido:
 # un lote de 50 no respondia en 5 s). Lotes chicos y lectura larga.
 DELETE_TIMEOUT = (3, 30)
+# Vaciado completo (UserInfoDetail/Delete mode=all): asincrono en el terminal; se
+# consulta DeleteProcess hasta este tope.
+CLEAR_ALL_WAIT_SECONDS = 120
+CLEAR_ALL_POLL_SECONDS = 1.0
 
 # Tope de tarjetas vivas por persona en un terminal (modo ventanas): se
 # conservan las primeras de cardNos (vigente + siguientes) y se poda el resto.
@@ -337,6 +341,57 @@ class HikvisionClient:
         except Exception as e:
             log.error("Error listando usuarios en %s: %s", ip, e)
             return None, None
+
+    def count_users(self, ip, user, password, auth=None):
+        """(status, cantidad de usuarios en el terminal); cantidad None si no respondio 200.
+        Es ademas la sonda de credenciales de la limpieza: un 401 aca cuesta UN login
+        fallido y corta antes de intentar el vaciado."""
+        auth = self._auth_or(auth, user, password)
+        try:
+            url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Count?format=json"
+            resp = httpclient.isapi_request("GET", url, auth=auth, timeout=ISAPI_TIMEOUT)
+            if resp.status_code != 200:
+                return self._status_of("user_count", ip, resp), None
+            return 200, int(resp.json().get("UserInfoCount", {}).get("userNumber", 0))
+        except Exception as e:
+            log.error("Error contando usuarios en %s: %s", ip, e)
+            return None, None
+
+    def delete_all_users(self, ip, user, password, auth=None):
+        """Vaciado completo del terminal (UserInfoDetail/Delete mode=all): TODOS los
+        usuarios con sus tarjetas, huellas y caras, tambien los cargados a mano.
+        Es asincrono en el equipo: se espera DeleteProcess hasta CLEAR_ALL_WAIT_SECONDS.
+        Devuelve (status, done): status 200 + done True = vaciado; 400 = el firmware
+        no lo soporta (el caller cae al barrido selectivo)."""
+        auth = self._auth_or(auth, user, password)
+        try:
+            url = f"http://{ip}/ISAPI/AccessControl/UserInfoDetail/Delete?format=json"
+            resp = httpclient.isapi_request("PUT", url, json={"UserInfoDetail": {"mode": "all"}},
+                                            auth=auth, timeout=DELETE_TIMEOUT)
+            status = self._status_of("delete_all", ip, resp)
+            if not _ok(status):
+                return status, False
+            process_url = f"http://{ip}/ISAPI/AccessControl/UserInfoDetail/DeleteProcess?format=json"
+            deadline = time.monotonic() + CLEAR_ALL_WAIT_SECONDS
+            while time.monotonic() < deadline:
+                # Digest nuevo en cada consulta: el terminal vence el nonce cada ~8 usos.
+                probe = httpclient.isapi_request("GET", process_url, auth=self._auth(user, password),
+                                                 timeout=ISAPI_TIMEOUT)
+                if probe.status_code != 200:
+                    self._status_of("delete_process", ip, probe)
+                    return probe.status_code, False
+                state = str(probe.json().get("UserInfoDetailDeleteProcess", {}).get("status", "")).lower()
+                if state == "success":
+                    return 200, True
+                if state == "failed":
+                    log.warning("Hikvision %s: el vaciado completo termino en failed", ip)
+                    return 200, False
+                time.sleep(CLEAR_ALL_POLL_SECONDS)
+            log.warning("Hikvision %s: el vaciado completo no termino en %ss", ip, CLEAR_ALL_WAIT_SECONDS)
+            return 200, False
+        except Exception as e:
+            log.error("Error vaciando usuarios en %s: %s", ip, e)
+            return None, False
 
     def delete_users(self, ip, user, password, employee_nos, auth=None):
         """Borra varios employees (y sus tarjetas) en una sola llamada."""
@@ -739,10 +794,25 @@ class HikvisionService:
             return self._sweep_terminal(ip, user, password)
 
     def _sweep_terminal(self, ip, user, password):
+        """Vaciado completo del terminal (mode=all); si ese firmware no lo soporta
+        (400), barrido selectivo por lotes de los usuarios de Aditum."""
+        cstatus, before = self.client.count_users(ip, user, password)
+        if cstatus is None or _is_auth_error(cstatus):
+            return {"ip": ip, "status": cstatus, "deleted": 0, "failed": None, "mode": "all"}
+        status, done = self.client.delete_all_users(ip, user, password)
+        if done:
+            _, after = self.client.count_users(ip, user, password)
+            deleted = max(0, (before or 0) - (after or 0)) if before is not None else None
+            log.info("Limpieza Hikvision %s: vaciado completo, %s usuarios antes, %s despues",
+                     ip, before, after)
+            return {"ip": ip, "status": 200, "deleted": deleted, "failed": 0, "mode": "all"}
+        if status is None or _is_auth_error(status):
+            return {"ip": ip, "status": status, "deleted": 0, "failed": None, "mode": "all"}
+        log.info("Hikvision %s: vaciado completo no disponible (HTTP %s); barrido selectivo", ip, status)
         auth = self.client._auth(user, password)
         status, found = self.client.list_aditum_users(ip, user, password, auth=auth)
         if found is None:
-            return {"ip": ip, "status": status, "deleted": [], "failed": None}
+            return {"ip": ip, "status": status, "deleted": 0, "failed": None, "mode": "sweep"}
         deleted, failed = [], []
         for i in range(0, len(found), DELETE_BATCH_SIZE):
             batch = found[i:i + DELETE_BATCH_SIZE]
@@ -760,7 +830,7 @@ class HikvisionService:
                 break
         log.info("Limpieza Hikvision %s: %s usuarios de Aditum borrados, %s fallidos",
                  ip, len(deleted), len(failed))
-        return {"ip": ip, "status": status, "deleted": deleted, "failed": failed}
+        return {"ip": ip, "status": status, "deleted": len(deleted), "failed": len(failed), "mode": "sweep"}
 
     @staticmethod
     def _credential_candidates(learned, employees):
@@ -784,15 +854,15 @@ class HikvisionService:
         return candidates
 
     def cleanup_all(self):
-        """Limpieza nocturna: barre cada terminal conocido con sus credenciales
-        VIGENTES y borra todos los usuarios de Aditum, no solo los del store.
+        """Limpieza nocturna: vacia cada terminal conocido con sus credenciales
+        VIGENTES (UserInfoDetail/Delete mode=all; si el firmware no lo soporta,
+        barrido selectivo de los usuarios de Aditum).
 
-        El store es la lista de lo que este Pi registro; lo que quedo de antes
-        (otro proceso, un sync cortado, el store en memoria de versiones viejas)
-        no esta ahi y era lo que llenaba el terminal hasta que rechazaba altas.
-        Las entradas de un terminal que no se pudo listar (apagado, 401) se
-        conservan para la proxima; un terminal listado queda con las que no se
-        pudieron borrar.
+        El store es la lista de lo que este Pi registro; lo que quedo de antes no
+        esta ahi y era lo que llenaba el terminal hasta que rechazaba altas. Las
+        entradas de un terminal que no se pudo limpiar (apagado, 401) se conservan
+        para la proxima. Devuelve un resultado por terminal:
+        {"ip", "status", "deleted", "failed", "mode"} (failed None = no se pudo).
         """
         snapshot = self.store.snapshot()
         terminals = self.store.terminals()
@@ -811,41 +881,26 @@ class HikvisionService:
                 if swept["failed"] is not None:
                     self.store.remember_terminal(ip, creds["user"], creds["password"])
                 break
-            if swept["failed"] is None:
-                for employee_no in employees:
-                    results.append({"ip": ip, "employeeNo": employee_no, "status": swept["status"]})
-                if employees:
-                    pending[ip] = employees
-                continue
-            for employee_no in swept["deleted"]:
-                results.append({"ip": ip, "employeeNo": employee_no, "status": 200})
-            for employee_no in swept["failed"]:
-                results.append({"ip": ip, "employeeNo": employee_no, "status": swept["status"]})
-                if employee_no in employees:
-                    pending.setdefault(ip, {})[employee_no] = employees[employee_no]
+            results.append(swept)
+            if swept["failed"] is None and employees:
+                pending[ip] = employees
         self.store.replace(pending)
-        failed = sum(len(e) for e in pending.values())
-        deleted = sum(1 for r in results if _ok(r["status"]))
-        log.info("Limpieza Hikvision: %s usuarios borrados, %s pendientes para la proxima",
-                 deleted, failed)
+        kept = sum(len(e) for e in pending.values())
+        log.info("Limpieza Hikvision: %s terminales limpiados, %s con fallo, %s entradas pendientes para la proxima",
+                 sum(1 for r in results if r["failed"] is not None), sum(1 for r in results if r["failed"] is None), kept)
         return results
 
     # ---- limpieza en segundo plano (boton del panel) ----
 
     @staticmethod
     def summarize_cleanup(results):
-        terminals = {}
-        for r in results:
-            t = terminals.setdefault(r["ip"], {"ip": r["ip"], "deleted": 0, "failed": 0, "status": 200})
-            if _ok(r["status"]):
-                t["deleted"] += 1
-            else:
-                t["failed"] += 1
-                t["status"] = r["status"]
+        terminals = [{"ip": r["ip"], "status": r["status"], "mode": r.get("mode"),
+                      "deleted": r.get("deleted") or 0,
+                      "failed": (r.get("failed") if r.get("failed") is not None else 1)} for r in results]
         return {
-            "deleted": sum(t["deleted"] for t in terminals.values()),
-            "failed": sum(t["failed"] for t in terminals.values()),
-            "terminals": list(terminals.values()),
+            "deleted": sum(t["deleted"] for t in terminals),
+            "failed": sum(t["failed"] for t in terminals),
+            "terminals": terminals,
         }
 
     def start_cleanup_async(self):

@@ -526,10 +526,13 @@ sync una vez; el `results[]` sale con `"purged": true`. No más de una purga por
 terminal cada 10 min: cada barrido deja sin tarjeta a los pases vigentes hasta
 su siguiente rotación (≤ 22 s).
 
-**Limpieza nocturna (`hikvision.nightlyCleanupHour`, hora local del Pi).** Lista
-TODOS los usuarios de cada terminal conocido y borra en lotes de 20 (lectura de hasta 30 s por lote) los que son
-de Aditum (nombre `Bienvenido` y `employeeNo` numérico), estén o no en el store
-local; los usuarios de planta con nombre real no se tocan. Usa las credenciales
+**Limpieza nocturna (`hikvision.nightlyCleanupHour`, hora local del Pi).** Vacía
+cada terminal conocido con `UserInfoDetail/Delete` `mode=all` (todos los usuarios
+con sus tarjetas, huellas y caras, **también los cargados a mano en el equipo**),
+espera `DeleteProcess` y reporta el conteo antes/después (`UserInfo/Count`). Si
+el firmware responde 400 a ese modo, cae al barrido selectivo: lista todos los
+usuarios y borra en lotes de 20 (lectura de hasta 30 s por lote) los que son de
+Aditum (nombre `Bienvenido` y `employeeNo` numérico). Usa las credenciales
 vigentes del terminal (las del último sync que autenticó, guardadas en
 `hikvision-cards.json` bajo `__terminals__`), no las que cada entrada traía el
 día que se creó. Un `401`/`403` o un terminal sin respuesta cortan ese terminal
