@@ -61,7 +61,10 @@ class FakeTerminal:
     """Simula el ISAPI de un DS-K1T323: usuarios y tarjetas por employee."""
 
     def __init__(self, users=(), cards=(), auth_ok=True, card_search_status=200,
-                 card_limit=MAX_CARDS_PER_EMPLOYEE, password=None, user_limit=None, staff=()):
+                 card_limit=MAX_CARDS_PER_EMPLOYEE, password=None, user_limit=None, staff=(),
+                 nonce_uses=None):
+        self.nonce_uses = nonce_uses  # el terminal vence el nonce tras N usos del mismo digest
+        self._uses = {}
         self.users = set(users)       # usuarios de Aditum (name "Bienvenido")
         self.staff = set(staff)       # usuarios de planta con nombre real: la limpieza no los toca
         self.cards = list(cards)  # [(employeeNo, cardNo)] en orden de registro
@@ -85,6 +88,10 @@ class FakeTerminal:
         self.auth_objects.add(id(auth))
         if not self.auth_ok or (self.password is not None and getattr(auth, "password", None) != self.password):
             return FakeResponse(401)
+        if self.nonce_uses is not None and auth is not None:
+            self._uses[id(auth)] = self._uses.get(id(auth), 0) + 1
+            if self._uses[id(auth)] > self.nonce_uses:
+                return FakeResponse(401, {"userCheck": {"statusValue": 401, "lockStatus": "unlock"}})
         if path == USER_SEARCH:
             cond = json["UserInfoSearchCond"]
             if "EmployeeNoList" in cond:
@@ -636,7 +643,15 @@ class ParallelAndAuthTests(HikvisionBase):
         self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
         self.service.cleanup_all()
         self.assertEqual(t.users, set())
-        self.assertEqual(len(t.auth_objects), 2)  # el original y el renovado
+        self.assertEqual(rechazos["n"], 1)  # se repitio la pagina con un digest nuevo
+
+    def test_limpieza_completa_aunque_el_terminal_venza_el_nonce_cada_8_usos(self):
+        """Medido en Campo Real .103: 401 en las posiciones 240 y 450 con paginas de 30."""
+        t = self.attach(FakeTerminal(users=[str(i) for i in range(900)], nonce_uses=8))
+        self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
+        self.service.cleanup_all()
+        self.assertEqual(t.users, set())
+        self.assertEqual(self.store.snapshot(), {})
 
     def test_limpieza_401_en_la_primera_pagina_no_renueva(self):
         t = self.attach(FakeTerminal(users=[EMP], password="otra"))

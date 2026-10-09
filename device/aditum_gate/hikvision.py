@@ -296,7 +296,7 @@ class HikvisionClient:
         url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Search?format=json"
         found = []
         position = 0
-        renewed = False
+        renewed_at = None
         try:
             for _ in range(MAX_USER_PAGES):
                 payload = {"UserInfoSearchCond": {
@@ -306,14 +306,16 @@ class HikvisionClient:
                 }}
                 resp = httpclient.isapi_request("POST", url, json=payload,
                                                 auth=auth, timeout=ISAPI_TIMEOUT)
-                if resp.status_code == 401 and position > 0 and not renewed:
+                if resp.status_code == 401 and position > 0 and renewed_at != position:
                     # El digest ya autentico (hubo paginas anteriores): el terminal
-                    # vencio el nonce tras N usos. Se renueva la autenticacion y se
-                    # repite SOLO esta pagina, una vez.
-                    log.warning("Hikvision %s user_list: 401 en la posicion %s tras autenticar; "
-                                "se renueva el digest", ip, position)
+                    # vence el nonce cada ~8 usos (medido: posiciones 240 y 450 con
+                    # paginas de 30). Se renueva la autenticacion y se repite esta
+                    # pagina; a lo sumo una renovacion por pagina, asi un 401 real
+                    # (credenciales) corta en el segundo intento.
+                    log.info("Hikvision %s user_list: nonce vencido en la posicion %s; se renueva el digest",
+                             ip, position)
                     auth = self._auth(user, password)
-                    renewed = True
+                    renewed_at = position
                     continue
                 if resp.status_code != 200:
                     log.warning("Hikvision %s user_list: corte en la posicion %s", ip, position)
@@ -729,7 +731,10 @@ class HikvisionService:
         deleted, failed = [], []
         for i in range(0, len(found), DELETE_BATCH_SIZE):
             batch = found[i:i + DELETE_BATCH_SIZE]
-            st = self.client.delete_users(ip, user, password, batch, auth=auth)
+            # Digest nuevo por lote: el terminal vence el nonce cada ~8 usos y un lote
+            # rechazado por eso se contaria como fallo. Cuesta una ida y vuelta extra
+            # por lote de 50 usuarios: irrelevante.
+            st = self.client.delete_users(ip, user, password, batch)
             if _ok(st):
                 deleted.extend(batch)
                 continue
