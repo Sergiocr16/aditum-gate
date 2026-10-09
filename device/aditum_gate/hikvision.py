@@ -101,6 +101,22 @@ class HikvisionClient:
     def _auth(user, password):
         return HTTPDigestAuth(user, password)
 
+    @staticmethod
+    def _status_of(step, ip, resp):
+        """Status HTTP de una respuesta ISAPI. En un rechazo (no 2xx) deja en el log el
+        cuerpo del terminal (statusString / subStatusCode / errorMsg), que es lo unico
+        que dice POR QUE rechazo: sin eso un 400 en ensure_user es indistinguible de
+        un employeeNo invalido, un usuario duplicado o un campo que el firmware no
+        acepta. El cuerpo de error del Hikvision nunca trae credenciales."""
+        status = resp.status_code
+        if not _ok(status):
+            try:
+                body = (resp.text or "")[:300].replace("\n", " ")
+            except Exception:
+                body = "?"
+            log.warning("Hikvision %s %s: HTTP %s %s", ip, step, status, body)
+        return status
+
     def _auth_or(self, auth, user, password):
         """Reutiliza el HTTPDigestAuth recibido o crea uno (compatibilidad con
         cleanup_all y las llamadas sueltas)."""
@@ -114,7 +130,7 @@ class HikvisionClient:
             payload = {"CardInfoDelCond": {"EmployeeNoList": [{"employeeNo": employee_no}]}}
             resp = httpclient.isapi_request("PUT", url, json=payload,
                                             auth=auth, timeout=ISAPI_TIMEOUT)
-            return resp.status_code
+            return self._status_of("delete_card", ip, resp)
         except Exception as e:
             log.error("Error borrando tarjeta en %s: %s", ip, e)
             return None
@@ -127,7 +143,7 @@ class HikvisionClient:
             payload = {"CardInfoDelCond": {"CardNoList": [{"cardNo": c} for c in card_nos]}}
             resp = httpclient.isapi_request("PUT", url, json=payload,
                                             auth=auth, timeout=ISAPI_TIMEOUT)
-            return resp.status_code
+            return self._status_of("delete_cards", ip, resp)
         except Exception as e:
             log.error("Error borrando tarjetas en %s: %s", ip, e)
             return None
@@ -150,7 +166,7 @@ class HikvisionClient:
             if resp.status_code == 200:
                 data = resp.json()
                 return 200, data.get("UserInfoSearch", {}).get("totalMatches", 0) > 0
-            return resp.status_code, False
+            return self._status_of("user_search", ip, resp), False
         except Exception as e:
             log.error("Error buscando usuario en %s: %s", ip, e)
             return None, False
@@ -177,7 +193,7 @@ class HikvisionClient:
             }
             resp = httpclient.isapi_request("POST", url, json=payload,
                                             auth=auth, timeout=ISAPI_TIMEOUT)
-            return resp.status_code
+            return self._status_of("create_user", ip, resp)
         except Exception as e:
             log.error("Error creando usuario en %s: %s", ip, e)
             return None
@@ -208,7 +224,7 @@ class HikvisionClient:
             }
             resp = httpclient.isapi_request("POST", url, json=payload,
                                             auth=auth, timeout=ISAPI_TIMEOUT)
-            return resp.status_code
+            return self._status_of("register_card", ip, resp)
         except Exception as e:
             log.error("Error registrando tarjeta en %s: %s", ip, e)
             return None
@@ -237,7 +253,7 @@ class HikvisionClient:
                 resp = httpclient.isapi_request("POST", url, json=payload,
                                                 auth=auth, timeout=ISAPI_TIMEOUT)
                 if resp.status_code != 200:
-                    return resp.status_code, None
+                    return self._status_of("search_cards", ip, resp), None
                 data = resp.json().get("CardInfoSearch", {})
                 page = [c.get("cardNo") for c in data.get("CardInfo", []) if c.get("cardNo")]
                 cards.extend(page)
@@ -256,7 +272,7 @@ class HikvisionClient:
             payload = {"UserInfoDelCond": {"EmployeeNoList": [{"employeeNo": employee_no}]}}
             resp = httpclient.isapi_request("PUT", url, json=payload,
                                             auth=auth, timeout=ISAPI_TIMEOUT)
-            return resp.status_code
+            return self._status_of("delete_user", ip, resp)
         except Exception as e:
             log.error("Error borrando usuario en %s: %s", ip, e)
             return None

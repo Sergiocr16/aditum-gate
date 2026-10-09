@@ -45,6 +45,11 @@ class FakeResponse:
         self._body = body if body is not None else {}
 
     @property
+    def text(self):
+        import json as _json
+        return _json.dumps(self._body)
+
+    @property
     def ok(self):
         return 200 <= self.status_code < 300
 
@@ -528,6 +533,30 @@ class ParallelAndAuthTests(HikvisionBase):
                     with self.assertRaises(type(exc)):
                         httpclient.isapi_request("POST", "http://10.0.0.5/ISAPI/x")
                 self.assertEqual(session.request.call_count, 1)
+
+    def test_rechazo_del_terminal_deja_el_cuerpo_en_el_log(self):
+        """Un 400 del Hikvision solo se entiende por su subStatusCode: queda en el WARNING."""
+        t = FakeTerminal()
+        inner = t.request
+
+        def rechaza_usuario(method, url, **kwargs):
+            if USER_RECORD in url:
+                return FakeResponse(400, {"statusCode": 6, "statusString": "Invalid Content",
+                                          "subStatusCode": "employeeNoAlreadyExist"})
+            return inner(method, url, **kwargs)
+
+        patcher = mock.patch.object(hikvision.httpclient, "isapi_request", side_effect=rechaza_usuario)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        logging.disable(logging.NOTSET)  # el modulo silencia el log; aca se necesita leerlo
+        self.addCleanup(logging.disable, logging.CRITICAL)
+        with self.assertLogs("aditum.hikvision", level="WARNING") as cm:
+            r = self.sync(["A"])
+        self.assertEqual(r["errors"], [{"step": "ensure_user", "status": 400}])
+        detalle = [m for m in cm.output if "create_user" in m]
+        self.assertEqual(len(detalle), 1)
+        self.assertIn("HTTP 400", detalle[0])
+        self.assertIn("employeeNoAlreadyExist", detalle[0])
 
     def test_terminal_sin_ip_se_salta_y_no_rompe_el_orden(self):
         t = self.attach(FakeTerminal())
