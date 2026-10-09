@@ -45,6 +45,11 @@ class FakeResponse:
         self._body = body if body is not None else {}
 
     @property
+    def text(self):
+        import json as _json
+        return _json.dumps(self._body)
+
+    @property
     def ok(self):
         return 200 <= self.status_code < 300
 
@@ -56,10 +61,13 @@ class FakeTerminal:
     """Simula el ISAPI de un DS-K1T323: usuarios y tarjetas por employee."""
 
     def __init__(self, users=(), cards=(), auth_ok=True, card_search_status=200,
-                 card_limit=MAX_CARDS_PER_EMPLOYEE):
-        self.users = set(users)
+                 card_limit=MAX_CARDS_PER_EMPLOYEE, password=None, user_limit=None, staff=()):
+        self.users = set(users)       # usuarios de Aditum (name "Bienvenido")
+        self.staff = set(staff)       # usuarios de planta con nombre real: la limpieza no los toca
         self.cards = list(cards)  # [(employeeNo, cardNo)] en orden de registro
         self.auth_ok = auth_ok
+        self.password = password      # None = acepta cualquier contrasena
+        self.user_limit = user_limit  # cuota de usuarios del terminal (None = sin tope)
         self.card_search_status = card_search_status
         self.card_limit = card_limit
         self.calls = []  # (method, path, payload)
@@ -75,12 +83,26 @@ class FakeTerminal:
         path = url.split("/ISAPI/", 1)[1].split("?")[0]
         self.calls.append((method, path, json))
         self.auth_objects.add(id(auth))
-        if not self.auth_ok:
+        if not self.auth_ok or (self.password is not None and getattr(auth, "password", None) != self.password):
             return FakeResponse(401)
         if path == USER_SEARCH:
-            emp = json["UserInfoSearchCond"]["EmployeeNoList"][0]["employeeNo"]
-            return FakeResponse(200, {"UserInfoSearch": {"totalMatches": 1 if emp in self.users else 0}})
+            cond = json["UserInfoSearchCond"]
+            if "EmployeeNoList" in cond:
+                emp = cond["EmployeeNoList"][0]["employeeNo"]
+                return FakeResponse(200, {"UserInfoSearch": {"totalMatches": 1 if emp in self.users else 0}})
+            everyone = sorted(self.users) + sorted(self.staff)
+            pos = cond["searchResultPosition"]
+            page = everyone[pos:pos + cond["maxResults"]]
+            more = pos + len(page) < len(everyone)
+            return FakeResponse(200, {"UserInfoSearch": {
+                "responseStatusStrg": "MORE" if more else ("OK" if page else "NO MATCH"),
+                "numOfMatches": len(page), "totalMatches": len(everyone),
+                "UserInfo": [{"employeeNo": e, "name": "Juan Planta" if e in self.staff else "Bienvenido"}
+                             for e in page],
+            }})
         if path == USER_RECORD:
+            if self.user_limit is not None and len(self.users) + len(self.staff) >= self.user_limit:
+                return FakeResponse(400, {"statusString": "Invalid Content", "subStatusCode": "deviceUserFull"})
             self.users.add(json["UserInfo"]["employeeNo"])
             return FakeResponse(200)
         if path == CARD_SEARCH:
@@ -117,6 +139,7 @@ class FakeTerminal:
         if path == USER_DELETE:
             emps = {e["employeeNo"] for e in json["UserInfoDelCond"]["EmployeeNoList"]}
             self.users -= emps
+            self.staff -= emps
             self.cards = [(e, c) for e, c in self.cards if e not in emps]
             return FakeResponse(200)
         raise AssertionError(f"ISAPI inesperado: {method} {path}")
@@ -529,6 +552,101 @@ class ParallelAndAuthTests(HikvisionBase):
                         httpclient.isapi_request("POST", "http://10.0.0.5/ISAPI/x")
                 self.assertEqual(session.request.call_count, 1)
 
+    def test_rechazo_del_terminal_deja_el_cuerpo_en_el_log(self):
+        """Un 400 del Hikvision solo se entiende por su subStatusCode: queda en el WARNING."""
+        t = FakeTerminal()
+        inner = t.request
+
+        def rechaza_usuario(method, url, **kwargs):
+            if USER_RECORD in url:
+                return FakeResponse(400, {"statusCode": 6, "statusString": "Invalid Content",
+                                          "subStatusCode": "employeeNoAlreadyExist"})
+            return inner(method, url, **kwargs)
+
+        patcher = mock.patch.object(hikvision.httpclient, "isapi_request", side_effect=rechaza_usuario)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        logging.disable(logging.NOTSET)  # el modulo silencia el log; aca se necesita leerlo
+        self.addCleanup(logging.disable, logging.CRITICAL)
+        with self.assertLogs("aditum.hikvision", level="WARNING") as cm:
+            r = self.sync(["A"])
+        self.assertEqual((r["errors"][0]["step"], r["errors"][0]["status"]), ("ensure_user", 400))
+        self.assertIn("employeeNoAlreadyExist", r["errors"][0]["detail"])
+        detalle = [m for m in cm.output if "create_user" in m]
+        self.assertEqual(len(detalle), 1)
+        self.assertIn("HTTP 400", detalle[0])
+        self.assertIn("employeeNoAlreadyExist", detalle[0])
+
+    def test_limpieza_barre_todo_lo_de_aditum_con_credenciales_vigentes(self):
+        """El store trae la contrasena vieja de cada entrada y ni siquiera conoce a los
+        huerfanos de antes; la limpieza lista el terminal con la vigente y borra todo
+        lo que es de Aditum, sin tocar a los usuarios de planta."""
+        t = self.attach(FakeTerminal(users=[EMP, "10991594", "11049651"], staff=["777"], password="secreto"))
+        self.store.add(TERMINAL["ip"], "10991594", "admin", "vieja")   # entrada vieja, contrasena vieja
+        self.sync(["A"])  # autentica con "secreto": queda como credencial vigente
+        results = self.service.cleanup_all()
+
+        self.assertEqual(t.users, set())
+        self.assertEqual(t.staff, {"777"})
+        self.assertEqual({r["employeeNo"] for r in results if r["status"] == 200}, {EMP, "10991594", "11049651"})
+        self.assertEqual(self.store.snapshot(), {})
+        self.assertEqual(self.store.terminals(), {TERMINAL["ip"]: {"user": "admin", "password": "secreto"}})
+        # un solo listado (3 usuarios caben en una pagina) + un borrado en lote
+        self.assertEqual(t.paths().count(USER_DELETE), 1)
+
+    def test_limpieza_borra_en_lotes(self):
+        t = self.attach(FakeTerminal(users=[str(i) for i in range(120)]))
+        self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
+        self.service.cleanup_all()
+        self.assertEqual(t.users, set())
+        self.assertEqual(t.paths().count(USER_DELETE), 3)  # 50 + 50 + 20
+        self.assertEqual(t.paths().count(USER_SEARCH), 4)  # 4 paginas de 30
+
+    def test_limpieza_con_credenciales_rechazadas_no_insiste(self):
+        """Antes: un delete_user por entrada (4917 logins fallidos por noche contra un
+        terminal con la contrasena cambiada). Ahora: un 401 y se corta."""
+        t = self.attach(FakeTerminal(users=[EMP], password="nueva"))
+        for emp in (EMP, "10991594", "11049651"):
+            self.store.add(TERMINAL["ip"], emp, "admin", "vieja")
+        self.service.cleanup_all()
+        self.assertEqual(len(t.calls), 1)
+        self.assertEqual(t.users, {EMP})
+        self.assertEqual(set(self.store.snapshot()[TERMINAL["ip"]]), {EMP, "10991594", "11049651"})
+
+    def test_terminal_lleno_dispara_purga_y_reintenta(self):
+        t = self.attach(FakeTerminal(users=["10000001", "10000002"], staff=["777"], user_limit=3))
+        r = self.sync(["A"])
+
+        self.assertEqual(r["status"], 200)
+        self.assertEqual(r["registered"], ["A"])
+        self.assertTrue(r.get("purged"))
+        self.assertEqual(t.users, {EMP})     # los huerfanos de Aditum se fueron
+        self.assertEqual(t.staff, {"777"})   # el de planta sigue
+        # dentro del intervalo no se vuelve a purgar: el siguiente lleno queda como error
+        t.users.update({"10000003", "10000004"})
+        r2 = self.service.update_card(card_no="B", employee_no="99", terminals=[TERMINAL], card_nos=["B"])[0]
+        self.assertEqual(r2["status"], 400)
+        self.assertEqual(r2["errors"][0]["step"], "ensure_user")
+        self.assertIn("deviceUserFull", r2["errors"][0]["detail"])
+        self.assertNotIn("purged", r2)
+
+    def test_un_400_que_no_es_lleno_no_purga(self):
+        t = FakeTerminal()
+        inner = t.request
+
+        def rechaza(method, url, **kwargs):
+            if USER_RECORD in url:
+                return FakeResponse(400, {"statusString": "Invalid Content", "subStatusCode": "badParameters"})
+            return inner(method, url, **kwargs)
+
+        patcher = mock.patch.object(hikvision.httpclient, "isapi_request", side_effect=rechaza)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        r = self.sync(["A"])
+        self.assertEqual(r["status"], 400)
+        self.assertNotIn(USER_DELETE, t.paths())
+        self.assertIn("badParameters", r["errors"][0]["detail"])
+
     def test_terminal_sin_ip_se_salta_y_no_rompe_el_orden(self):
         t = self.attach(FakeTerminal())
         results = self.service.update_card(card_no="A", employee_no=EMP,
@@ -573,6 +691,22 @@ class UpdateCardEndpointTests(HikvisionBase):
                          [{"ip": TERMINAL["ip"], "status": 200, "employeeNo": EMP,
                            "registered": ["A", "B", "C"], "deleted": [], "errors": []}])
         self.assertEqual(t.cards_of(EMP), ["A", "B", "C"])
+
+    def test_cleanup_cards_barre_y_resume_por_lector(self):
+        t = self.attach(FakeTerminal(users=["10000001", "10000002"], staff=["777"]))
+        self.store.remember_terminal(TERMINAL["ip"], "admin", "secreto")
+
+        resp = self.client.post("/cleanup-cards")
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["summary"]["deleted"], 2)
+        self.assertEqual(body["summary"]["failed"], 0)
+        self.assertEqual(body["summary"]["terminals"],
+                         [{"ip": TERMINAL["ip"], "deleted": 2, "failed": 0, "status": 200}])
+        self.assertIsInstance(body["summary"]["elapsedMs"], int)
+        self.assertEqual(t.users, set())
+        self.assertEqual(t.staff, {"777"})
 
     def test_payload_legacy_sin_cardnos(self):
         t = self.attach(FakeTerminal(users=[EMP], cards=[(EMP, "X")]))

@@ -514,7 +514,28 @@ Respuesta:
 error es `{"step": "ensure_user" | "search_cards" | "register_card" |
 "delete_cards" | "auth_cooldown" | "internal", "status": <http|null>, ...}`
 (con `cardNo` o `cardNos` según el paso; `retryAfterSeconds` en
-`auth_cooldown`).
+`auth_cooldown`). Cuando el terminal rechazó con un cuerpo ISAPI, el error trae
+además `detail` (hasta 300 chars: `statusString` / `subStatusCode`), que es lo
+único que dice el motivo (`deviceUserFull`, `employeeNoAlreadyExist`, …); el
+mismo texto queda en el log del Pi. Nunca incluye credenciales.
+
+**Terminal lleno.** Si el alta del usuario responde `400` con un `detail` que
+contiene `full` (cuota de usuarios o tarjetas agotada), el Pi barre en el acto
+los usuarios de Aditum de ese terminal (ver limpieza nocturna) y reintenta el
+sync una vez; el `results[]` sale con `"purged": true`. No más de una purga por
+terminal cada 10 min: cada barrido deja sin tarjeta a los pases vigentes hasta
+su siguiente rotación (≤ 22 s).
+
+**Limpieza nocturna (`hikvision.nightlyCleanupHour`, hora local del Pi).** Lista
+TODOS los usuarios de cada terminal conocido y borra en lotes de 50 los que son
+de Aditum (nombre `Bienvenido` y `employeeNo` numérico), estén o no en el store
+local; los usuarios de planta con nombre real no se tocan. Usa las credenciales
+vigentes del terminal (las del último sync que autenticó, guardadas en
+`hikvision-cards.json` bajo `__terminals__`), no las que cada entrada traía el
+día que se creó. Un `401`/`403` o un terminal sin respuesta cortan ese terminal
+en el acto (antes se intentaba un borrado por entrada: miles de logins fallidos
+por noche contra un lector con la contraseña cambiada) y sus entradas quedan
+para la próxima.
 
 `elapsedMs` (entero, milisegundos) viene en dos niveles: el de la raíz es el
 tiempo total que tardó el Pi en atender el `POST` (terminales en paralelo); el

@@ -777,7 +777,11 @@
       <div class="field" style="margin-top:16px; max-width:220px">
         <label for="f_hikHour">Hora de limpieza nocturna <span class="muted">(0–23)</span> <span class="key">nightlyCleanupHour</span></label>
         <input type="number" id="f_hikHour" min="0" max="23" value="2">
-        <div class="hint">Hora a la que se ejecuta la limpieza diaria en los terminales.</div>
+        <div class="hint">Hora a la que se ejecuta la limpieza diaria en los terminales (hora local del equipo).</div>
+      </div>
+      <div class="row" style="margin-top:14px; align-items:center; gap:12px">
+        <button class="sec sm danger" id="btnHikCleanup" type="button">Limpiar lectores ahora</button>
+        <span class="hint" id="hikCleanupMsg">Borra en cada lector los usuarios creados por Aditum (invitaciones y residentes). Los usuarios de planta no se tocan.</span>
       </div>
     </div>
 
@@ -873,6 +877,19 @@
   </div>
 </div>
 
+<div class="modal-back" id="hikCleanModal" hidden>
+  <div class="modal">
+    <h3>Limpiar lectores Hikvision</h3>
+    <p>Se borran en cada lector <b>todos los usuarios creados por Aditum</b> (nombre "Bienvenido":
+       invitaciones y residentes) con sus tarjetas. Los usuarios de planta con nombre real no se tocan.
+       Un pase que esté en uso se vuelve a registrar solo en su siguiente cambio de código (menos de
+       22 s). Puede tardar hasta un minuto si el lector tiene miles de usuarios.</p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="sec sm" id="btnHikCleanCancel" type="button">Cancelar</button>
+      <button class="sec sm danger" id="btnHikCleanConfirm" type="button">Sí, limpiar lectores</button>
+    </div>
+  </div>
+</div>
 <div class="modal-back" id="clearModal" hidden>
   <div class="modal">
     <h3>Borrar lecturas pendientes</h3>
@@ -2233,6 +2250,33 @@
       loadAnprStatus();
     } catch (e) {
       show('err', 'No se pudo borrar: ' + (e.message || e));
+    } finally {
+      b.disabled = false; b.textContent = orig;
+    }
+  });
+  $('btnHikCleanup').addEventListener('click', () => { $('hikCleanModal').hidden = false; });
+  $('btnHikCleanCancel').addEventListener('click', () => { $('hikCleanModal').hidden = true; });
+  $('hikCleanModal').addEventListener('click', (e) => { if (e.target === $('hikCleanModal')) $('hikCleanModal').hidden = true; });
+  $('btnHikCleanConfirm').addEventListener('click', async () => {
+    $('hikCleanModal').hidden = true;
+    const b = $('btnHikCleanup'), orig = b.textContent;
+    b.disabled = true; b.textContent = 'Limpiando…';
+    $('hikCleanupMsg').textContent = 'Listando y borrando usuarios en cada lector…';
+    try {
+      const r = await fetch('/cleanup-cards', fetchOpts({ method: 'POST' }));
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      const s = d.summary || {};
+      const porLector = (s.terminals || []).map((t) =>
+        t.ip + ': ' + t.deleted + ' borrado(s)' + (t.failed ? ', ' + t.failed + ' fallido(s) (HTTP ' + (t.status === null ? 'sin respuesta' : t.status) + ')' : '')
+      ).join(' · ');
+      const texto = (s.deleted || 0) + ' usuario(s) borrado(s)' + (s.failed ? ', ' + s.failed + ' fallido(s)' : '')
+        + ' en ' + ((s.elapsedMs || 0) / 1000).toFixed(1) + ' s' + (porLector ? ' — ' + porLector : '');
+      $('hikCleanupMsg').textContent = texto;
+      show(s.failed ? 'err' : 'ok', texto);
+    } catch (e) {
+      $('hikCleanupMsg').textContent = 'No se pudo limpiar: ' + (e.message || e);
+      show('err', 'No se pudo limpiar: ' + (e.message || e));
     } finally {
       b.disabled = false; b.textContent = orig;
     }
