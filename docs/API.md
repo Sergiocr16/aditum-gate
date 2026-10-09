@@ -527,7 +527,7 @@ terminal cada 10 min: cada barrido deja sin tarjeta a los pases vigentes hasta
 su siguiente rotación (≤ 22 s).
 
 **Limpieza nocturna (`hikvision.nightlyCleanupHour`, hora local del Pi).** Lista
-TODOS los usuarios de cada terminal conocido y borra en lotes de 50 los que son
+TODOS los usuarios de cada terminal conocido y borra en lotes de 20 (lectura de hasta 30 s por lote) los que son
 de Aditum (nombre `Bienvenido` y `employeeNo` numérico), estén o no en el store
 local; los usuarios de planta con nombre real no se tocan. Usa las credenciales
 vigentes del terminal (las del último sync que autenticó, guardadas en

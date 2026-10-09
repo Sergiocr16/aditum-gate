@@ -464,28 +464,21 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         # borra en cada terminal conocido todos los usuarios de Aditum (nombre
         # "Bienvenido"), no los de planta. Los pases vigentes se re-registran
         # solos en su siguiente rotacion (<= 22 s).
+        # Corre en segundo plano: un lector con miles de usuarios tarda mas que el
+        # timeout del proxy. 202 al arrancar, 409 si ya hay uno; el avance se
+        # consulta con GET /cleanup-cards.
         if hikvision_service is None:
             return jsonify({"error": "Hikvision deshabilitado en este dispositivo"}), 400
-        started = time.perf_counter()
-        results = hikvision_service.cleanup_all()
-        terminals = {}
-        for r in results:
-            t = terminals.setdefault(r["ip"], {"ip": r["ip"], "deleted": 0, "failed": 0, "status": 200})
-            if r["status"] is not None and 200 <= r["status"] < 300:
-                t["deleted"] += 1
-            else:
-                t["failed"] += 1
-                t["status"] = r["status"]
-        log.warning("Limpieza Hikvision manual via /cleanup-cards: %s", list(terminals.values()))
-        return jsonify({
-            "results": results,
-            "summary": {
-                "deleted": sum(t["deleted"] for t in terminals.values()),
-                "failed": sum(t["failed"] for t in terminals.values()),
-                "terminals": list(terminals.values()),
-                "elapsedMs": int((time.perf_counter() - started) * 1000),
-            },
-        })
+        if not hikvision_service.start_cleanup_async():
+            return jsonify(dict(hikvision_service.cleanup_status(), error="ya hay una limpieza en curso")), 409
+        log.warning("Limpieza Hikvision manual iniciada via /cleanup-cards")
+        return jsonify(hikvision_service.cleanup_status()), 202
+
+    @app.route("/cleanup-cards")
+    def cleanup_cards_status():
+        if hikvision_service is None:
+            return jsonify({"error": "Hikvision deshabilitado en este dispositivo"}), 400
+        return jsonify(hikvision_service.cleanup_status())
 
     # ------------------------------------------------------------
     # ANPR local-first (TAR-1034/TAR-1035): la lista de placas vive en la

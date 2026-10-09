@@ -56,6 +56,9 @@ from .settings import CARD_STORE_FILE
 log = logging.getLogger("aditum.hikvision")
 
 ISAPI_TIMEOUT = (3, 5)
+# Borrar un lote de usuarios con sus tarjetas tarda mas que una ISAPI normal (medido:
+# un lote de 50 no respondia en 5 s). Lotes chicos y lectura larga.
+DELETE_TIMEOUT = (3, 30)
 
 # Tope de tarjetas vivas por persona en un terminal (modo ventanas): se
 # conservan las primeras de cardNos (vigente + siguientes) y se poda el resto.
@@ -78,7 +81,7 @@ AUTH_COOLDOWN_SECONDS = 300
 ADITUM_USER_NAME = "Bienvenido"
 USER_PAGE_SIZE = 30
 MAX_USER_PAGES = 1000          # 30 000 usuarios: muy por encima de cualquier terminal
-DELETE_BATCH_SIZE = 50
+DELETE_BATCH_SIZE = 20
 # Si un alta responde "lleno", se barre el terminal en el acto y se reintenta; no mas
 # de una vez por terminal en este lapso (cada barrido corta las tarjetas vigentes
 # hasta la siguiente rotacion de cada pase).
@@ -342,7 +345,7 @@ class HikvisionClient:
             url = f"http://{ip}/ISAPI/AccessControl/UserInfo/Delete?format=json"
             payload = {"UserInfoDelCond": {"EmployeeNoList": [{"employeeNo": e} for e in employee_nos]}}
             resp = httpclient.isapi_request("PUT", url, json=payload,
-                                            auth=auth, timeout=ISAPI_TIMEOUT)
+                                            auth=auth, timeout=DELETE_TIMEOUT)
             return self._status_of("delete_users", ip, resp)
         except Exception as e:
             log.error("Error borrando usuarios en %s: %s", ip, e)
@@ -557,6 +560,10 @@ class HikvisionService:
         self._auth_lock = threading.Lock()
         self._sync_locks = {}  # (ip, employee_no) -> Lock: un sync a la vez por par
         self._purged_at = {}   # ip -> time.monotonic() de la ultima purga de emergencia
+        self._cleanup_locks = {}  # ip -> Lock: un barrido a la vez por terminal
+        self._cleanup_state_lock = threading.Lock()
+        self._cleanup_thread = None
+        self.last_cleanup = None  # {"startedAt", "finishedAt", "summary", "results"}
 
     # ---- cooldown de autenticacion por IP + credencial ----
 
@@ -724,6 +731,14 @@ class HikvisionService:
         {"status", "deleted": [...], "failed": [...] | None}; failed None = no se
         pudo listar (nada se borro). Un 401/403 corta en el acto: insistir solo
         suma intentos al bloqueo por login ilegal del terminal."""
+        with self._cleanup_state_lock:
+            lock = self._cleanup_locks.setdefault(ip, threading.Lock())
+        # Un barrido a la vez por terminal: la limpieza manual y las purgas de
+        # emergencia de cada pase abierto se pisaban listando el mismo lector.
+        with lock:
+            return self._sweep_terminal(ip, user, password)
+
+    def _sweep_terminal(self, ip, user, password):
         auth = self.client._auth(user, password)
         status, found = self.client.list_aditum_users(ip, user, password, auth=auth)
         if found is None:
@@ -814,6 +829,60 @@ class HikvisionService:
         log.info("Limpieza Hikvision: %s usuarios borrados, %s pendientes para la proxima",
                  deleted, failed)
         return results
+
+    # ---- limpieza en segundo plano (boton del panel) ----
+
+    @staticmethod
+    def summarize_cleanup(results):
+        terminals = {}
+        for r in results:
+            t = terminals.setdefault(r["ip"], {"ip": r["ip"], "deleted": 0, "failed": 0, "status": 200})
+            if _ok(r["status"]):
+                t["deleted"] += 1
+            else:
+                t["failed"] += 1
+                t["status"] = r["status"]
+        return {
+            "deleted": sum(t["deleted"] for t in terminals.values()),
+            "failed": sum(t["failed"] for t in terminals.values()),
+            "terminals": list(terminals.values()),
+        }
+
+    def start_cleanup_async(self):
+        """Lanza cleanup_all en un hilo. False si ya hay uno corriendo. El panel
+        consulta cleanup_status(): un barrido de miles de usuarios tarda mas que
+        el timeout del proxy y que la paciencia del healthcheck."""
+        with self._cleanup_state_lock:
+            if self._cleanup_thread is not None and self._cleanup_thread.is_alive():
+                return False
+            self.last_cleanup = {"startedAt": time.time(), "finishedAt": None, "summary": None}
+            self._cleanup_thread = threading.Thread(target=self._run_cleanup_async,
+                                                    name="hikvision-cleanup-manual", daemon=True)
+            self._cleanup_thread.start()
+            return True
+
+    def _run_cleanup_async(self):
+        started = time.perf_counter()
+        try:
+            results = self.cleanup_all()
+            summary = self.summarize_cleanup(results)
+        except Exception as e:
+            log.exception("Fallo la limpieza manual")
+            summary = {"deleted": 0, "failed": 0, "terminals": [], "error": str(e)}
+        summary["elapsedMs"] = int((time.perf_counter() - started) * 1000)
+        log.warning("Limpieza Hikvision manual: %s", summary["terminals"] or summary.get("error"))
+        with self._cleanup_state_lock:
+            self.last_cleanup = dict(self.last_cleanup or {}, finishedAt=time.time(), summary=summary)
+
+    def cleanup_status(self):
+        with self._cleanup_state_lock:
+            running = self._cleanup_thread is not None and self._cleanup_thread.is_alive()
+            return {"running": running, "last": self.last_cleanup}
+
+    def wait_cleanup(self, timeout=30):
+        thread = self._cleanup_thread
+        if thread is not None:
+            thread.join(timeout)
 
     def start_nightly_cleanup(self):
         thread = threading.Thread(target=self._nightly_loop,
