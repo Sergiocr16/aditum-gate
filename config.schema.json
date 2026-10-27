@@ -66,7 +66,21 @@
             "properties": {
               "id": { "type": "integer", "minimum": 1 },
               "pin": { "type": "integer", "minimum": 1 },
-              "normallyOpen": { "type": "boolean", "default": true }
+              "normallyOpen": { "type": "boolean", "default": true },
+              "linkedGates": {
+                "description": "Portones que se abren solos despues de este: al abrirlo, cada uno se pulsa delaySeconds despues (aguja + porton, etc.). gateId debe ser otro porton de esta lista; no encadena (los linked del linked no se siguen).",
+                "type": "array",
+                "default": [],
+                "items": {
+                  "type": "object",
+                  "required": ["gateId", "delaySeconds"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "gateId": { "type": "integer", "minimum": 1 },
+                    "delaySeconds": { "type": "number", "minimum": 0, "maximum": 300 }
+                  }
+                }
+              }
             }
           }
         },

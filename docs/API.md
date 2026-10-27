@@ -402,7 +402,7 @@ con el viejo lo delatan en `GET /status` y en `scripts/doctor.sh`.
 |---|---|---|
 | `/openGate/<id>` | GET | `{"id": 1, "status": 0}` — pulso de apertura (1 s) |
 | `/closeGate/<id>` | GET | `{"id": 1, "status": 0}` |
-| `/gateStatus` | GET | `[{"id":1,"pin":7,"normallyOpen":true,"status":0}, ...]` |
+| `/gateStatus` | GET | `[{"id":1,"pin":7,"normallyOpen":true,"linkedGates":[],"status":0}, ...]` |
 | `/gateStatus/<id>` | GET | `{"value": 1}` |
 
 Portón inexistente → `404 {"error": "..."}`.
@@ -414,6 +414,30 @@ contrato del shape sigue siendo `config.schema.json`). `openGate` pulsa el
 `normallyOpen: false`; `closeGate` vuelve el relé a reposo en ambos casos.
 `/gateStatus/<id>.value` es el nivel **físico** crudo del pin: en un portón
 normalmente cerrado el reposo lee `0`.
+
+**Portones relacionados** (`gpio.gates[].linkedGates`, editable en el /admin
+como "pines relacionados"): para instalaciones donde una apertura dispara
+más de un relé (aguja + portón, dos hojas, etc.). Cada entrada es
+`{"gateId": <otro portón de la lista>, "delaySeconds": 0–300}`:
+
+```json
+"gates": [
+  { "id": 1, "pin": 7, "linkedGates": [ { "gateId": 2, "delaySeconds": 3 } ] },
+  { "id": 2, "pin": 11 }
+]
+```
+
+- `GET /openGate/1` pulsa el portón 1 y **responde de inmediato**; el
+  portón 2 se pulsa solo 3 s después (contados desde el disparo del 1), en
+  un timer del equipo. La respuesta no refleja a los relacionados.
+- **No encadena**: los relacionados del portón relacionado no se siguen
+  (evita ciclos). Para 1 → 2 → 3, declarar 2 y 3 como relacionados de 1
+  con `delaySeconds` crecientes.
+- `GET /openGate/2` directo abre solo el 2: la relación es en un sentido.
+- Un `gateId` inexistente o igual al propio se ignora con ERROR en el log
+  (el portón principal sigue abriendo); el /admin lo rechaza al guardar.
+- Un reinicio del proceso (`/restart`, nueva config) cancela los timers
+  pendientes.
 
 > **Reintentos**: `GET /openGate/<id>` NO es idempotente (cada llamada
 > re-pulsa el relay). Usar timeout de 5 s y **no** reintentar a ciegas.
