@@ -182,6 +182,11 @@
   .list-item .grow{ flex:1 1 140px; }
   .list-item .check{ background:transparent; border:0; padding:0; min-height:0; }
   .list-item .check input[type=checkbox]{ order:0; margin-left:0; }
+  .g-links{ flex:1 1 100%; border-top:1px dashed var(--line); padding-top:10px; margin-top:4px; }
+  .g-links .hint{ margin:0 0 8px; }
+  .link-item{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px; }
+  .link-item .field{ margin-bottom:0; }
+  .link-item .arrow{ align-self:center; color:var(--mut); font-size:13px; padding-bottom:2px; }
 
   /* ---------- Buttons ---------- */
   button{
@@ -504,7 +509,9 @@
           <p class="hint" style="margin:0 0 10px"><b>id</b>: número del portón en el sistema ·
             <b>pin</b>: número físico del conector (BOARD) que dispara su relé.
             El pulso de apertura es de 1&nbsp;segundo ·
-            <b>relé</b>: normalmente abierto (default: reposo en alto, pulso a bajo) o normalmente cerrado (invertido).</p>
+            <b>relé</b>: normalmente abierto (default: reposo en alto, pulso a bajo) o normalmente cerrado (invertido) ·
+            <b>pines relacionados</b>: otros portones de esta lista que se abren solos N segundos después de este
+            (p. ej. aguja y portón). No encadenan: si querés 1 → 2 → 3, agregá 2 y 3 como relacionados de 1 con segundos crecientes.</p>
           <div id="gatesList"></div>
           <button class="sec sm" id="btnAddGate" type="button">+ Agregar portón</button>
         </div>
@@ -1050,7 +1057,7 @@
     setVal('f_logo', screen.clientLogoUrl || '');
 
     // GPIO
-    gatesState = clone(gpio.gates || []);
+    gatesState = clone(gpio.gates || []).map((g) => ({ ...g, linkedGates: g.linkedGates || [] }));
     renderGates();
     setChk('f_npEnabled', np.enabled);
     (function () {
@@ -1239,13 +1246,59 @@
         '<option value="1">Normalmente abierto</option>' +
         '<option value="0">Normalmente cerrado</option>' +
         '</select></div>' +
-        '<div class="field"><button type="button" class="sec sm danger g-del">Quitar</button></div>';
+        '<div class="field"><button type="button" class="sec sm danger g-del">Quitar</button></div>' +
+        '<div class="g-links"><div class="hint"><b>Pines relacionados</b> <span class="key">linkedGates</span>: al abrir este portón, se abren también estos, cada uno N segundos después.</div>' +
+        '<div class="g-links-list"></div>' +
+        '<button type="button" class="sec sm g-link-add">+ Agregar pin relacionado</button></div>';
       row.querySelector('.g-id').value = (g.id !== undefined ? g.id : i + 1);
       row.querySelector('.g-pin').value = String(g.pin !== undefined ? g.pin : 7);
       row.querySelector('.g-no').value = (g.normallyOpen === false ? '0' : '1');
       row.querySelector('.g-del').addEventListener('click', () => { syncGatesFromDOM(); gatesState.splice(i, 1); renderGates(); });
+      // Cambiar el id de un portón re-etiqueta los selects de relacionados de los demás
+      row.querySelector('.g-id').addEventListener('change', () => { syncGatesFromDOM(); renderGates(); });
+      row.querySelector('.g-link-add').addEventListener('click', () => addLinkedGate(i));
+      renderLinkedGates(row, g, i);
       list.appendChild(row);
     });
+  }
+
+  // Candidatos a relacionado: los otros portones de la lista (por id), tal
+  // como están ahora en gatesState. Un gateId que ya no existe se muestra
+  // marcado para que el usuario lo corrija (la validación lo rechaza).
+  function renderLinkedGates(row, g, gateIdx) {
+    const list = row.querySelector('.g-links-list');
+    list.innerHTML = '';
+    const ownId = toInt(g.id, gateIdx + 1);
+    const others = gatesState.filter((x, j) => j !== gateIdx && x.id !== ownId);
+    (g.linkedGates || []).forEach((lk, k) => {
+      const item = document.createElement('div');
+      item.className = 'link-item';
+      const known = others.some((x) => x.id === lk.gateId);
+      item.innerHTML =
+        '<span class="arrow">#' + ownId + ' abre →</span>' +
+        '<div class="field"><label>portón</label><select class="lk-gate" style="max-width:170px">' +
+        others.map((x) => '<option value="' + x.id + '">#' + x.id + ' (pin ' + x.pin + ')</option>').join('') +
+        (known || lk.gateId === undefined ? '' : '<option value="' + lk.gateId + '">#' + lk.gateId + ' (no existe)</option>') +
+        '</select></div>' +
+        '<div class="field"><label>segundos después</label><input type="number" class="lk-delay" min="0" max="300" step="0.5" style="max-width:130px"></div>' +
+        '<div class="field"><button type="button" class="sec sm danger lk-del">Quitar</button></div>';
+      if (lk.gateId !== undefined) item.querySelector('.lk-gate').value = String(lk.gateId);
+      item.querySelector('.lk-delay').value = (lk.delaySeconds !== undefined ? lk.delaySeconds : 3);
+      item.querySelector('.lk-del').addEventListener('click', () => {
+        syncGatesFromDOM(); gatesState[gateIdx].linkedGates.splice(k, 1); renderGates();
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function addLinkedGate(gateIdx) {
+    syncGatesFromDOM();
+    const g = gatesState[gateIdx];
+    const used = g.linkedGates.map((lk) => lk.gateId);
+    const candidate = gatesState.find((x, j) => j !== gateIdx && x.id !== g.id && !used.includes(x.id));
+    if (!candidate) { show('warn', 'No hay otro portón para relacionar: agregá primero otro portón a la lista.'); return; }
+    g.linkedGates.push({ gateId: candidate.id, delaySeconds: 3 });
+    renderGates();
   }
 
   function syncGatesFromDOM() {
@@ -1254,6 +1307,10 @@
       id: toInt(row.querySelector('.g-id').value, 1),
       pin: toInt(row.querySelector('.g-pin').value, 7),
       normallyOpen: row.querySelector('.g-no').value !== '0',
+      linkedGates: [...row.querySelectorAll('.link-item')].map((item) => ({
+        gateId: toInt(item.querySelector('.lk-gate').value, 0),
+        delaySeconds: Number(item.querySelector('.lk-delay').value),
+      })),
     }));
   }
 
@@ -1593,7 +1650,7 @@
     const nextId = gatesState.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
     const used = gatesState.map((g) => g.pin);
     const pin = DEFAULT_GATE_PINS.find((p) => !used.includes(p)) || GPIO_PINS.find((p) => !used.includes(p)) || 7;
-    gatesState.push({ id: nextId, pin: pin, normallyOpen: true });
+    gatesState.push({ id: nextId, pin: pin, normallyOpen: true, linkedGates: [] });
     renderGates();
   }
 
@@ -1624,6 +1681,10 @@
       const g = gates.map((x) => '#' + x.id + ' (pin ' + x.pin + ')').join(', ');
       p.push('Controla <strong>' + gates.length + (gates.length === 1 ? ' portón' : ' portones') +
              '</strong>: ' + g + ', con pulso de apertura de 1 segundo.');
+      const links = [];
+      gates.forEach((x) => (x.linkedGates || []).forEach((lk) =>
+        links.push('#' + x.id + ' abre #' + lk.gateId + ' ' + lk.delaySeconds + ' s después')));
+      if (links.length) p.push('Portones relacionados: ' + links.join('; ') + '.');
     }
 
     if (scanners.length) {
@@ -1755,7 +1816,12 @@
     cfg.gpio = {
       enabled: hasGates,
       mode: 'BOARD',
-      gates: hasGates ? clone(gatesState) : [],
+      // linkedGates solo si hay: una config sin relaciones conserva la forma
+      // previa (un equipo con schema viejo rechaza claves desconocidas).
+      gates: hasGates ? clone(gatesState).map((g) => {
+        if (!g.linkedGates || !g.linkedGates.length) delete g.linkedGates;
+        return g;
+      }) : [],
       pulseSeconds: 1,
       neopixel: {
         enabled: isPedestal && $('f_npEnabled').checked,
@@ -1803,7 +1869,18 @@
     (cfg.gpio.gates || []).forEach((g, i) => {
       if (!Number.isInteger(g.id) || g.id < 1) errs.push('Portón ' + (i + 1) + ': id debe ser entero ≥ 1');
       if (!GPIO_PINS.includes(g.pin)) errs.push('Portón ' + (i + 1) + ': pin ' + g.pin + ' no es un GPIO válido (es alimentación/tierra)');
+      const seen = [];
+      (g.linkedGates || []).forEach((lk) => {
+        if (lk.gateId === g.id) errs.push('Portón #' + g.id + ': un portón no puede relacionarse consigo mismo');
+        else if (!cfg.gpio.gates.some((x) => x.id === lk.gateId)) errs.push('Portón #' + g.id + ': el portón relacionado #' + lk.gateId + ' no existe en la lista');
+        if (seen.includes(lk.gateId)) errs.push('Portón #' + g.id + ': el portón relacionado #' + lk.gateId + ' está repetido');
+        seen.push(lk.gateId);
+        if (!(Number.isFinite(lk.delaySeconds) && lk.delaySeconds >= 0 && lk.delaySeconds <= 300))
+          errs.push('Portón #' + g.id + ' → #' + lk.gateId + ': los segundos deben estar entre 0 y 300');
+      });
     });
+    const gateIds = (cfg.gpio.gates || []).map((g) => g.id);
+    if (new Set(gateIds).size !== gateIds.length) errs.push('Hay portones con el mismo id: cada portón necesita un id distinto');
     if (cfg.gpio.enabled && (cfg.gpio.gates || []).length === 0) errs.push('El equipo controla portones pero no agregaste ninguno');
     if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
     if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
