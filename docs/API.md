@@ -648,6 +648,24 @@ inexistente `200` con `"not_found_noop"`. El backend recalcula el estado
 deseado contra la base antes de despachar, así que reintentar nunca es
 incorrecto.
 
+**Tiempos contra listas grandes.** Tanto `/sync-plates` como `/update-plate`
+mueven la lista **completa** (export + import), y la cámara tarda ~2 ms/placa
+en generar el export y más de 4 ms/placa en el import (una iDS-2CD7A46G0 con
+2655 placas: export ~7 s, import > 12 s). El Pi espera el export hasta 30 s y
+el import `4 s + 10 ms × placas` (mínimo 12 s, máximo 120 s): con 2655 placas
+~30 s, así que el request entero puede tardar **~40 s**. El backend tiene que
+esperar **más que eso**: read-timeout de `/sync-plates` ≥ 60 s en un
+`RestTemplate` dedicado (con los 15 s anteriores el Pi devolvía
+`CAMERA_TIMEOUT`/504 y el sync nunca se daba por bueno, aunque la cámara
+sí terminaba de aplicar la lista por su cuenta). En `/update-plate` el
+`RestTemplate` de 5 s vence **antes** de que el Pi termine; el Pi igual completa
+la escritura y el reintento del backend cae en el no-op idempotente. Es decir:
+un `504`/timeout del lado del backend en una cámara con miles de placas no
+significa que la placa no quedó cargada; el reintento lo confirma. Para evitar
+el falso fallo, subir también ese read-timeout. Las operaciones contra una
+misma cámara se **serializan** en el Pi (lock por IP): dos read-modify-write
+solapados se pisarían y perderían una placa.
+
 **Códigos que devuelve el Pi** (el backend solo mira el HTTP: `2xx` = éxito,
 cualquier otra cosa = fallo reintentable):
 
@@ -954,9 +972,14 @@ autorizada. `group` es `allowlist` (grupo `1` del CSV), `blacklist` (`0`) o el
 valor crudo si el firmware usa otro. `total` es cuántas placas tiene la cámara,
 para dar contexto a un `found: false`.
 
-Las dos consultas usan el timeout largo del export (`ISAPI_SYNC_TIMEOUT`): la
-lista completa de una cámara con miles de placas no entra en los 2,5 s del
-timeout normal.
+Todas las acciones usan el timeout largo del export/import (`ISAPI_SYNC_TIMEOUT`,
+12 s de lectura): la cámara genera el CSV **completo** antes de mandar el primer
+byte, así que el tiempo escala con la lista aunque se consulte o cambie una
+sola placa (una cámara con ~2600 placas tarda 6–7 s en empezar a responder el
+export; `CHECK` completo ~9 s). Con el timeout normal de 2,5 s cualquier lista
+grande daba `CAMERA_TIMEOUT` aunque la cámara respondiera bien desde el
+navegador. Quien llame a `/anpr-test` debe esperar **≥ 15 s** (el editor local
+no pone timeout; un cliente con el `RestTemplate` de 5 s cortaría antes).
 
 Las credenciales se reciben **solo para la prueba**: no se guardan ni se
 loguean. El `ip` debe ser de la red privada — sin ese guard el endpoint

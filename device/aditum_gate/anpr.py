@@ -40,6 +40,7 @@ import csv
 import io
 import logging
 import re
+import threading
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
@@ -48,18 +49,35 @@ from requests.auth import HTTPDigestAuth
 
 log = logging.getLogger("aditum.anpr")
 
-# (connect, read) por llamada ISAPI. Un update-plate hace GET+PUT: peor caso
-# ~2.5s+2.5s, dentro del budget de 5 s del backend en LAN sana.
+# (connect, read) para las llamadas ISAPI que NO dependen del tamano de la
+# lista (capabilities). Cabe en el budget de 5 s del backend en LAN sana.
 ISAPI_TIMEOUT = (2, 2.5)
-# El full sync (export GET + import PUT) mueve la lista COMPLETA (operacion bulk,
-# no es la apertura en vivo): a ~3.5 ms/placa medido contra la camara del piloto
-# en el import (el export ~1.6 ms/placa), 1000 placas
-# tardan ~3.5 s y 3000 ~11 s. Se le da mas aire de lectura que a update-plate,
-# pero el Pi NUNCA debe rendirse antes que el backend: este read (12 s) tiene
-# que quedar por DEBAJO del read-timeout que aditum-jh use para /sync-plates
-# (recomendado >= 15 s, en un RestTemplate dedicado; el de 5 s por defecto solo
-# alcanza ~1400 placas). connect corto igual: camara caida se corta rapido.
-ISAPI_SYNC_TIMEOUT = (3, 12)
+# TODO lo que toca la lista de placas (export GET e import PUT) escala con su
+# tamano, sea full sync, alta suelta o diagnostico: la camara genera el CSV
+# completo antes de mandar el primer byte. Medido: ~1.6-2.3 ms/placa el export
+# (una iDS-2CD7A46G0 con 2656 placas tarda 6-7 s en empezar a responder) y
+# ~3.5 ms/placa el import. Con el timeout corto una camara con >~1000 placas
+# NUNCA pasaria el probe ni un update-plate, asi que esas llamadas usan este.
+# Export: 30 s de lectura cubren la capacidad maxima de la camara (10000
+# placas a ~2.3 ms). connect corto igual: camara caida se corta rapido.
+ISAPI_SYNC_TIMEOUT = (3, 30)
+# Import: escala con las filas que se mandan. Un sync de 2655 placas contra la
+# iDS-2CD7A46G0 NO entraba en los 12 s fijos que habia antes (CAMERA_TIMEOUT
+# a los ~18 s de request), asi que se da 10 ms/placa (~2x lo medido) con piso
+# de 12 s. El Pi NUNCA debe rendirse antes que el backend: el read-timeout que
+# aditum-jh use para /sync-plates tiene que quedar por ENCIMA de export +
+# import de su lista mas grande (con 2655 placas, >= 45 s). Para /update-plate
+# el backend corta a los 5 s: contra una lista grande su primer intento vence,
+# pero el Pi termina la escritura igual y el reintento del backend cae en el
+# no-op idempotente (already_present_noop / not_found_noop).
+IMPORT_SECONDS_PER_PLATE = 0.010
+IMPORT_READ_MIN, IMPORT_READ_MAX = 12, 120
+
+
+def import_timeout(rows):
+    """(connect, read) para importar `rows` filas: crece con la lista."""
+    read = 4 + len(rows) * IMPORT_SECONDS_PER_PLATE
+    return (3, min(IMPORT_READ_MAX, max(IMPORT_READ_MIN, read)))
 
 DEFAULT_CHANNEL = 1
 
@@ -122,6 +140,16 @@ class AnprCameraClient:
 
     def __init__(self, channel=DEFAULT_CHANNEL):
         self.channel = channel
+        # Un lock por camara: el import es un REEMPLAZO de la lista completa,
+        # asi que dos read-modify-write solapados (el backend reintenta a los
+        # 5 s mientras el primero sigue exportando) se pisarian y perderian
+        # una placa. Se serializan por IP.
+        self._locks = {}
+        self._locks_guard = threading.Lock()
+
+    def _camera_lock(self, ip):
+        with self._locks_guard:
+            return self._locks.setdefault(ip, threading.Lock())
 
     @staticmethod
     def _auth(user, password):
@@ -236,7 +264,8 @@ class AnprCameraClient:
     def probe(self, ip, user, password):
         """Diagnostico de SOLO LECTURA: confirma IP, credenciales y soporte
         de lista de placas, sin modificar nada en la camara."""
-        _header, rows = self.get_plate_rows(ip, user, password)
+        _header, rows = self.get_plate_rows(ip, user, password,
+                                            timeout=ISAPI_SYNC_TIMEOUT)
         plates = [p for p in (self._row_plate(r) for r in rows) if p]
         return {
             "plates": len(plates),
@@ -296,7 +325,15 @@ class AnprCameraClient:
     def apply_plate(self, ip, user, password, action, plate_normalized):
         """ADD/DELETE idempotente de UNA placa via read-modify-write.
         Devuelve el detail del contrato."""
-        header, rows = self.get_plate_rows(ip, user, password)
+        with self._camera_lock(ip):
+            return self._apply_plate_locked(ip, user, password, action,
+                                            plate_normalized)
+
+    def _apply_plate_locked(self, ip, user, password, action, plate_normalized):
+        # Export e import mueven la lista completa aunque cambie una sola
+        # placa: mismos timeouts largos que el full sync.
+        header, rows = self.get_plate_rows(ip, user, password,
+                                           timeout=ISAPI_SYNC_TIMEOUT)
         present = any(self._row_plate(r) == plate_normalized for r in rows)
 
         if action == "ADD":
@@ -304,7 +341,8 @@ class AnprCameraClient:
                 return "already_present_noop"
             rows.append(self._new_row(plate_normalized))
             self._renumber(rows)
-            self.put_plate_rows(ip, user, password, header, rows)
+            self.put_plate_rows(ip, user, password, header, rows,
+                                timeout=import_timeout(rows))
             return "created"
 
         # DELETE
@@ -312,22 +350,25 @@ class AnprCameraClient:
             return "not_found_noop"
         rows = [r for r in rows if self._row_plate(r) != plate_normalized]
         self._renumber(rows)
-        self.put_plate_rows(ip, user, password, header, rows)
+        self.put_plate_rows(ip, user, password, header, rows,
+                            timeout=import_timeout(rows))
         return "deleted"
 
     def replace_plates(self, ip, user, password, plates_normalized):
         """Full sync: deja la camara EXACTAMENTE con `plates_normalized`."""
+        with self._camera_lock(ip):
+            return self._replace_plates_locked(ip, user, password,
+                                               plates_normalized)
+
+    def _replace_plates_locked(self, ip, user, password, plates_normalized):
         capacity = self.plate_capacity(ip, user, password)
         if capacity is not None and len(plates_normalized) > capacity:
             raise AnprCameraError(
                 "LIST_FULL",
                 f"{len(plates_normalized)} placas > capacidad {capacity}")
         # Solo se reusa el header del export; las filas viejas se descartan.
-        # El export usa el MISMO timeout largo que el import: en el full sync
-        # ambas llamadas escalan con el tamano de la lista (~1.6 ms/placa el
-        # export, ~3.5 ms/placa el import), asi que un export de >~1500 placas
-        # se cortaria a los 2.5s por defecto y la capacidad real nunca llegaria
-        # a las ~3000 que habilita el import.
+        # Export e import escalan con el tamano de la lista (ver los timeouts
+        # arriba): el export con el largo fijo, el import segun las filas.
         header, _rows = self.get_plate_rows(ip, user, password,
                                             timeout=ISAPI_SYNC_TIMEOUT)
         rows, seen = [], set()
@@ -338,7 +379,7 @@ class AnprCameraClient:
             rows.append(self._new_row(plate))
         self._renumber(rows)
         self.put_plate_rows(ip, user, password, header, rows,
-                            timeout=ISAPI_SYNC_TIMEOUT)
+                            timeout=import_timeout(rows))
         return len(seen)
 
 
