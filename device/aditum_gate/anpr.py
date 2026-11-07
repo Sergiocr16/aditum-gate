@@ -121,6 +121,14 @@ def normalize_plate(plate):
     return cleaned or None
 
 
+def camera_host(ip):
+    """'192.168.1.64:8000' -> '192.168.1.64'. Aditum puede configurar la camara
+    con puerto, pero la camara postea sus lecturas desde su IP a secas: el
+    historial (anpr_trace) se guarda y consulta por host."""
+    ip = (ip or "").strip()
+    return ip.rsplit(":", 1)[0] if ip.count(":") == 1 else ip
+
+
 def _local(tag):
     """Nombre local de un tag XML, ignorando namespace."""
     return tag.split("}")[-1] if "}" in tag else tag

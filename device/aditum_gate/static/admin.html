@@ -1720,7 +1720,7 @@
     const tl = (d.timeline || []).slice().reverse(); // lo mas reciente arriba
     html += '<div class="hist-sec"><div class="hsub">Qué pasó (más reciente arriba)</div>';
     if (!tl.length) {
-      html += '<p class="hint">No hay movimientos de esta placa en el rango.</p>';
+      html += '<p class="hint">Nada que mostrar: ni lecturas en el rango ni entradas/salidas de la lista hasta la fecha final.</p>';
     } else {
       html += '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha y hora</th><th>Etapa</th><th>Detalle</th><th>Fotos</th></tr></thead><tbody>';
       tl.forEach((e) => {

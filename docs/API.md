@@ -912,6 +912,14 @@ Respuesta (`200`), abreviada:
   "timeline": [ { "at": "...", "stage": "LIST|SYNC_ERROR|READ|OPEN_ORDER|PHYSICAL", "camera": "...", ... } ] }
 ```
 
+- `listHistory`, `summary.timesAdded/timesRemoved` y las entradas `LIST` de
+  `timeline` traen **todos** los movimientos de la lista hasta `to`, también
+  los anteriores a `from`: sin ellos no se podría decir desde cuándo estaba
+  (o no) en la lista al momento de una lectura. `from` acota lecturas, fallos
+  de sincronización y eventos IO.
+- `cameraIp` puede venir con puerto (`192.168.1.64:8000`, como se configura
+  en Aditum); el historial se guarda y consulta por host, sin puerto, porque
+  la cámara postea sus lecturas desde su IP a secas.
 - `list` de una lectura: `allowlist`, `otherlist`, `blocklist` o `sin_dato`
   (el firmware no reportó `vehicleListName`).
 - `onAllowlistAtThatTime`: `true`/`false` según el historial a la hora en que

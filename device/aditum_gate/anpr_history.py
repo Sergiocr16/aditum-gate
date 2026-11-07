@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime
 
 from . import anpr_camera_diag
-from .anpr import AnprCameraError
+from .anpr import AnprCameraError, camera_host
 from .anpr_events import ALLOW_LIST_NAMES
 from .anpr_trace import (ADDED, REMOVED, SOURCE_BASELINE, SOURCE_EXTERNAL, SOURCE_SYNC,
                          SOURCE_TEST, SOURCE_UPDATE, ts_to_iso)
@@ -128,33 +128,50 @@ def _photos(read, captures):
 # ----------------------------------------------------------------------
 # Consulta en vivo a la camara (opcional, con credenciales del request)
 # ----------------------------------------------------------------------
-def _live_for_camera(client, cred, plate, reads):
+def _log_coverage(logs, start, end):
+    """Tramo [desde, hasta] del que se puede afirmar "no hubo ALARM OUT". Si
+    la camara tenia mas entradas de las que se traen (truncated), solo vale
+    el tramo que ocupan las entradas recibidas; fuera de el no se sabe."""
+    if not logs.get("ok"):
+        return None
+    if not logs.get("truncated"):
+        return [start.timestamp(), end.timestamp()]
+    stamps = [e["ts"] for e in logs.get("entries", []) if e["ts"] is not None]
+    return [min(stamps), max(stamps)] if stamps else None
+
+
+def _live_for_camera(client, cred, plate, reads, deadline=None):
     ip, user, password = cred["ip"], cred.get("user") or "admin", cred.get("password") or ""
+    host = camera_host(ip)   # las lecturas se guardan por host, sin puerto
     out = {}
     try:
         out["find"] = dict(client.find_plate(ip, user, password, plate), ok=True)
     except AnprCameraError as e:
         out["find"] = {"ok": False, "error": e.code}
     out["time"] = anpr_camera_diag.camera_time(client, ip, user, password)
-    stamps = [r["captured_ts"] or r["received_ts"] for r in reads if r["camera_ip"] == ip]
+    stamps = [r["captured_ts"] or r["received_ts"] for r in reads if r["camera_ip"] == host]
     if stamps:
         start = datetime.fromtimestamp(min(stamps) - LOG_MARGIN)
         end = datetime.fromtimestamp(max(stamps) + LOG_MARGIN)
-        logs = anpr_camera_diag.search_logs(client, ip, user, password, start, end)
-        logs["covered"] = [start.timestamp(), end.timestamp()]
+        logs = anpr_camera_diag.search_logs(client, ip, user, password, start, end,
+                                            deadline=deadline)
+        logs["covered"] = _log_coverage(logs, start, end)
         out["alarmLog"] = logs
     return out
 
 
 def collect_live(client, credentials, plate, reads):
-    """{ip: resultado} consultando cada camara en paralelo, con presupuesto."""
+    """{host: resultado} consultando cada camara en paralelo, con presupuesto.
+    Pasado el presupuesto se responde con lo que haya; el hilo que quedo
+    corriendo deja de paginar el log al ver el deadline."""
     if not client or not credentials:
         return {}
+    deadline = time.monotonic() + LIVE_BUDGET_SECONDS
     pool = ThreadPoolExecutor(max_workers=max(1, len(credentials)))
-    futures = {pool.submit(_live_for_camera, client, c, plate, reads): c["ip"]
-               for c in credentials}
+    futures = {pool.submit(_live_for_camera, client, c, plate, reads, deadline):
+               camera_host(c["ip"]) for c in credentials}
     done, _pending = wait(futures, timeout=LIVE_BUDGET_SECONDS)
-    pool.shutdown(wait=False)
+    pool.shutdown(wait=False, cancel_futures=True)
     live = {}
     for future, ip in futures.items():
         if future in done and future.exception() is None:
@@ -187,10 +204,13 @@ def _open_evidence(read, io_events, live):
             if entry["alarmOut"] and entry["ts"] is not None \
                     and abs(entry["ts"] - camera_ts) <= ALARM_OUT_WINDOW:
                 return True, "OPEN_ORDER", f"log de la cámara: {entry['type']} a las {_human(entry['time'], True)}"
-        start, end = alarm_log.get("covered", (None, None))
-        if start is not None and start <= camera_ts <= end:
+        covered = alarm_log.get("covered")
+        if covered and covered[0] <= camera_ts <= covered[1]:
             return False, "OPEN_ORDER", ("el log de la cámara no registra ALARM OUT "
                                          f"±{ALARM_OUT_WINDOW} s de la lectura")
+        if alarm_log.get("truncated"):
+            return "unknown", None, ("el log de la cámara tiene más entradas de las que "
+                                     "se consultan y no cubre esta lectura: acorte el rango")
     if alarm_log.get("error") == "NO_STORAGE":
         return "unknown", None, ("la cámara no tiene SD: su registro de alarmas no se "
                                  "puede consultar, y no hay sensor de apertura")
@@ -439,17 +459,22 @@ def _live_findings(ip, view, live, findings):
 
 
 def _similar_reads(trace, plate, camera_ips, since_ts, until_ts, captures):
+    """Placas parecidas leidas en el rango. La similitud se evalua sobre las
+    placas distintas (agrupadas en SQL), y solo para las que califican se
+    trae su ultima lectura (camara y fotos)."""
     grouped = {}
-    for read in trace.similar_candidates(plate, camera_ips, since_ts, until_ts):
-        if not is_similar(plate, read["plate"]):
+    for row in trace.similar_candidates(plate, camera_ips, since_ts, until_ts):
+        if not is_similar(plate, row["plate"]):
             continue
-        item = grouped.setdefault(read["plate"], {
-            "plate": read["plate"], "count": 0, "lists": set(),
-            "lastAt": read["received_at"], "camera": read["camera_ip"],
-            "photos": _photos(read, captures)})
-        item["count"] += 1
-        item["lists"].add(list_label(read["vehicle_list"]))
+        item = grouped.setdefault(row["plate"], {
+            "plate": row["plate"], "count": 0, "lists": set(), "lastAt": None})
+        item["count"] += row["count"]
+        item["lists"].add(list_label(row["vehicle_list"]))
+        item["lastAt"] = max(item["lastAt"] or "", row["last_at"] or "") or None
     items = sorted(grouped.values(), key=lambda i: -i["count"])[:MAX_SIMILAR_PLATES]
     for item in items:
         item["lists"] = sorted(item["lists"])
+        last = trace.latest_read(item["plate"], camera_ips, since_ts, until_ts)
+        item["camera"] = last["camera_ip"] if last else None
+        item["photos"] = _photos(last, captures) if last else []
     return items

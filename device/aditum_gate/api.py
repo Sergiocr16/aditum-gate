@@ -23,11 +23,11 @@ from werkzeug.serving import ThreadedWSGIServer
 
 from . import admin_auth, github_token, health, maintenance
 from . import anpr_camera_diag
-from .anpr import AnprCameraError, http_status_for, normalize_plate
+from .anpr import AnprCameraError, camera_host, http_status_for, normalize_plate
 from .anpr_captures import REASON_NOT_AUTHORIZED, REASON_UNREADABLE
 from .anpr_events import parse_event_xml, parse_io_event_xml, is_authorized
 from .anpr_history import plate_history
-from .anpr_trace import OUTCOME_DISCARDED, OUTCOME_QUEUED, OUTCOME_UNREADABLE
+from .anpr_trace import OUTCOME_DISCARDED, OUTCOME_QUEUED, OUTCOME_UNREADABLE, iso_to_ts
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .hikvision import normalize_card_nos
@@ -154,15 +154,12 @@ def _parse_range_bound(value, end_of_day):
     text = (value or "").strip()
     if not text:
         return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        raise ValueError(f"fecha invalida: {text}")
     if len(text) == 10 and end_of_day:
-        parsed = parsed.replace(hour=23, minute=59, second=59)
-    if parsed.tzinfo is None:
-        parsed = parsed.astimezone()
-    return parsed.timestamp()
+        text += "T23:59:59"
+    ts = iso_to_ts(text)
+    if ts is None:
+        raise ValueError(f"fecha invalida: {value}")
+    return ts
 
 
 PLATE_HISTORY_DEFAULT_DAYS = 30
@@ -891,7 +888,7 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             host_error = _camera_host_error(ip)
             if host_error:
                 raise ValueError(f"{ip}: {host_error}")
-            if target_ips and ip not in target_ips:
+            if target_ips and camera_host(ip) not in target_ips:
                 continue
             creds.append({"ip": ip, "user": camera.get("user") or "admin",
                           "password": camera.get("password") or ""})
@@ -906,7 +903,7 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         if not plate:
             return jsonify({"error": "plate requerida"}), 400
         camera_ips = None
-        camera_ip = (data.get("cameraIp") or "").strip()
+        camera_ip = camera_host(data.get("cameraIp"))
         if camera_ip:
             camera_ips = [camera_ip]
         elif data.get("cameraId") not in (None, ""):

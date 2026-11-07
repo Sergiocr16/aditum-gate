@@ -314,6 +314,96 @@ class PlateHistoryApiTest(unittest.TestCase):
         self.assertEqual(resp.get_json()["summary"]["model"], "iDS-2CD7A46G0")
 
 
+    # -- casos que salieron de la revision del PR #29 -------------------
+    def test_log_truncado_no_acusa_falta_de_apertura(self):
+        # La camara tenia mas alarmas de las que se paginan: solo se puede
+        # negar la apertura dentro del tramo que cubren las entradas traidas.
+        self.sync(["ABC123"])
+        self.clock.advance(60)
+        self.read("ABC123", "allowList")
+        read_ts = self.clock.ts
+        old = [{"time": "x", "ts": read_ts - 900 + i, "type": "Alarm Output Start",
+                "alarmOut": True, "alarmIn": False, "port": "1"} for i in range(3)]
+        time_ok = {"supported": True, "ok": True, "skewSeconds": 0}
+        with mock.patch.object(self.service.client, "find_plate",
+                               side_effect=AnprCameraError("CAMERA_TIMEOUT")), \
+                mock.patch.object(anpr_camera_diag, "camera_time", return_value=time_ok), \
+                mock.patch.object(anpr_camera_diag, "search_logs", return_value={
+                    "supported": True, "ok": True, "truncated": True, "entries": old}):
+            result = self.history(cameraIp=IP, cameras=CAMERAS)
+        read = result["reads"][0]
+        self.assertEqual(read["opened"], "unknown")
+        self.assertIn("no cubre", read["openEvidence"])
+        self.assertNotIn("READ_ALLOWLIST_NOT_OPENED", self.codes(result))
+        self.assertTrue(result["cameras"][0]["live"]["alarmLog"]["truncated"])
+
+    def test_camara_con_puerto_cruza_con_sus_lecturas(self):
+        # Aditum configura "ip:puerto"; la camara postea desde "ip". El
+        # historial se guarda por host y la consulta en vivo tambien.
+        with_port = [{"ip": IP + ":8000", "user": "admin", "password": "secreto"}]
+        resp = self.client.post("/sync-plates", json={
+            "requestId": "r1", "cameraId": 7, "cameras": with_port,
+            "plates": [{"plate": "ABC123", "plateNormalized": "ABC123"}]})
+        self.assertEqual(resp.status_code, 200)
+        self.clock.advance(60)
+        self.read("ABC123", "allowList")
+        read_ts = self.clock.ts
+        self.assertEqual(self.trace.camera_ips_for_id(7), [IP])
+        time_ok = {"supported": True, "ok": True, "skewSeconds": 0}
+        with mock.patch.object(self.service.client, "find_plate",
+                               side_effect=AnprCameraError("CAMERA_TIMEOUT")), \
+                mock.patch.object(anpr_camera_diag, "camera_time", return_value=time_ok), \
+                mock.patch.object(anpr_camera_diag, "search_logs", return_value={
+                    "supported": True, "ok": True, "entries": [
+                        {"time": "x", "ts": read_ts + 2, "type": "Alarm Output Start",
+                         "alarmOut": True, "alarmIn": False, "port": "1"}]}):
+            result = self.history(cameraIp=IP + ":8000", cameras=with_port)
+        self.assertEqual([c["ip"] for c in result["cameras"]], [IP])
+        self.assertIn("live", result["cameras"][0])
+        read = result["reads"][0]
+        self.assertEqual((read["onAllowlistAtThatTime"], read["opened"]), (True, True))
+        self.assertEqual(result["summary"]["timesAdded"], 1)
+
+    def test_lecturas_parecidas_agrupadas_con_su_ultima_foto(self):
+        self.sync(["ABC123"])
+        self.read("A8C123", "otherList")
+        self.clock.advance(30)
+        self.read("A8C123", "otherList")
+        last_at = datetime.fromtimestamp(self.clock.ts).astimezone().isoformat(timespec="seconds")
+        self.read("XYZ999", "otherList")
+        result = self.history()
+        similar = result["similarReads"]
+        self.assertEqual([(s["plate"], s["count"], s["lists"]) for s in similar],
+                         [("A8C123", 2, ["otherlist"])])
+        self.assertEqual((similar[0]["camera"], similar[0]["lastAt"]), (IP, last_at))
+        self.assertIn("POSSIBLE_MISREAD", self.codes(result))
+
+    def test_sonda_corta_si_la_camara_no_contesta(self):
+        # Con el presupuesto agotado no se insiste con mas GETs ni con el log.
+        isapi = mock.Mock(side_effect=AnprCameraError("CAMERA_TIMEOUT"))
+        with mock.patch.object(self.service.client, "isapi", isapi), \
+                mock.patch.object(anpr_camera_diag, "PROBE_BUDGET_SECONDS", 0):
+            report = anpr_camera_diag.probe(self.service.client, IP, "admin", "x")
+        self.assertEqual(isapi.call_count, 0)
+        self.assertEqual(report["logSearch24h"]["error"], "TIMEOUT_BUDGET")
+        self.assertEqual(report["deviceInfo"]["error"], "TIMEOUT_BUDGET")
+        # Camara inalcanzable: se corta en el primer GET y el log no se consulta.
+        isapi = mock.Mock(side_effect=AnprCameraError("CAMERA_UNREACHABLE"))
+        with mock.patch.object(self.service.client, "isapi", isapi):
+            report = anpr_camera_diag.probe(self.service.client, IP, "admin", "x")
+        self.assertEqual(isapi.call_count, 1)
+        self.assertEqual(report["logSearch24h"]["error"], "CAMERA_UNREACHABLE")
+
+    def test_hora_de_la_camara_con_z_se_toma_como_local(self):
+        now = datetime.now().replace(microsecond=0)
+        body = "<Time><localTime>%sZ</localTime></Time>" % now.strftime("%Y-%m-%dT%H:%M:%S")
+        fake = mock.Mock(status_code=200, content=body.encode(), text=body)
+        with mock.patch.object(self.service.client, "isapi", return_value=fake):
+            info = anpr_camera_diag.camera_time(self.service.client, IP, "admin", "x")
+        self.assertTrue(info["ok"])
+        self.assertLessEqual(abs(info["skewSeconds"]), 5)
+
+
 class PlateHistoryDisabledTest(unittest.TestCase):
     def test_sin_anpr_responde_404(self):
         with tempfile.TemporaryDirectory() as tmp:

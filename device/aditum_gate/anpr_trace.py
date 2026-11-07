@@ -33,7 +33,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 
-from .anpr import normalize_plate
+from .anpr import camera_host, normalize_plate
 from .settings import ANPR_EVENTS_DB_FILE
 
 log = logging.getLogger("aditum.anpr.trace")
@@ -54,8 +54,9 @@ OUTCOME_UNREADABLE = "unreadable"
 # Tope de filas que devuelve una consulta: protege a un equipo modesto de una
 # respuesta enorme (una placa normal tiene decenas de lecturas al mes).
 QUERY_LIMIT = 2000
-# Candidatas para "lecturas parecidas": lecturas de la calle en el rango.
-SIMILAR_SCAN_LIMIT = 20000
+# Candidatas para "lecturas parecidas": placas DISTINTAS (agrupadas por placa y
+# lista) leidas en el rango, no cada lectura.
+SIMILAR_SCAN_LIMIT = 5000
 
 _SCHEMA = """
 -- Camaras sobre las que el Pi escribio alguna vez. first_seen_ts marca
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS anpr_sync_log (
     duration_ms  INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_anpr_sync_ip_ts ON anpr_sync_log(camera_ip, ts);
+CREATE INDEX IF NOT EXISTS idx_anpr_sync_ts ON anpr_sync_log(ts);
 
 -- Una fila por placa que entra o sale de la lista de una camara.
 CREATE TABLE IF NOT EXISTS anpr_plate_change (
@@ -126,6 +128,8 @@ CREATE TABLE IF NOT EXISTS anpr_read_log (
 );
 CREATE INDEX IF NOT EXISTS idx_anpr_read_plate ON anpr_read_log(plate, received_ts);
 CREATE INDEX IF NOT EXISTS idx_anpr_read_ip ON anpr_read_log(camera_ip, received_ts);
+-- Para la purga horaria (DELETE ... WHERE received_ts < ?) sin barrer la tabla.
+CREATE INDEX IF NOT EXISTS idx_anpr_read_ts ON anpr_read_log(received_ts);
 
 -- Eventos IO de la camara (alarm input/output), base para confirmar aperturas.
 CREATE TABLE IF NOT EXISTS anpr_io_event (
@@ -139,6 +143,7 @@ CREATE TABLE IF NOT EXISTS anpr_io_event (
     received_ts  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_anpr_io_ip ON anpr_io_event(camera_ip, received_ts);
+CREATE INDEX IF NOT EXISTS idx_anpr_io_ts ON anpr_io_event(received_ts);
 """
 
 
@@ -213,9 +218,13 @@ class AnprTraceStore:
         """Registra una escritura EXITOSA (o un no-op) sobre la lista.
 
         `before` es la lista que tenia la camara justo antes (export) y
-        `after` la que quedo. Devuelve {added, removed, external}."""
+        `after` la que quedo. Devuelve {added, removed, external}.
+
+        `camera_ip` se guarda sin puerto: la camara postea sus lecturas desde
+        su IP, y asi ambos lados del historial se cruzan."""
         before, after = set(before), set(after)
         at, ts = _now()
+        camera_ip = camera_host(camera_ip)
         camera_id = None if camera_id is None else str(camera_id)
         with self._lock, self._connect() as conn:
             known = self._known_list(conn, camera_ip)
@@ -267,8 +276,8 @@ class AnprTraceStore:
                 "INSERT INTO anpr_sync_log (at, ts, camera_ip, camera_id, "
                 "request_id, kind, ok, error_code, duration_ms) "
                 "VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
-                (at, ts, camera_ip, _str(camera_id), _str(request_id), kind,
-                 error_code, duration_ms))
+                (at, ts, camera_host(camera_ip), _str(camera_id), _str(request_id),
+                 kind, error_code, duration_ms))
 
     # ------------------------------------------------------------------
     # Escritura: lecturas e IO
@@ -380,16 +389,31 @@ class AnprTraceStore:
             return [dict(r) for r in conn.execute(sql, args)]
 
     def similar_candidates(self, plate, camera_ips=None, since_ts=None, until_ts=None):
-        """Lecturas de OTRAS placas de largo parecido (posible mala lectura)."""
-        sql = ("SELECT * FROM anpr_read_log WHERE plate IS NOT NULL AND plate<>? "
+        """OTRAS placas de largo parecido leidas en el rango (posible mala
+        lectura), agrupadas: {plate, vehicle_list, count, last_at}. La
+        similitud se decide en Python sobre estas placas distintas, no sobre
+        cada lectura de la calle."""
+        sql = ("SELECT plate, vehicle_list, COUNT(*) AS count, MAX(received_at) AS last_at "
+               "FROM anpr_read_log WHERE plate IS NOT NULL AND plate<>? "
                "AND length(plate) BETWEEN ? AND ?")
         args = [plate, len(plate) - 1, len(plate) + 1]
         sql, args = _filter_ips(sql, args, camera_ips)
         sql, args = _filter_range(sql, args, "received_ts", since_ts, until_ts)
-        sql += " ORDER BY received_ts DESC LIMIT ?"
+        sql += " GROUP BY plate, vehicle_list ORDER BY count DESC LIMIT ?"
         args.append(SIMILAR_SCAN_LIMIT)
         with self._lock, self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, args)]
+
+    def latest_read(self, plate, camera_ips=None, since_ts=None, until_ts=None):
+        """La lectura mas reciente de `plate` en el rango (con fotos), o None."""
+        sql = "SELECT * FROM anpr_read_log WHERE plate=?"
+        args = [plate]
+        sql, args = _filter_ips(sql, args, camera_ips)
+        sql, args = _filter_range(sql, args, "received_ts", since_ts, until_ts)
+        sql += " ORDER BY received_ts DESC, id DESC LIMIT 1"
+        with self._lock, self._connect() as conn:
+            row = conn.execute(sql, args).fetchone()
+            return None if row is None else dict(row)
 
     def io_events(self, camera_ips=None, since_ts=None, until_ts=None):
         sql = "SELECT * FROM anpr_io_event WHERE 1=1"
@@ -406,6 +430,7 @@ class AnprTraceStore:
 
         estado: True (estaba), False (no estaba) o None (no hay historial de
         esa camara para ese momento). `cambio` es la fila que lo determina."""
+        camera_ip = camera_host(camera_ip)
         with self._lock, self._connect() as conn:
             camera = conn.execute(
                 "SELECT first_seen_ts FROM anpr_trace_camera WHERE camera_ip=?",
@@ -427,8 +452,9 @@ def _str(value):
 
 def _filter_ips(sql, args, camera_ips):
     if camera_ips:
-        sql += " AND camera_ip IN (%s)" % ",".join("?" * len(camera_ips))
-        args = list(args) + list(camera_ips)
+        hosts = [camera_host(ip) for ip in camera_ips]
+        sql += " AND camera_ip IN (%s)" % ",".join("?" * len(hosts))
+        args = list(args) + hosts
     return sql, args
 
 

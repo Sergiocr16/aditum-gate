@@ -16,11 +16,12 @@ crudo para poder verificarlo contra la camara real.
 """
 import logging
 import re
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
-from .anpr import ISAPI_SYNC_TIMEOUT, AnprCameraError
+from .anpr import ISAPI_SYNC_TIMEOUT, AnprCameraError, _local
 
 log = logging.getLogger("aditum.anpr.diag")
 
@@ -28,15 +29,15 @@ DIAG_TIMEOUT = (3, 8)
 LOG_PAGE_SIZE = 100
 LOG_MAX_PAGES = 10
 SNIPPET_CHARS = 600
+# La sonda deja de consultar endpoints pasado este tiempo: una camara que
+# acepta la conexion pero no contesta haria 13 GETs x 8 s + el log, mas que
+# los 60 s que espera nginx.
+PROBE_BUDGET_SECONDS = 30
 
 # Minor types del log que corresponden a la salida de alarma. El texto varia
 # por firmware ("Alarm Output Start", "alarmOutStart", "Alarm Out"...).
 _ALARM_OUT = re.compile(r"alarm\s*out", re.IGNORECASE)
 _ALARM_IN = re.compile(r"alarm\s*in", re.IGNORECASE)
-
-
-def _local(tag):
-    return tag.split("}")[-1] if "}" in tag else tag
 
 
 def _parse(content):
@@ -99,14 +100,9 @@ def camera_time(client, ip, user, password):
         return {"supported": False, "ok": False, "error": f"http_{resp.status_code}"}
     root = _parse(resp.content)
     local_time = _first(root, "localTime")
-    camera_dt = None
-    if local_time:
-        try:
-            camera_dt = datetime.fromisoformat(local_time.replace("Z", "+00:00"))
-            if camera_dt.tzinfo is None:
-                camera_dt = camera_dt.astimezone()
-        except ValueError:
-            camera_dt = None
+    # Mismo criterio que el log (_camera_dt): una 'Z' de Hikvision es hora
+    # local, no UTC. Con zona explicita (-06:00) se respeta.
+    camera_dt = _camera_dt(local_time)
     pi_now = datetime.now().astimezone()
     skew = None if camera_dt is None else round((camera_dt - pi_now).total_seconds())
     return {"supported": True, "ok": camera_dt is not None,
@@ -169,15 +165,21 @@ def _status_reason(resp):
     return _first(root, "subStatusCode") or _first(root, "statusString")
 
 
-def search_logs(client, ip, user, password, start, end, meta_id="log.std-cgi.com/Alarm"):
+def search_logs(client, ip, user, password, start, end, meta_id="log.std-cgi.com/Alarm",
+                deadline=None):
     """Log de alarmas de la camara entre `start` y `end` (datetimes locales).
     Pagina hasta LOG_MAX_PAGES. Devuelve todas las entradas parseadas; las de
     salida de alarma vienen con alarmOut=True (minorType "alarmOut").
+    `truncated` avisa que quedaron entradas sin traer (mas paginas de las que
+    se consultan, o se agoto `deadline`, un time.monotonic()).
 
     Sin SD/NAS la camara responde 403 invalidMemoryCardOrNAS: se devuelve
     error NO_STORAGE (no soportado en esta instalacion), sin reintentar."""
     entries, position = [], 0
     for _page in range(LOG_MAX_PAGES):
+        if deadline is not None and time.monotonic() >= deadline:
+            return {"supported": True, "ok": True, "entries": entries,
+                    "truncated": True, "partial": "deadline"}
         try:
             resp = client.isapi("POST", ip, user, password,
                                 "/ISAPI/ContentMgmt/logSearch",
@@ -288,12 +290,21 @@ def _supported(status):
 def probe(client, ip, user, password):
     """Que expone ESTA camara para confirmar aperturas. Solo lectura."""
     report = {}
+    deadline = time.monotonic() + PROBE_BUDGET_SECONDS
+    aborted = None
     for name, path, extract in _PROBE_GETS:
+        if time.monotonic() >= deadline:
+            # La camara contesta tan lento que no da tiempo: se deja constancia
+            # y no se insiste (nginx cortaria la respuesta a los 60 s).
+            aborted = "TIMEOUT_BUDGET"
+            report[name] = {"path": path, "ok": False, "supported": None, "error": aborted}
+            continue
         try:
             resp = client.isapi("GET", ip, user, password, path, timeout=DIAG_TIMEOUT)
         except AnprCameraError as e:
             report[name] = {"path": path, "ok": False, "supported": None, "error": e.code}
             if e.code == "CAMERA_UNREACHABLE":
+                aborted = e.code
                 break
             continue
         entry = {"path": path, "status": resp.status_code, "ok": resp.status_code == 200,
@@ -309,8 +320,11 @@ def probe(client, ip, user, password):
             entry["reason"] = _status_reason(resp)
         report[name] = entry
     now = datetime.now().replace(microsecond=0)
-    logs = search_logs(client, ip, user, password, now - timedelta(days=1), now,
-                       meta_id="log.std-cgi.com")
+    if aborted:
+        logs = _error(aborted)
+    else:
+        logs = search_logs(client, ip, user, password, now - timedelta(days=1), now,
+                           meta_id="log.std-cgi.com", deadline=deadline)
     types = {}
     for entry in logs.get("entries", []):
         types[entry["type"]] = types.get(entry["type"], 0) + 1
