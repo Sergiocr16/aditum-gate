@@ -11,6 +11,7 @@ import logging
 from aditum_gate.anpr import AnprService
 from aditum_gate.anpr_captures import AnprCaptureStore
 from aditum_gate.anpr_events import AnprEventForwarder, AnprEventStore
+from aditum_gate.anpr_trace import AnprTraceStore
 from aditum_gate.api import create_app, serve
 from aditum_gate.backend import AditumBackend
 from aditum_gate.config_agent import ConfigAgent
@@ -53,8 +54,12 @@ def main():
     anpr_service = None
     anpr_store = None
     anpr_captures = None
+    anpr_trace = None
     if settings.anpr_enabled:
-        anpr_service = AnprService()
+        # Historial de placas (entradas/salidas de la lista, lecturas, IO)
+        # para /anpr-plate-history. Mismo archivo SQLite que la cola.
+        anpr_trace = AnprTraceStore(retention_days=settings.anpr_history_days)
+        anpr_service = AnprService(trace=anpr_trace)
         anpr_store = AnprEventStore()
         if settings.anpr_capture_unrecognized:
             # Bitacora local (foto incluida) de las placas que la camara no
@@ -69,7 +74,8 @@ def main():
             except OSError as e:
                 log.error("Bitacora de placas no reconocidas deshabilitada: "
                           "no se pudo preparar su directorio (%s)", e)
-        AnprEventForwarder(settings, anpr_store, captures=anpr_captures).start()
+        AnprEventForwarder(settings, anpr_store, captures=anpr_captures,
+                           trace=anpr_trace).start()
 
     for scanner in build_scanners(settings, backend, screen, leds):
         scanner.start()
@@ -79,7 +85,7 @@ def main():
 
     app = create_app(settings, gates, hikvision_service, screen, leds,
                      anpr_service=anpr_service, anpr_store=anpr_store,
-                     anpr_captures=anpr_captures)
+                     anpr_captures=anpr_captures, anpr_trace=anpr_trace)
     # No es app.run(): el servidor propio evita la consulta DNS inversa que
     # dejaba el puerto reservado sin escuchar (ver api.ApiServer) y un
     # vigilante sale si el API no atiende en 60 s para que PM2 relance.
