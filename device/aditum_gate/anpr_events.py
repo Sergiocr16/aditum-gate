@@ -161,6 +161,10 @@ def parse_event_xml(xml_bytes):
     plate = _text_of(root, "licensePlate") or _text_of(root, "originalLicensePlate")
     if plate and plate.strip().lower() in _NO_PLATE_SENTINELS:
         plate = None
+    # Para el historial: lo que el OCR leyo antes de su correccion y hacia
+    # donde iba el vehiculo (forward/reverse).
+    original_plate = _text_of(root, "originalLicensePlate")
+    direction = _text_of(root, "direction")
 
     # <vehicleListName>: resultado del match de la camara contra sus listas —
     # whiteList/allowList (autorizada), blackList/blockList (vetada) u otherList
@@ -202,6 +206,42 @@ def parse_event_xml(xml_bytes):
         "cameraName": camera_name,
         "vehicleList": vehicle_list,
         "pictureCount": picture_count,
+        "originalLicensePlate": original_plate,
+        "direction": direction,
+    }
+
+
+# eventType de los eventos de entradas/salidas de alarma de la camara. Es lo
+# que llega si un sensor de la barrera (o un lazo) se cablea a su ALARM IN y
+# se configura la notificacion al "alarm server": la unica evidencia de una
+# apertura fisica. Algunos firmwares usan "IO", otros el nombre de la alarma.
+IO_EVENT_TYPES = ("io", "alarmin", "alarminput", "alarmout", "alarmoutput")
+_IO_PORT_TAGS = ("inputIOPortID", "dynInputIOPortID", "outputIOPortID",
+                 "dynOutputIOPortID", "ioPortID", "IOPortID")
+
+
+def parse_io_event_xml(xml_bytes):
+    """Evento IO/alarma de la camara -> dict, o None si no es uno.
+
+    No se interpreta mas alla de puerto y estado: el historial lo guarda tal
+    cual para cruzarlo con las lecturas (ver anpr_trace)."""
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return None
+    event_type = (_text_of(root, "eventType") or "").strip()
+    if event_type.lower() not in IO_EVENT_TYPES:
+        return None
+    port = None
+    for tag in _IO_PORT_TAGS:
+        port = _text_of(root, tag)
+        if port:
+            break
+    return {
+        "eventType": event_type,
+        "port": port,
+        "state": (_text_of(root, "eventState") or "").lower() or None,
+        "capturedAt": _text_of(root, "dateTime"),
     }
 
 
@@ -404,13 +444,15 @@ class AnprEventForwarder(threading.Thread):
     El evento que falla DEFER_AFTER veces cede el turno para que la cola no
     quede congelada detras de el."""
 
-    def __init__(self, settings, store, captures=None):
+    def __init__(self, settings, store, captures=None, trace=None):
         super().__init__(name="anpr-forwarder", daemon=True)
         self.settings = settings
         self.store = store
-        # Bitacora de placas no reconocidas (anpr_captures): se purga aca,
-        # en el mismo ciclo horario que la cola, para no sumar otro thread.
+        # Bitacora de placas no reconocidas (anpr_captures) e historial de
+        # placas (anpr_trace): se purgan aca, en el mismo ciclo horario que
+        # la cola, para no sumar otro thread.
         self.captures = captures
+        self.trace = trace
         self._backoff = BACKOFF_INITIAL
         self._last_purge = 0.0
 
@@ -513,3 +555,8 @@ class AnprEventForwarder(threading.Thread):
                     self.captures.purge()
                 except Exception:
                     log.exception("Fallo la purga de placas no reconocidas")
+            if self.trace is not None:
+                try:
+                    self.trace.purge()
+                except Exception:
+                    log.exception("Fallo la purga del historial de placas")

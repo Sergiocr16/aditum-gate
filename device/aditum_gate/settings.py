@@ -100,8 +100,7 @@ class Settings:
         self.polling_interval_seconds = polling.get("intervalSeconds", 60)
 
         # ANPR local-first (TAR-1034/1035): endpoints de placas + cola de
-        # eventos. Encendido por defecto: si ninguna camara apunta a la Pi,
-        # no hay trafico y el costo es cero.
+        # eventos.
         anpr = data.get("anpr", {})
         # Apagado por defecto: el ANPR es opt-in por equipo (una config sin
         # bloque anpr no lee placas)
@@ -116,6 +115,9 @@ class Settings:
         self.anpr_capture_unrecognized = anpr.get("captureUnrecognized", True)
         self.anpr_capture_retention_days = anpr.get("captureRetentionDays", 15)
         self.anpr_capture_max_mb = anpr.get("captureMaxMb", 500)
+        # Historial de placas (anpr_trace): entradas/salidas de la lista de
+        # la camara, todas las lecturas y eventos IO, para /anpr-plate-history.
+        self.anpr_history_days = anpr.get("historyDays", 90)
 
 
 def load_settings():

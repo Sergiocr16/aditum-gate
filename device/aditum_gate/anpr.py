@@ -41,6 +41,7 @@ import io
 import logging
 import re
 import threading
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
@@ -120,6 +121,14 @@ def normalize_plate(plate):
     return cleaned or None
 
 
+def camera_host(ip):
+    """'192.168.1.64:8000' -> '192.168.1.64'. Aditum puede configurar la camara
+    con puerto, pero la camara postea sus lecturas desde su IP a secas: el
+    historial (anpr_trace) se guarda y consulta por host."""
+    ip = (ip or "").strip()
+    return ip.rsplit(":", 1)[0] if ip.count(":") == 1 else ip
+
+
 def _local(tag):
     """Nombre local de un tag XML, ignorando namespace."""
     return tag.split("}")[-1] if "}" in tag else tag
@@ -165,6 +174,12 @@ class AnprCameraClient:
             raise AnprCameraError("CAMERA_TIMEOUT", "read timeout")
         except requests.exceptions.ConnectionError as e:
             raise AnprCameraError("CAMERA_UNREACHABLE", str(e)[:120])
+
+    def isapi(self, method, ip, user, password, path, timeout=ISAPI_TIMEOUT, **kwargs):
+        """Llamada ISAPI cruda (digest, un intento). Para el diagnostico de
+        solo lectura (anpr_camera_diag); lanza AnprCameraError si no hay red."""
+        return self._request(method, f"http://{ip}{path}", user, password,
+                             timeout=timeout, **kwargs)
 
     def _list_url(self, ip):
         return (f"http://{ip}/ISAPI/Traffic/channels/{self.channel}"
@@ -241,6 +256,15 @@ class AnprCameraClient:
         if len(row) <= _COL_PLATE:
             return None
         return normalize_plate(row[_COL_PLATE])
+
+    @classmethod
+    def _allow_set(cls, rows):
+        """Placas de la lista que la camara trata como autorizadas (todo lo
+        que no esta en el grupo de lista negra). Es lo que el historial
+        (anpr_trace) registra como "esta en el allowlist"."""
+        return {p for p in (cls._row_plate(r) for r in rows
+                            if len(r) <= _COL_GROUP or r[_COL_GROUP].strip() != "0")
+                if p}
 
     @staticmethod
     def _new_row(plate_normalized):
@@ -322,55 +346,69 @@ class AnprCameraClient:
                 match = self._row_detail(row)
         return {"found": match is not None, "match": match, "total": total}
 
-    def apply_plate(self, ip, user, password, action, plate_normalized):
+    def apply_plate(self, ip, user, password, action, plate_normalized,
+                    on_write=None):
         """ADD/DELETE idempotente de UNA placa via read-modify-write.
-        Devuelve el detail del contrato."""
+        Devuelve el detail del contrato.
+
+        `on_write(before, after)`, si viene, se llama DENTRO del lock de la
+        camara tras escribir (o tras un no-op) con el allowlist de antes y el
+        de despues: es lo que alimenta el historial de entradas/salidas."""
         with self._camera_lock(ip):
             return self._apply_plate_locked(ip, user, password, action,
-                                            plate_normalized)
+                                            plate_normalized, on_write)
 
-    def _apply_plate_locked(self, ip, user, password, action, plate_normalized):
+    def _apply_plate_locked(self, ip, user, password, action, plate_normalized,
+                            on_write=None):
         # Export e import mueven la lista completa aunque cambie una sola
         # placa: mismos timeouts largos que el full sync.
         header, rows = self.get_plate_rows(ip, user, password,
                                            timeout=ISAPI_SYNC_TIMEOUT)
+        before = self._allow_set(rows)
         present = any(self._row_plate(r) == plate_normalized for r in rows)
 
         if action == "ADD":
             if present:
-                return "already_present_noop"
-            rows.append(self._new_row(plate_normalized))
+                detail = "already_present_noop"
+            else:
+                rows.append(self._new_row(plate_normalized))
+                self._renumber(rows)
+                self.put_plate_rows(ip, user, password, header, rows,
+                                    timeout=import_timeout(rows))
+                detail = "created"
+        elif not present:  # DELETE
+            detail = "not_found_noop"
+        else:
+            rows = [r for r in rows if self._row_plate(r) != plate_normalized]
             self._renumber(rows)
             self.put_plate_rows(ip, user, password, header, rows,
                                 timeout=import_timeout(rows))
-            return "created"
+            detail = "deleted"
+        if on_write is not None:
+            on_write(before, self._allow_set(rows))
+        return detail
 
-        # DELETE
-        if not present:
-            return "not_found_noop"
-        rows = [r for r in rows if self._row_plate(r) != plate_normalized]
-        self._renumber(rows)
-        self.put_plate_rows(ip, user, password, header, rows,
-                            timeout=import_timeout(rows))
-        return "deleted"
-
-    def replace_plates(self, ip, user, password, plates_normalized):
-        """Full sync: deja la camara EXACTAMENTE con `plates_normalized`."""
+    def replace_plates(self, ip, user, password, plates_normalized,
+                       on_write=None):
+        """Full sync: deja la camara EXACTAMENTE con `plates_normalized`.
+        `on_write` igual que en apply_plate."""
         with self._camera_lock(ip):
             return self._replace_plates_locked(ip, user, password,
-                                               plates_normalized)
+                                               plates_normalized, on_write)
 
-    def _replace_plates_locked(self, ip, user, password, plates_normalized):
+    def _replace_plates_locked(self, ip, user, password, plates_normalized,
+                               on_write=None):
         capacity = self.plate_capacity(ip, user, password)
         if capacity is not None and len(plates_normalized) > capacity:
             raise AnprCameraError(
                 "LIST_FULL",
                 f"{len(plates_normalized)} placas > capacidad {capacity}")
-        # Solo se reusa el header del export; las filas viejas se descartan.
+        # Solo se reusa el header del export; las filas viejas se descartan
+        # (pero su allowlist queda como el "antes" del historial).
         # Export e import escalan con el tamano de la lista (ver los timeouts
         # arriba): el export con el largo fijo, el import segun las filas.
-        header, _rows = self.get_plate_rows(ip, user, password,
-                                            timeout=ISAPI_SYNC_TIMEOUT)
+        header, old_rows = self.get_plate_rows(ip, user, password,
+                                               timeout=ISAPI_SYNC_TIMEOUT)
         rows, seen = [], set()
         for plate in plates_normalized:
             if not plate or plate in seen:
@@ -380,6 +418,8 @@ class AnprCameraClient:
         self._renumber(rows)
         self.put_plate_rows(ip, user, password, header, rows,
                             timeout=import_timeout(rows))
+        if on_write is not None:
+            on_write(self._allow_set(old_rows), set(seen))
         return len(seen)
 
 
@@ -387,10 +427,15 @@ class AnprService:
     """Fan-out de operaciones de placas a las camaras del request.
 
     En la practica el backend manda UNA camara por request, pero `cameras`
-    es array por contrato (simetria con terminals de /update-card)."""
+    es array por contrato (simetria con terminals de /update-card).
 
-    def __init__(self, channel=DEFAULT_CHANNEL):
+    Con `trace` (AnprTraceStore) cada escritura queda en el historial de la
+    placa: que entro, que salio, que fallo. El historial nunca puede tumbar
+    una sincronizacion: si falla, se loguea y la escritura sigue su curso."""
+
+    def __init__(self, channel=DEFAULT_CHANNEL, trace=None):
         self.client = AnprCameraClient(channel=channel)
+        self.trace = trace
 
     @staticmethod
     def _targets(cameras):
@@ -400,35 +445,91 @@ class AnprService:
                 continue
             yield ip, camera.get("user") or "admin", camera.get("password") or ""
 
-    def update_plate(self, action, plate_normalized, cameras):
-        """Devuelve (results, error_code): error_code None si todo OK."""
+    def _traced(self, ip, kind, source, context):
+        """Devuelve (on_write, on_error, counts) para una escritura sobre `ip`.
+        `counts` se llena con {added, removed, external} si se registro."""
+        started = time.monotonic()
+        context = context or {}
+        counts = {}
+
+        def elapsed():
+            return int((time.monotonic() - started) * 1000)
+
+        def on_write(before, after):
+            if self.trace is None:
+                return
+            try:
+                counts.update(self.trace.record_write(
+                    ip, kind, source, before, after,
+                    camera_id=context.get("cameraId"),
+                    request_id=context.get("requestId"), duration_ms=elapsed()))
+            except Exception:
+                log.exception("No se pudo registrar el historial de %s en %s",
+                              kind, ip)
+
+        def on_error(code):
+            if self.trace is None:
+                return
+            try:
+                self.trace.record_write_error(
+                    ip, kind, code, camera_id=context.get("cameraId"),
+                    request_id=context.get("requestId"), duration_ms=elapsed())
+            except Exception:
+                log.exception("No se pudo registrar el fallo de %s en %s",
+                              kind, ip)
+
+        return on_write, on_error, counts
+
+    def update_plate(self, action, plate_normalized, cameras, context=None):
+        """Devuelve (results, error_code): error_code None si todo OK.
+        `context` = {requestId, cameraId} del request, para el historial."""
         results, error_code = [], None
         for ip, user, password in self._targets(cameras):
+            on_write, on_error, counts = self._traced(ip, action, "UPDATE", context)
             try:
                 detail = self.client.apply_plate(ip, user, password,
-                                                 action, plate_normalized)
-                results.append({"ip": ip, "ok": True, "detail": detail})
+                                                 action, plate_normalized,
+                                                 on_write=on_write)
+                results.append(dict({"ip": ip, "ok": True, "detail": detail}, **counts))
             except AnprCameraError as e:
                 log.error("update-plate %s %s fallo en %s: %s",
                           action, plate_normalized, ip, e.code)
+                on_error(e.code)
                 results.append({"ip": ip, "ok": False, "detail": e.code})
                 error_code = _worst(error_code, e.code)
         return results, error_code
 
-    def sync_plates(self, plates_normalized, cameras):
+    def sync_plates(self, plates_normalized, cameras, context=None):
         results, error_code = [], None
         for ip, user, password in self._targets(cameras):
+            on_write, on_error, counts = self._traced(ip, "FULL_SYNC", "SYNC", context)
             try:
                 applied = self.client.replace_plates(ip, user, password,
-                                                     plates_normalized)
-                results.append({"ip": ip, "ok": True,
-                                "detail": f"replaced_{applied}"})
+                                                     plates_normalized,
+                                                     on_write=on_write)
+                # added/removed/external: lo que cambio en la camara con este
+                # envio (aditivo al contrato; Aditum hoy ignora el body).
+                results.append(dict({"ip": ip, "ok": True,
+                                     "detail": f"replaced_{applied}"}, **counts))
             except AnprCameraError as e:
                 log.error("sync-plates (%s placas) fallo en %s: %s",
                           len(plates_normalized), ip, e.code)
+                on_error(e.code)
                 results.append({"ip": ip, "ok": False, "detail": e.code})
                 error_code = _worst(error_code, e.code)
         return results, error_code
+
+    def apply_test_plate(self, ip, user, password, action, plate_normalized):
+        """ADD/DELETE manual desde el editor (/anpr-test). Queda en el
+        historial como TEST: un cambio a mano tambien explica por que una
+        placa entro o salio. Relanza AnprCameraError."""
+        on_write, on_error, _counts = self._traced(ip, f"TEST_{action}", "TEST", None)
+        try:
+            return self.client.apply_plate(ip, user, password, action,
+                                           plate_normalized, on_write=on_write)
+        except AnprCameraError as e:
+            on_error(e.code)
+            raise
 
 
 # Prioridad al reportar el fallo agregado: la falta de red (504) manda sobre

@@ -119,7 +119,7 @@
   /* ---------- Fields ---------- */
   label{ display:block; font-size:12.5px; font-weight:600; color:var(--mut); margin-bottom:6px; letter-spacing:.005em; }
   label .key{ display:inline-block; margin-left:6px; vertical-align:baseline; font:10.5px/1.5 var(--mono); font-weight:400; color:var(--mut-2); background:#eef2f8; border:1px solid var(--line); border-radius:5px; padding:1px 5px; }
-  input[type=password],input[type=text],input[type=number],select,textarea{
+  input[type=password],input[type=text],input[type=number],input[type=date],select,textarea{
     width:100%; min-height:44px;
     border:1px solid var(--line-2); border-radius:var(--radius-sm);
     padding:0 13px; color:var(--txt); background:#fff;
@@ -351,6 +351,25 @@
   .lightbox .lb-pos{ font-size:12px; color:#9aa6b8; }
   @media (max-width:640px){ .lightbox .lb-main{ padding:0; } .lightbox .lb-nav{ width:38px; height:60px; font-size:24px; background:rgba(255,255,255,.22); } .lightbox .lb-prev{ left:4px; } .lightbox .lb-next{ right:4px; } .caps-filters .f-date,.caps-filters .f-time,.caps-filters .f-plate,.caps-filters .f-reason{ width:100%; } .caps-filters .field{ flex:1 1 140px; } }
   .badge.warn{ background:var(--warn-bg); color:var(--warn); border:1px solid var(--warn-line); }
+
+  /* ---------- Historial de una placa ---------- */
+  .hist-form{ display:flex; flex-wrap:wrap; gap:10px 12px; align-items:flex-end; margin-top:14px; }
+  .hist-form[hidden]{ display:none; }
+  .hist-form .field{ margin:0; flex:1 1 140px; }
+  .hist-form .f-plate{ flex:0 1 150px; }
+  .hist-sec{ margin-top:22px; }
+  .hist-finding{ border:1px solid var(--line); border-left:4px solid #9aa6b8; border-radius:var(--radius-sm);
+                 padding:10px 12px; margin-top:8px; background:#fff; }
+  .hist-finding.bad{ border-left-color:var(--err); }
+  .hist-finding.warn{ border-left-color:var(--warn); }
+  .hist-finding .hf-title{ font-weight:700; color:var(--ink); }
+  .hist-finding .hf-msg{ font-size:13px; color:var(--txt); margin-top:3px; }
+  .hist-finding .hf-when{ font-size:12px; color:var(--mut); margin-top:4px; }
+  .hist-thumb{ width:64px; height:44px; object-fit:cover; border-radius:4px; border:1px solid var(--line);
+               margin:2px 4px 2px 0; vertical-align:middle; background:#eef2f8; }
+  .tbl td.hist-when{ white-space:nowrap; font:12.5px/1.3 var(--mono); }
+  .hist-open{ margin-top:4px; }
+  #sec-historial .badge:not(.ok):not(.bad):not(.warn){ background:#eef2f8; color:var(--mut); border:1px solid var(--line); }
 
   /* ---------- Inline message ---------- */
   #msg{ margin-top:14px; font-size:14px; font-weight:500; line-height:1.5; white-space:pre-wrap; }
@@ -661,6 +680,15 @@
               <div class="hint">Se borran solas al cumplir los días; si antes se pasa el tope, salen primero las más viejas.</div>
             </div>
           </div>
+          <div class="subbox" style="margin-top:12px">
+            <div class="hsub">Historial de placas</div>
+            <div class="field" style="margin:0">
+              <label for="f_anprHistoryDays">Conservar <span class="muted">(días)</span> <span class="key">historyDays</span></label>
+              <input type="number" id="f_anprHistoryDays" min="7" max="365" value="90" style="max-width:200px">
+              <div class="hint">Cuándo entró y salió cada placa de la lista de la cámara, todas sus lecturas y los
+                eventos de apertura. Es lo que consulta <b>Historial de una placa</b>.</div>
+            </div>
+          </div>
         </div>
 
         <!-- 3. Operacion: la cola de envios -->
@@ -687,6 +715,19 @@
           </div>
           <div id="anprCapturesBody"><p class="hint">Sin consultar.</p></div>
           <div class="hint">«Ver bitácora» abre las fotos: filtrá por fecha, rango de horas, placa o motivo.</div>
+        </div>
+
+        <!-- 4b. Diagnostico: historial de una placa -->
+        <div class="cond" style="margin-top:22px">
+          <div class="blkhead">
+            <div class="hsub">Historial de una placa</div>
+            <div class="row">
+              <button class="sm" id="btnAnprHistory" type="button">Investigar una placa</button>
+            </div>
+          </div>
+          <div class="hint">Para una placa que no abrió o salió como <b>otherList</b>: cuándo entró y salió de la lista
+            de la cámara, cada vez que se leyó y en qué lista, si en ese momento estaba autorizada y si hay evidencia
+            de que la aguja se abrió.</div>
         </div>
 
         <!-- 5. Diagnostico: hablar con una camara sin pasar por Aditum -->
@@ -758,6 +799,41 @@
       <div class="caps-info" id="capsInfo"></div>
       <div id="capsGrid"><p class="hint">Consultando…</p></div>
       <div class="caps-more"><button class="sec sm" id="btnCapsMore" type="button" hidden>Cargar más</button></div>
+    </div>
+
+    <div class="card" id="sec-historial">
+      <div class="dashhead">
+        <h2>Historial de una placa</h2>
+        <span class="spacer"></span>
+        <button class="sec sm" id="btnHistBack" type="button">← Volver a ANPR</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Reconstruye qué pasó con una placa en este equipo: cuándo <b>entró</b> y
+        <b>salió</b> de la lista de la cámara, cada <b>lectura</b> y en qué lista la reportó la cámara, si en ese
+        momento <b>estaba autorizada</b>, y qué evidencia hay de <b>apertura</b>. El historial empieza a contar desde
+        que este equipo tiene esta versión.</p>
+      <div class="hist-form">
+        <div class="field f-plate"><label for="hi_plate">Placa</label>
+          <input type="text" id="hi_plate" placeholder="ABC123" autocomplete="off" autocapitalize="characters"></div>
+        <div class="field"><label for="hi_ip">IP de la cámara <span class="muted">(opcional)</span></label>
+          <input type="text" id="hi_ip" placeholder="Todas"></div>
+        <div class="field"><label for="hi_from">Desde</label><input type="date" id="hi_from"></div>
+        <div class="field"><label for="hi_to">Hasta</label><input type="date" id="hi_to"></div>
+      </div>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="hi_live"> Consultar también la cámara en vivo
+        <span class="muted">(si hoy tiene la placa, su reloj y su registro de apertura)</span></label>
+      <div class="hist-form" id="hi_liveCond" hidden>
+        <div class="field"><label for="hi_user">Usuario de la cámara</label>
+          <input type="text" id="hi_user" placeholder="admin" value="admin"></div>
+        <div class="field"><label for="hi_pass">Contraseña</label>
+          <input type="password" id="hi_pass" placeholder="••••••••"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="sm" id="btnHistSearch" type="button">Investigar</button>
+        <button class="sec sm" id="btnHistProbe" type="button">¿Qué puede confirmar esta cámara?</button>
+      </div>
+      <div class="hint">Las credenciales se usan solo para esta consulta y <b>no se guardan</b>. La consulta en vivo
+        puede tardar hasta un minuto con listas grandes.</div>
+      <div id="histBody"><p class="hint">Ingresá una placa y tocá «Investigar».</p></div>
     </div>
 
     <div class="card" id="sec-red">
@@ -1090,6 +1166,7 @@
     setChk('f_anprCapture', anpr.captureUnrecognized !== false);
     setVal('f_anprCaptureDays', anpr.captureRetentionDays !== undefined ? anpr.captureRetentionDays : 15);
     setVal('f_anprCaptureMb', anpr.captureMaxMb !== undefined ? anpr.captureMaxMb : 500);
+    setVal('f_anprHistoryDays', anpr.historyDays !== undefined ? anpr.historyDays : HISTORY_DAYS_DEFAULT);
     refreshAnprUrls();
 
     applyConditionalVisibility();
@@ -1499,6 +1576,252 @@
     }
   }
 
+  // ---------- Historial de una placa (/anpr-plate-history) ----------
+  const HISTORY_DAYS_DEFAULT = 90;
+  const HIST_SOURCE = {
+    SYNC: 'envío de Aditum', UPDATE: 'alta/baja suelta de Aditum', TEST: 'prueba desde este editor',
+    BASELINE: 'ya estaba al empezar el historial', EXTERNAL: 'cambio hecho directo en la cámara',
+  };
+  const HIST_FINDING = {
+    OTHERLIST_WHILE_ON_ALLOWLIST: 'Leída como otherList estando en el allowlist',
+    NOT_ON_LIST_AT_READ: 'No estaba en la lista de la cámara al leerla',
+    SYNC_FAILED_BEFORE_READ: 'Falló el envío a la cámara antes de la lectura',
+    READ_ALLOWLIST_NOT_OPENED: 'Reconocida pero la cámara no registró la orden de apertura',
+    CAMERA_LIST_DIFFERS: 'La cámara no coincide con el historial',
+    PLATE_IN_BLOCKLIST: 'Está en la lista negra de la cámara',
+    PLATE_EXPIRED_ON_CAMERA: 'Vigencia vencida en la cámara',
+    CHANGED_OUTSIDE_ADITUM: 'Cambio hecho directo en la cámara',
+    ALLOWLIST_READ_NOT_IN_HISTORY: 'Autorizada por la cámara pero no según el historial',
+    POSSIBLE_MISREAD: 'Posible mala lectura de la cámara',
+    CLOCK_SKEW: 'Hora de la cámara distinta a la de este equipo',
+    CAMERA_CLOCK_SKEW: 'Reloj de la cámara corrido',
+    NO_HISTORY: 'Sin historial para esa fecha',
+    NO_READS: 'Sin lecturas de esta placa en el rango',
+  };
+  const histWhen = (iso) => String(iso || '').replace('T', ' ').slice(0, 19);
+  const daysAgo = (n) => { const d = new Date(Date.now() - n * 86400000); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  function histYesNo(v) {
+    return v === true ? '<span class="badge ok">Sí</span>' : v === false ? '<span class="badge bad">No</span>'
+      : '<span class="badge warn">Sin historial</span>';
+  }
+  function histListBadge(l) {
+    return l === 'allowlist' ? '<span class="badge ok">allowlist</span>'
+      : l === 'sin_dato' ? '<span class="badge warn">sin dato</span>'
+      : '<span class="badge bad">' + esc(l || '?') + '</span>';
+  }
+  function histPhotos(urls) {
+    return (urls || []).map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener">' +
+      '<img class="hist-thumb" src="' + esc(u) + '" alt="foto" loading="lazy"></a>').join('');
+  }
+  function histOpened(e) {
+    // Solo las reconocidas deberian abrir; una rechazada solo se marca si hubo apertura.
+    if (!e.expectedOpen && e.opened !== true) return '';
+    const badge = e.opened === true
+      ? '<span class="badge ' + (e.expectedOpen ? 'ok' : 'warn') + '">' + (e.openStage === 'PHYSICAL' ? 'Se abrió' : 'Orden de apertura') + '</span>'
+      : e.opened === false ? '<span class="badge bad">Sin orden de apertura</span>'
+      : '<span class="badge">No se sabe</span>';
+    return '<div class="hist-open">¿Abrió? ' + badge +
+      (e.openEvidence ? ' <span class="muted">' + esc(e.openEvidence) + '</span>' : '') + '</div>';
+  }
+  function histVia(c) {
+    return esc(HIST_SOURCE[c.source] || c.source) + (c.requestId ? ', solicitud ' + esc(c.requestId) : '');
+  }
+  function histInit() {
+    if (!$('hi_from').value) $('hi_from').value = daysAgo(30);
+    if (!$('hi_to').value) $('hi_to').value = localToday();
+    if (!$('hi_ip').value && $('f_testIp').value) $('hi_ip').value = $('f_testIp').value;
+    $('hi_liveCond').hidden = !$('hi_live').checked;
+    $('hi_plate').focus();
+  }
+  function histError(r, d) {
+    if (r.status === 404 && d && /deshabilitado/.test(d.error || '')) return 'El ANPR está apagado en este equipo.';
+    return (d && d.error) ? anprTestError(d) : 'HTTP ' + r.status;
+  }
+
+  async function runPlateHistory() {
+    const body = $('histBody');
+    const plate = txt($('hi_plate')).toUpperCase();
+    if (!plate) { body.innerHTML = '<p class="hint txt-bad">Ingresá la placa.</p>'; return; }
+    const ip = txt($('hi_ip'));
+    const payload = { plate: plate, from: $('hi_from').value || undefined, to: $('hi_to').value || undefined };
+    if (ip) payload.cameraIp = ip;
+    if ($('hi_live').checked) {
+      if (!ip) { body.innerHTML = '<p class="hint txt-bad">Para consultar la cámara en vivo ingresá su IP.</p>'; return; }
+      payload.cameras = [{ ip: ip, user: txt($('hi_user')) || 'admin', password: $('hi_pass').value || '' }];
+    }
+    body.innerHTML = '<p class="hint">Consultando' + (payload.cameras ? ' el historial y la cámara…' : ' el historial…') + '</p>';
+    try {
+      const r = await fetch('/anpr-plate-history', Object.assign(fetchOpts(), {
+        method: 'POST', headers: headers(), body: JSON.stringify(payload),
+      }));
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { body.innerHTML = '<p class="hint txt-bad">' + esc(histError(r, d)) + '</p>'; return; }
+      body.innerHTML = renderPlateHistory(d);
+    } catch (e) {
+      body.innerHTML = '<p class="hint txt-bad">No se pudo consultar el historial: ' + esc(String(e.message || e)) + '</p>';
+    }
+  }
+
+  function renderPlateHistory(d) {
+    const s = d.summary || {};
+    let html = '<div class="hist-sec"><div class="hsub">Diagnóstico de ' + esc(d.plate) + '</div>';
+    const findings = d.findings || [];
+    if (!findings.length) html += '<p class="hint">Sin hallazgos: no hay nada fuera de lo normal en el rango.</p>';
+    findings.forEach((f) => {
+      const sev = f.severity === 'high' ? 'bad' : f.severity === 'medium' ? 'warn' : '';
+      const when = (f.occurrences || []).map((o) => histWhen(o.at)).filter(Boolean);
+      html += '<div class="hist-finding ' + sev + '"><div class="hf-title">' + esc(HIST_FINDING[f.code] || f.code) +
+        (f.count > 1 ? ' <span class="muted">×' + f.count + '</span>' : '') + '</div>' +
+        '<div class="hf-msg">' + esc(f.message) + '</div>' +
+        (when.length ? '<div class="hf-when">' + esc(when.slice(0, 6).join(' · ')) + (when.length > 6 ? ' …' : '') + '</div>' : '') +
+        '</div>';
+    });
+    html += '<div class="chips">' +
+      '<span class="chip' + (s.lastAdded ? ' ok' : '') + '">Última entrada a la lista: <b>' +
+        (s.lastAdded ? esc(histWhen(s.lastAdded.at)) : '—') + '</b></span>' +
+      '<span class="chip' + (s.lastRemoved ? ' warn' : '') + '">Última salida: <b>' +
+        (s.lastRemoved ? esc(histWhen(s.lastRemoved.at)) : '—') + '</b></span>' +
+      '<span class="chip">Lecturas: <b>' + (s.reads || 0) + '</b> (' + (s.readsAllowlist || 0) + ' allowlist, ' +
+        (s.readsOtherList || 0) + ' otherList)</span>' +
+      (s.otherListWhileOnAllowlist ? '<span class="chip bad">otherList estando autorizada: <b>' + s.otherListWhileOnAllowlist + '</b></span>' : '') +
+      (s.readsNotOnList ? '<span class="chip bad">Leída sin estar en la lista: <b>' + s.readsNotOnList + '</b></span>' : '') +
+      (s.readsNotOpened ? '<span class="chip bad">Reconocida sin orden de apertura: <b>' + s.readsNotOpened + '</b></span>' : '') +
+      '</div></div>';
+
+    const cams = d.cameras || [];
+    if (cams.length) {
+      html += '<div class="hist-sec"><div class="hsub">Cámaras</div><div class="tbl-wrap"><table class="tbl"><thead><tr>' +
+        '<th>Cámara</th><th>Historial desde</th><th>En la lista hoy</th><th>En la cámara ahora</th><th>Reloj</th>' +
+        '<th>Registro de apertura</th></tr></thead><tbody>';
+      cams.forEach((c) => {
+        const live = c.live || {};
+        const find = live.find || {};
+        const now = !c.live ? '<span class="muted">sin consultar</span>'
+          : find.ok ? (find.found ? histYesNo(find.match && find.match.group === 'allowlist') +
+              (find.match && find.match.validTo ? ' <span class="muted">vigente hasta ' + esc(find.match.validTo) + '</span>' : '')
+              : histYesNo(false))
+          : '<span class="txt-bad">' + esc(anprTestError(find)) + '</span>';
+        const t = live.time || {};
+        const clock = !c.live ? '—' : t.skewSeconds === null || t.skewSeconds === undefined ? esc(t.error || '—')
+          : (Math.abs(t.skewSeconds) > 60 ? '<span class="txt-bad">' : '<span class="txt-ok">') +
+            (t.skewSeconds > 0 ? '+' : '') + t.skewSeconds + ' s</span>';
+        const al = live.alarmLog;
+        const alarm = !c.live || !al ? '—'
+          : al.ok ? '<span class="txt-ok">consultado</span> <span class="muted">(' + (al.alarmOutEntries || 0) + ' órdenes)</span>'
+          : al.error === 'NO_STORAGE' ? '<span class="txt-bad">la cámara no tiene SD</span>'
+          : '<span class="muted">' + esc(al.error ? anprTestError({ error: al.error }) : 'no disponible') + '</span>';
+        html += '<tr><td>' + esc(c.ip) + (c.cameraId ? ' <span class="muted">(Aditum ' + esc(c.cameraId) + ')</span>' : '') + '</td>' +
+          '<td class="hist-when">' + esc(histWhen(c.historySince) || '—') + '</td>' +
+          '<td>' + histYesNo(c.onListNow) + '</td><td>' + now + '</td><td>' + clock + '</td><td>' + alarm + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+
+    const tl = (d.timeline || []).slice().reverse(); // lo mas reciente arriba
+    html += '<div class="hist-sec"><div class="hsub">Qué pasó (más reciente arriba)</div>';
+    if (!tl.length) {
+      html += '<p class="hint">Nada que mostrar: ni lecturas en el rango ni entradas/salidas de la lista hasta la fecha final.</p>';
+    } else {
+      html += '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha y hora</th><th>Etapa</th><th>Detalle</th><th>Fotos</th></tr></thead><tbody>';
+      tl.forEach((e) => {
+        // La apertura va dentro de su lectura; el evento aparte queda para el API.
+        if (e.stage === 'OPEN_ORDER' || e.stage === 'PHYSICAL') return;
+        let stage = '', detail = '';
+        if (e.stage === 'LIST') {
+          stage = e.event === 'ENTRO' ? '<span class="badge ok">Entró a la lista</span>' : '<span class="badge bad">Salió de la lista</span>';
+          detail = 'Por ' + histVia(e);
+        } else if (e.stage === 'SYNC_ERROR') {
+          stage = '<span class="badge bad">Envío fallido</span>';
+          detail = esc(anprTestError({ error: e.error })) + (e.requestId ? ' <span class="muted">(solicitud ' + esc(e.requestId) + ')</span>' : '');
+        } else if (e.stage === 'READ') {
+          stage = '<span class="badge">Lectura</span>';
+          detail = 'Leída <b class="plate">' + esc(e.plateRead || d.plate) + '</b> como ' + histListBadge(e.list) +
+            ' · ¿estaba en el allowlist? ' + histYesNo(e.onAllowlist) +
+            (e.onAllowlistAtCapture !== null && e.onAllowlistAtCapture !== undefined ? ' <span class="muted">(a la hora de captura: ' + histYesNo(e.onAllowlistAtCapture) + ')</span>' : '') +
+            (e.confidence !== null && e.confidence !== undefined ? ' <span class="muted">· confianza ' + esc(e.confidence) + '</span>' : '') +
+            histOpened(e);
+        } else {
+          stage = e.opened === true ? '<span class="badge ok">' + (e.stage === 'PHYSICAL' ? 'Se abrió' : 'Orden de apertura') + '</span>'
+            : '<span class="badge bad">Sin orden de apertura</span>';
+          detail = esc(e.evidence || '');
+        }
+        html += '<tr><td class="hist-when">' + esc(histWhen(e.at)) + '</td><td>' + stage + '</td><td>' + detail +
+          (e.camera ? ' <span class="muted">· ' + esc(e.camera) + '</span>' : '') + '</td><td>' + histPhotos(e.photos) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '<p class="hint">Apertura: ' + (cams.some((c) => c.live) ? ''
+      : 'sin consultar la cámara en vivo no hay evidencia de que la aguja se haya abierto. ') +
+      '«Orden de apertura» sale del registro de alarmas de la cámara, que necesita una SD; «Se abrió» solo existe ' +
+      'si hay un sensor de la barrera conectado a la cámara.</p></div>';
+
+    const similar = d.similarReads || [];
+    if (similar.length) {
+      html += '<div class="hist-sec"><div class="hsub">Lecturas parecidas (posible mala lectura)</div><div class="tbl-wrap"><table class="tbl"><thead><tr>' +
+        '<th>Placa leída</th><th>Veces</th><th>Lista</th><th>Última</th><th>Foto</th></tr></thead><tbody>';
+      similar.forEach((x) => {
+        html += '<tr><td class="plate">' + esc(x.plate) + '</td><td>' + x.count + '</td><td>' +
+          (x.lists || []).map(histListBadge).join(' ') + '</td><td class="hist-when">' + esc(histWhen(x.lastAt)) +
+          '</td><td>' + histPhotos(x.photos) + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+    html += '<p class="hint" style="margin-top:14px">Rango: ' + esc(histWhen(d.range && d.range.from)) + ' → ' +
+      esc(histWhen(d.range && d.range.to)) + '. El historial se conserva ' + esc(d.retentionDays) + ' días.</p>';
+    return html;
+  }
+
+  function histLog24(log) {
+    log = log || {};
+    if (log.error === 'NO_STORAGE') return 'no se puede consultar (la cámara no tiene SD)';
+    if (!log.ok) return esc(log.error ? anprTestError({ error: log.error }) : 'no disponible');
+    return esc(Object.keys(log.types || {}).join(', ') || 'sin registros');
+  }
+  async function runPlateProbe() {
+    const body = $('histBody');
+    const ip = txt($('hi_ip'));
+    if (!ip) { body.innerHTML = '<p class="hint txt-bad">Ingresá la IP de la cámara.</p>'; return; }
+    $('hi_live').checked = true; $('hi_liveCond').hidden = false;
+    body.innerHTML = '<p class="hint">Consultando qué expone la cámara…</p>';
+    try {
+      const r = await fetch('/anpr-plate-history/probe', Object.assign(fetchOpts(), {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ ip: ip, user: txt($('hi_user')) || 'admin', password: $('hi_pass').value || '' }),
+      }));
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { body.innerHTML = '<p class="hint txt-bad">' + esc(histError(r, d)) + '</p>'; return; }
+      const s = d.summary || {};
+      const yes = (v) => v ? '<span class="badge ok">Sí</span>' : '<span class="badge bad">No</span>';
+      const hosts = (s.postsTo || []).map((h) => esc((h.ip || '?') + ':' + (h.port || '80') + (h.url || ''))).join('<br>');
+      const pulses = (s.alarmOutputPulseMs || []).map((ms) => (parseInt(ms, 10) / 1000) + ' s').join(', ');
+      const rows = [
+        ['Modelo / firmware', esc((s.model || '—') + ' / ' + (s.firmware || '—'))],
+        ['¿A dónde envía las lecturas?', hosts || '<span class="badge bad">A ningún equipo</span>'],
+        ['Salidas de alarma (abren la aguja)', esc(s.alarmOutputs || 0) + (pulses ? ' <span class="muted">· pulso ' + esc(pulses) + '</span>' : '')],
+        ['¿Se ve por ISAPI el linkage allowlist → salida?', s.linkageToAlarmOut ? yes(true)
+          : '<span class="badge warn">No visible</span> <span class="muted">se configura en la cámara; no significa que no abra</span>'],
+        ['¿Tiene SD / almacenamiento?', yes(s.hasStorage)],
+        ['¿Se puede confirmar la orden de apertura?', s.canConfirmOpenOrder ? yes(true)
+          : '<span class="badge bad">No</span> <span class="muted">' + (s.hasStorage ? 'su registro no reporta la salida de alarma'
+            : 'hace falta una SD en la cámara para consultar su registro de alarmas') + '</span>'],
+        ['¿Se puede confirmar la apertura física?', s.canConfirmPhysicalOpen
+          ? '<span class="badge warn">Con sensor</span> <span class="muted">' + esc(s.alarmInputs) + ' entrada(s) de alarma para cablear un sensor de la barrera</span>'
+          : yes(false)],
+        ['¿Control de barrera por API?', yes(s.barrierGateApi)],
+      ];
+      const auth = Object.values(d).some((v) => v && v.error === 'CAMERA_AUTH');
+      const down = Object.values(d).some((v) => v && v.error === 'CAMERA_UNREACHABLE');
+      body.innerHTML = (auth ? '<p class="hint txt-bad">Usuario o contraseña incorrectos.</p>' : '') +
+        (down ? '<p class="hint txt-bad">No se llegó a la cámara.</p>' : '') +
+        '<div class="hist-sec"><div class="hsub">Qué puede confirmar la cámara ' + esc(d.ip) + '</div>' +
+        '<div class="tbl-wrap"><table class="tbl"><tbody>' +
+        rows.map((x) => '<tr><td>' + x[0] + '</td><td>' + x[1] + '</td></tr>').join('') +
+        '</tbody></table></div><p class="hint">Registro de la cámara, últimas 24 h: ' + histLog24(d.logSearch24h) + '.</p></div>';
+    } catch (e) {
+      body.innerHTML = '<p class="hint txt-bad">No se pudo consultar la cámara: ' + esc(String(e.message || e)) + '</p>';
+    }
+  }
+
   // ---------- Bitacora de placas no reconocidas ----------
   const capImg = (n) => '/anpr-captures/' + encodeURIComponent(n);
   // La escena completa va grande; el recorte de la placa, chico debajo
@@ -1724,15 +2047,17 @@
     if (secTypeHidden[currentSec]) currentSec = 'sec-tipo'; // la activa quedo excluida
     // La bitacora de placas no esta en el menu: es una sub-pagina de ANPR (se
     // entra con "Ver bitacora"), asi que ANPR sigue marcada mientras se la ve.
-    const navSec = currentSec === 'sec-placas' ? 'sec-anpr' : currentSec;
+    const navSec = (currentSec === 'sec-placas' || currentSec === 'sec-historial') ? 'sec-anpr' : currentSec;
     document.querySelectorAll('.secnav a[data-sec]').forEach((a) => {
       const sec = a.dataset.sec, el = $(sec);
       if (el) el.hidden = sec !== currentSec;
       a.classList.toggle('active', sec === navSec);
     });
     $('sec-placas').hidden = currentSec !== 'sec-placas';
+    $('sec-historial').hidden = currentSec !== 'sec-historial';
     // Guardar solo en paginas de configuracion y solo con cambios o mensaje activo
-    const configPage = currentSec !== 'sec-salud' && currentSec !== 'sec-seguridad' && currentSec !== 'sec-placas';
+    const configPage = currentSec !== 'sec-salud' && currentSec !== 'sec-seguridad'
+      && currentSec !== 'sec-placas' && currentSec !== 'sec-historial';
     document.querySelector('.savebar').hidden = !configPage || (!formDirty && !msg.textContent);
   }
   function selectSection(secId) {
@@ -1742,6 +2067,7 @@
     refreshPages();
     if (secId === 'sec-salud') loadHealth();
     if (secId === 'sec-placas') capsSearch(true);
+    if (secId === 'sec-historial') histInit();
     if (secId === 'sec-anpr' && $('f_anprEnabled').checked && $('f_anprCapture').checked) loadAnprCaptures();
     window.scrollTo(0, 0);
   }
@@ -1773,6 +2099,7 @@
     // Bitacora de placas: su bloque y su sub-pagina solo existen con la captura encendida
     $('capturesBlock').hidden = !$('f_anprCapture').checked;
     if (currentSec === 'sec-placas' && !($('f_anprEnabled').checked && $('f_anprCapture').checked)) currentSec = 'sec-anpr';
+    if (currentSec === 'sec-historial' && !$('f_anprEnabled').checked) currentSec = 'sec-anpr';
 
     refreshPages();
   }
@@ -1848,6 +2175,12 @@
       captureRetentionDays: toInt($('f_anprCaptureDays').value, 15),
       captureMaxMb: toInt($('f_anprCaptureMb').value, 500),
     };
+    // historyDays solo viaja si se cambio: una config con la clave no la
+    // acepta un equipo con una version anterior (schema estricto).
+    const historyDays = toInt($('f_anprHistoryDays').value, HISTORY_DAYS_DEFAULT);
+    if (historyDays !== HISTORY_DAYS_DEFAULT || (state.anpr && state.anpr.historyDays !== undefined)) {
+      cfg.anpr.historyDays = historyDays;
+    }
 
     // Poller pull de respaldo: fijo, sin opciones en la UI
     cfg.polling = { enabled: true, intervalSeconds: 40 };
@@ -1885,6 +2218,7 @@
     if (cfg.gpio.watchdog.enabled && cfg.gpio.watchdog.intervalSec < 30) errs.push('watchdog.intervalSec debe ser ≥ 30');
     if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
     if (cfg.anpr.purgeDays < 0 || cfg.anpr.purgeDays > 90) errs.push('Los días de retención de lecturas deben estar entre 0 y 90');
+    if (cfg.anpr.historyDays !== undefined && (cfg.anpr.historyDays < 7 || cfg.anpr.historyDays > 365)) errs.push('Los días del historial de placas deben estar entre 7 y 365');
     return errs;
   }
 
@@ -2396,6 +2730,12 @@
   $('btnAnprStatus').addEventListener('click', loadAnprStatus);
   $('btnAnprCapturesRefresh').addEventListener('click', loadAnprCaptures);
   $('btnAnprCaptures').addEventListener('click', () => selectSection('sec-placas'));
+  $('btnAnprHistory').addEventListener('click', () => selectSection('sec-historial'));
+  $('btnHistBack').addEventListener('click', () => selectSection('sec-anpr'));
+  $('btnHistSearch').addEventListener('click', runPlateHistory);
+  $('btnHistProbe').addEventListener('click', runPlateProbe);
+  $('hi_live').addEventListener('change', () => { $('hi_liveCond').hidden = !$('hi_live').checked; });
+  $('hi_plate').addEventListener('keydown', (e) => { if (e.key === 'Enter') runPlateHistory(); });
   $('btnCapsRefresh').addEventListener('click', () => capsSearch(true));
   $('btnCapsBack').addEventListener('click', () => selectSection('sec-anpr'));
   $('btnCapsSearch').addEventListener('click', () => capsSearch(true));

@@ -89,6 +89,8 @@ Reglas:
 | `/anpr-captures` | GET / DELETE | T/S | Bitácora local de placas no reconocidas (con foto) / vaciarla |
 | `/anpr-captures/<archivo>` | GET | T/S | Una foto (o el JSON) de esa bitácora |
 | `/anpr-test` | POST | T/S | Probar la conexión con la cámara y consultar su lista de placas |
+| `/anpr-plate-history` | POST | T/S | Historial de una placa: entradas/salidas de la lista, lecturas, apertura y diagnóstico |
+| `/anpr-plate-history/probe` | POST | T/S | Qué expone una cámara para confirmar aperturas (solo lectura) |
 | `/sync-plates` | POST | T/S | Cargar la lista de placas autorizadas del condominio |
 | `/update-plate` | POST | T/S | Alta/baja de una placa suelta |
 | `/restart` | POST | T/S | Reiniciar el proceso de este API |
@@ -596,7 +598,8 @@ una cámara ANPR en la LAN posteando a `/anpr-event`. Con el ANPR apagado,
 responden `{"error": "ANPR deshabilitado en este dispositivo"}`: `400` los
 que hablan con la cámara (`/update-plate`, `/sync-plates`, `/anpr-test`) y
 `404` los de la cola local (`/anpr-event`, `/anpr-status`,
-`/anpr-status/pending`).
+`/anpr-status/pending`) y los del historial (`/anpr-plate-history`,
+`/anpr-plate-history/probe`).
 
 | Endpoint | Método | Auth | Notas |
 |---|---|---|---|
@@ -607,11 +610,13 @@ que hablan con la cámara (`/update-plate`, `/sync-plates`, `/anpr-test`) y
 | `/anpr-status/pending` | DELETE | token | Borra las lecturas **pendientes** de enviar (no toca las confirmadas/descartadas). Botón "Borrar pendientes" del editor, para limpiar tras pruebas o un cutover |
 | `/anpr-captures` | GET / DELETE | token | **Bitácora local de placas no reconocidas**: lecturas ilegibles o fuera del allow list, con las fotos que mandó la cámara. `DELETE` la vacía. Ver sección abajo |
 | `/anpr-captures/<archivo>` | GET | token | Una foto (`image/jpeg`) o el JSON de un registro de esa bitácora |
-| `/anpr-test` | POST | token | **Diagnóstico y consulta**: habla directo con una cámara sin pasar por Aditum. `CHECK`/`LIST`/`FIND` solo leen; `ADD`/`DELETE` escriben |
+| `/anpr-test` | POST | token | **Diagnóstico y consulta**: habla directo con una cámara sin pasar por Aditum. `CHECK`/`LIST`/`FIND` solo leen; `ADD`/`DELETE` escriben (y quedan en el historial como `TEST`) |
+| `/anpr-plate-history` | POST | token | **Historial de una placa**: cuándo entró/salió de la lista, cada lectura y si estaba en el allow list, evidencia de apertura, hallazgos. Ver sección abajo |
+| `/anpr-plate-history/probe` | POST | token | Qué expone una cámara para confirmar aperturas (log de ALARM OUT, IO, linkage). Solo lectura |
 
 Si el Pi no tiene ANPR habilitado (`anpr.enabled = false`) → `400` en
 `/update-plate` y `/sync-plates`; `404` en `/anpr-event`, `/anpr-status`,
-`/anpr-status/pending`, `/anpr-captures` y `/anpr-test`. `/anpr-captures`
+`/anpr-status/pending`, `/anpr-captures`, `/anpr-test` y `/anpr-plate-history`. `/anpr-captures`
 responde `404` también con `anpr.captureUnrecognized = false`.
 
 **`POST /update-plate`** — cuerpo:
@@ -631,6 +636,12 @@ viajan en el payload (el Pi es *stateless*: las usa y las descarta, igual que
 
 **`POST /sync-plates`** — igual, con `"plates": [{plate, plateNormalized}, …]`
 en vez de una placa; deja la cámara exactamente con esa lista.
+
+Cada elemento de `results` (en los dos endpoints) trae, cuando la escritura
+salió bien, `added`/`removed`/`external`: cuántas placas entraron y salieron
+de la lista de esa cámara con este envío, y cuántas eran distintas a lo último
+que el Pi había escrito (cambio hecho por fuera de Aditum). Es aditivo e
+informativo; el detalle por placa queda en el historial (`/anpr-plate-history`).
 
 **Vigencia que se escribe en la cámara.** Cada placa se carga en la lista
 blanca (grupo `1`) con vigencia **fija desde `2000-01-01`** y hasta hoy + 20
@@ -776,7 +787,8 @@ token del dispositivo, con backoff de 5 s a 5 min; Aditum deduplica por
 eventos confirmados se purgan a los `anpr.purgeDays` días.
 
 Es el **único** endpoint público además de `/` y el editor: la cámara no sabe
-mandar bearer. Se acota filtrando la IP de origen (ver `anpr.cameras` abajo), y
+mandar bearer. Se acota filtrando la IP de origen (solo la LAN privada; ver la
+nota sobre la dirección de las cámaras más abajo), y
 por lo que hace: solo encolar. Un heartbeat o un evento sin placa responde
 `200 {"ignored": true}` para que la cámara no reintente.
 
@@ -804,13 +816,196 @@ enviarse.
 
 ```json
 "anpr": { "enabled": true, "purgeDays": 7,
-          "captureUnrecognized": true, "captureRetentionDays": 15, "captureMaxMb": 500 }
+          "captureUnrecognized": true, "captureRetentionDays": 15, "captureMaxMb": 500,
+          "historyDays": 90 }
 ```
 
 `purgeDays` rige por igual para las confirmadas y las descartadas: una sola
 retención para todo lo ya procesado (la edad de una descartada se mide por
 `received_at`, que no tiene `sent_at`). En `0` se borra apenas se procesa. Lo
 **pendiente no se borra nunca**: se reintenta hasta que Aditum responda OK.
+
+#### Historial de una placa (`/anpr-plate-history`)
+
+Responde **qué pasó con una placa** cruzando todo lo que el Pi registra sobre
+ella. El caso típico: una placa leída como `otherList` que debía estar en el
+allow list. El endpoint dice, con evidencia:
+
+- cuándo **entró** y cuándo **salió** de la lista de cada cámara;
+- cada vez que la cámara **la leyó**, en qué lista la reportó y si en ese
+  momento **estaba en el allow list**;
+- si falló una sincronización antes de la lectura;
+- si hubo **lecturas de placas parecidas** (mala lectura de la cámara);
+- qué evidencia hay de **apertura**.
+
+**Qué registra el Pi para esto** (tablas nuevas en `anpr-events.db`; se
+conservan `anpr.historyDays` días, default 90, rango 7–365):
+
+| Tabla | Una fila por… | Origen |
+|---|---|---|
+| `anpr_plate_change` | placa que **entra** (`ADDED`) o **sale** (`REMOVED`) de la lista de una cámara | Cada escritura ya exporta la lista antes de escribir: antes vs. después da las entradas y salidas. `source`: `SYNC` (`/sync-plates`), `UPDATE` (`/update-plate`), `TEST` (`/anpr-test` ADD/DELETE desde el editor), `BASELINE` (lo que tenía la cámara la primera vez que el Pi escribió en ella), `EXTERNAL` (la cámara tenía algo distinto a lo último que escribió el Pi: la tocaron por fuera o se reseteó) |
+| `anpr_sync_log` | escritura sobre la lista, exitosa o fallida | `requestId`, `cameraId` de Aditum, IP, resultado, `error`, cantidad de placas, entradas, salidas y cambios externos |
+| `anpr_read_log` | **toda** lectura que postea la cámara (allow list, otherList, blockList, ilegibles) | `/anpr-event`, no solo lo que se reenvía a Aditum; enlaza las fotos de `anpr-captures` |
+| `anpr_io_event` | evento IO/alarma que notifique la cámara | `/anpr-event` con `eventType` IO (ver *Apertura* abajo) |
+
+El historial **empieza a contar desde el despliegue**: la primera escritura en
+cada cámara (a lo sumo, el full sync nocturno de Aditum) deja la línea base.
+Antes de eso la membresía es `"unknown"`. Si falla el registro del historial, la
+sincronización con la cámara sigue igual.
+
+**`POST /anpr-plate-history`** — protegido
+
+```json
+{ "plate": "ABC-123",
+  "cameraIp": "192.168.1.64",                 // opcional; o "cameraId": 12 (id de Aditum)
+  "from": "2026-11-01", "to": "2026-11-06",   // opcional; default: últimos 30 días
+  "cameras": [ { "ip": "192.168.1.64", "user": "admin", "password": "..." } ] }  // opcional
+```
+
+- `plate` se normaliza (`[A-Z0-9]`). Sin cámara se consultan todas.
+- `cameraId` se resuelve a la IP con las sincronizaciones que mandó Aditum
+  (`404` si ese id no tiene historial en el equipo).
+- `from`/`to`: fecha (`YYYY-MM-DD`; `to` cubre el día entero) o ISO 8601.
+  `400` si no parsean o `from > to`.
+- `cameras` es **opcional** y habilita la consulta en vivo a la cámara. Las
+  credenciales no se guardan ni se loguean, igual que en `/anpr-test`, y la IP
+  debe ser de la LAN (`400` si no). Con ellas se suman:
+  - el `FIND` actual (si hoy está en la lista, en qué grupo y su vigencia);
+  - el desfase del reloj de la cámara (`/ISAPI/System/time`);
+  - el log de alarmas de la cámara (`/ISAPI/ContentMgmt/logSearch`) alrededor
+    de cada lectura, para ver si hubo ALARM OUT.
+
+  Las tres corren en paralelo con un presupuesto de 45 s (nginx corta a los
+  60). Si algo no responde, sale con su `error` y el resto de la respuesta
+  sigue completa.
+
+Respuesta (`200`), abreviada:
+
+```json
+{ "plate": "ABC123",
+  "range": { "from": "...", "to": "..." }, "retentionDays": 90,
+  "summary": { "lastAdded": { "at": "...", "camera": "192.168.1.64", "change": "ADDED",
+                              "source": "SYNC", "requestId": "4711", "cameraId": "12" },
+               "lastRemoved": null, "timesAdded": 1, "timesRemoved": 0,
+               "lastRead": "...", "reads": 14, "readsAllowlist": 12, "readsOtherList": 2,
+               "otherListWhileOnAllowlist": 2, "readsNotOnList": 0,
+               "readsNotOpened": 0, "readsWithoutOpenEvidence": 12 },
+  "cameras": [ { "ip": "192.168.1.64", "cameraId": "12", "historySince": "...",
+                 "lastWrite": "...", "onListNow": true,
+                 "lastAdded": { ... }, "lastRemoved": null,
+                 "live": { "find": { "ok": true, "found": true, "match": { ... } },
+                           "time": { "skewSeconds": 3 },
+                           "alarmLog": { "supported": true, "ok": true, "alarmOutEntries": 12 } } } ],
+  "listHistory": [ { "at": "...", "camera": "...", "change": "ADDED", "source": "SYNC", "requestId": "4711" } ],
+  "syncErrors":  [ { "at": "...", "camera": "...", "kind": "FULL_SYNC", "error": "CAMERA_TIMEOUT", "requestId": "4710" } ],
+  "reads": [ { "receivedAt": "...", "capturedAt": "...", "camera": "...", "cameraName": "Entrada",
+               "plateRead": "ABC123", "list": "otherlist", "outcome": "discarded",
+               "confidence": 91, "direction": "forward",
+               "onAllowlistAtThatTime": true, "onAllowlistAtCaptureTime": null,
+               "listChangeBefore": { ... },
+               "expectedOpen": false, "opened": "unknown", "openStage": null,
+               "openEvidence": "...", "clockSkewSeconds": 1,
+               "photos": [ "/anpr-captures/20261106-081530_ABC123_..._0-licensePlatePicture.jpg" ] } ],
+  "similarReads": [ { "plate": "A8C123", "count": 3, "lists": ["otherlist"], "lastAt": "...", "photos": [ ... ] } ],
+  "findings": [ { "code": "OTHERLIST_WHILE_ON_ALLOWLIST", "severity": "high", "count": 2,
+                  "message": "...", "occurrences": [ { "at": "...", "camera": "..." } ] } ],
+  "timeline": [ { "at": "...", "stage": "LIST|SYNC_ERROR|READ|OPEN_ORDER|PHYSICAL", "camera": "...", ... } ] }
+```
+
+- `listHistory`, `summary.timesAdded/timesRemoved` y las entradas `LIST` de
+  `timeline` traen **todos** los movimientos de la lista hasta `to`, también
+  los anteriores a `from`: sin ellos no se podría decir desde cuándo estaba
+  (o no) en la lista al momento de una lectura. `from` acota lecturas, fallos
+  de sincronización y eventos IO.
+- `cameraIp` puede venir con puerto (`192.168.1.64:8000`, como se configura
+  en Aditum); el historial se guarda y consulta por host, sin puerto, porque
+  la cámara postea sus lecturas desde su IP a secas.
+- `list` de una lectura: `allowlist`, `otherlist`, `blocklist` o `sin_dato`
+  (el firmware no reportó `vehicleListName`).
+- `onAllowlistAtThatTime`: `true`/`false` según el historial a la hora en que
+  el Pi **recibió** la lectura, o `"unknown"` si no hay historial de esa
+  cámara para ese momento.
+  - Si la hora de la cámara y la del Pi difieren más de 120 s, se agrega
+    `onAllowlistAtCaptureTime`, porque la cámara pudo reenviar la lectura tarde
+    por ANR.
+  - `listChangeBefore` es la entrada o salida que lo determina.
+- `photos` solo trae las fotos que siguen en disco (`anpr-captures` las purga
+  a los `captureRetentionDays` días). Las lecturas del allow list no traen
+  foto.
+- En `timeline`, cada `READ` trae también `expectedOpen`, `opened`,
+  `openStage` y `openEvidence`. La evidencia de apertura va además como evento
+  aparte (`OPEN_ORDER`/`PHYSICAL`) solo para las lecturas del allow list, o
+  para una rechazada en la que sí hubo apertura. Que una rechazada no abra es
+  lo esperado y no genera evento.
+
+`findings` agrupa los hallazgos por código, de mayor a menor severidad:
+
+| Código | Severidad | Qué significa |
+|---|---|---|
+| `OTHERLIST_WHILE_ON_ALLOWLIST` | high | La cámara la leyó como otherList/blockList pero **estaba** en su allow list según el historial. El problema está en la cámara: vigencia de la fila, reloj o el match del firmware. Conviene repetir con `cameras` para ver la fila (`live.find`) y el reloj. |
+| `NOT_ON_LIST_AT_READ` | high | No estaba en la lista al leerla. El mensaje dice si todavía no había entrado o si la habían sacado (cuándo y por qué vía), y si entró después. |
+| `SYNC_FAILED_BEFORE_READ` | high | En las 24 h previas a una lectura rechazada falló alguna escritura en esa cámara. |
+| `READ_ALLOWLIST_NOT_OPENED` | high | Se leyó en allow list y el log de la cámara (consultado) no registra ALARM OUT ±15 s. |
+| `CAMERA_LIST_DIFFERS` | high | La cámara hoy (`FIND`) dice lo contrario que el historial. |
+| `PLATE_IN_BLOCKLIST` / `PLATE_EXPIRED_ON_CAMERA` | high | La fila está en la cámara pero en otra lista, o con la vigencia vencida. |
+| `CHANGED_OUTSIDE_ADITUM` | medium | Se detectó un cambio de esta placa hecho directo en la cámara. |
+| `ALLOWLIST_READ_NOT_IN_HISTORY` | medium | La cámara la autorizó pero el historial dice que no estaba (cambio externo o historial incompleto). |
+| `POSSIBLE_MISREAD` | medium | Lecturas de placas a un carácter de distancia o con confusiones típicas del OCR (0/O/D/Q, 1/I/L, 8/B, 5/S, 2/Z, 6/G, 7/T). |
+| `CLOCK_SKEW` / `CAMERA_CLOCK_SKEW` | medium | Reloj de la cámara corrido o lectura reenviada tarde. |
+| `NO_HISTORY` / `NO_READS` | info | Sin historial para esa fecha (anterior al despliegue) / ninguna lectura de la placa en el rango. |
+
+**Apertura: tres eventos distintos.** La respuesta nunca los mezcla:
+
+1. **Leída en allow list** (`expectedOpen: true`): la cámara debería abrir
+   ella misma, con el linkage *allow list → salida de alarma*. El Pi no
+   participa.
+2. **Orden de apertura** (`openStage: "OPEN_ORDER"`): entrada de ALARM OUT en
+   el log de la cámara. Solo con `cameras` y si el firmware lo registra.
+3. **Apertura física** (`openStage: "PHYSICAL"`): evento IO de un sensor de la
+   barrera o un lazo cableado a la ALARM IN de la cámara, notificado al Pi por
+   el mismo *Alarm Server* que las lecturas (`/anpr-event` responde
+   `{"recorded": "io"}`).
+
+`opened` es `true` con evidencia, `false` si el log de la cámara cubre la
+lectura y no hay ALARM OUT, o `"unknown"` si no hay ni sensor ni log. Una cámara
+sin SD no deja consultar su log (`alarmLog.error: "NO_STORAGE"`), así que queda
+en `"unknown"`, sin acusar una falla.
+
+**`POST /anpr-plate-history/probe`** — protegido. Body `{ip, user, password}`
+(IP de la LAN). Dice qué expone **esa** cámara para confirmar aperturas. Es de
+solo lectura y consulta:
+
+- modelo y firmware;
+- reloj y NTP;
+- salidas y entradas de alarma (con el pulso de cada salida);
+- el trigger de detección de vehículos;
+- a dónde postea sus eventos (`httpHosts`);
+- almacenamiento y capacidades del log;
+- una búsqueda de 24 h en el log;
+- `Parking/.../barrierGate`.
+
+Cada sección trae:
+- `supported`: `true` (200), `false` (404, el firmware no lo tiene) o `null`
+  (403 u otro: existe pero no responde a esa consulta);
+- el `reason` del error;
+- un `snippet` crudo.
+
+`summary`:
+
+| Campo | Significado |
+|---|---|
+| `postsTo` | `[{ip, port, url}]`: a qué equipo manda las lecturas. Debe ser este Pi y `/anpr-event` |
+| `alarmOutputs`, `alarmOutputPulseMs`, `alarmInputs` | Salidas (las que abren la aguja) con su pulso, y entradas libres para un sensor |
+| `linkageToAlarmOut` | `true` si el trigger muestra el linkage a una salida; `null` = **no visible por ISAPI**. Varios firmwares (V5.8.61) lo guardan en otro lado: no significa que la cámara no abra |
+| `hasStorage` | Hay SD o NAS montado (no basta con que el firmware los soporte) |
+| `logSearchSupported`, `logSearchError` | Si el log se puede consultar. `NO_STORAGE` = la cámara no tiene SD (`invalidMemoryCardOrNAS`) |
+| `logKnowsAlarmOut`, `logsAlarmOut` | El firmware registra `alarmOut` / hubo entradas en las últimas 24 h |
+| `canConfirmOpenOrder` | Se puede confirmar la orden de apertura (log consultable que registra `alarmOut`) |
+| `canConfirmPhysicalOpen` | Hay entradas de alarma para cablear un sensor de la barrera |
+| `barrierGateApi` | Modelos de parqueo con barrera por API |
+
+Validado contra una iDS-2CD7A46G0/P-IZHSY V5.8.61. El resultado está en
+`docs/anpr-historial-placas.md`.
 
 #### Bitácora local de placas no reconocidas (`/anpr-captures`)
 
@@ -973,7 +1168,8 @@ valor crudo si el firmware usa otro. `total` es cuántas placas tiene la cámara
 para dar contexto a un `found: false`.
 
 Todas las acciones usan el timeout largo del export/import (`ISAPI_SYNC_TIMEOUT`,
-12 s de lectura): la cámara genera el CSV **completo** antes de mandar el primer
+30 s de lectura para el export; el import escala con la lista, ver
+`import_timeout` en `anpr.py`): la cámara genera el CSV **completo** antes de mandar el primer
 byte, así que el tiempo escala con la lista aunque se consulte o cambie una
 sola placa (una cámara con ~2600 placas tarda 6–7 s en empezar a responder el
 export; `CHECK` completo ~9 s). Con el timeout normal de 2,5 s cualquier lista

@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import ipaddress
 
@@ -22,9 +22,12 @@ from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.serving import ThreadedWSGIServer
 
 from . import admin_auth, github_token, health, maintenance
-from .anpr import AnprCameraError, http_status_for, normalize_plate
+from . import anpr_camera_diag
+from .anpr import AnprCameraError, camera_host, http_status_for, normalize_plate
 from .anpr_captures import REASON_NOT_AUTHORIZED, REASON_UNREADABLE
-from .anpr_events import parse_event_xml, is_authorized
+from .anpr_events import parse_event_xml, parse_io_event_xml, is_authorized
+from .anpr_history import plate_history
+from .anpr_trace import OUTCOME_DISCARDED, OUTCOME_QUEUED, OUTCOME_UNREADABLE, iso_to_ts
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .hikvision import normalize_card_nos
@@ -129,8 +132,42 @@ def _write_token_file(token):
         raise
 
 
+def _camera_host_error(ip):
+    """None si `ip` es una direccion de la LAN (con o sin puerto); si no, el
+    mensaje de error. Los endpoints que hablan con una camara a pedido del
+    request validan esto: sin el guard el Pi seria un proxy para golpear
+    cualquier host de internet con las credenciales que le pasen (SSRF). La
+    IP puede venir con puerto (192.168.1.64:8000), que es como se configura
+    una camara detras de un NAT o en un puerto no estandar."""
+    host = ip.rsplit(":", 1)[0] if ip.count(":") == 1 else ip
+    try:
+        if not ipaddress.ip_address(host).is_private:
+            return "la IP debe ser de la red local"
+    except ValueError:
+        return "IP invalida"
+    return None
+
+
+def _parse_range_bound(value, end_of_day):
+    """'YYYY-MM-DD' o ISO 8601 -> epoch (hora local del Pi si no trae zona).
+    Una fecha sola como fin del rango cubre el dia entero."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    if len(text) == 10 and end_of_day:
+        text += "T23:59:59"
+    ts = iso_to_ts(text)
+    if ts is None:
+        raise ValueError(f"fecha invalida: {value}")
+    return ts
+
+
+PLATE_HISTORY_DEFAULT_DAYS = 30
+
+
 def create_app(settings, gates, hikvision_service, screen, leds=None,
-               anpr_service=None, anpr_store=None, anpr_captures=None):
+               anpr_service=None, anpr_store=None, anpr_captures=None,
+               anpr_trace=None):
     app = Flask(__name__)
 
     # Sesion del login admin (cookie firmada HttpOnly). El secreto se persiste
@@ -578,9 +615,10 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
 
     def _capture_unrecognized(event, source_ip, reason):
         # Bitacora local con foto (anpr_captures). Nunca puede tumbar el
-        # handler: la cola de eventos sigue aunque el disco falle.
+        # handler: la cola de eventos sigue aunque el disco falle. Devuelve
+        # el registro guardado (o None) para enlazar las fotos al historial.
         if anpr_captures is None:
-            return
+            return None
         try:
             images = _extract_event_images(request)
             declared = event.get("pictureCount")
@@ -593,9 +631,20 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                             "multipart no trajo ninguna (Content-Type=%s, %s bytes)",
                             event.get("eventUid"), declared, request.mimetype,
                             request.content_length)
-            anpr_captures.save(event, images, source_ip=source_ip, reason=reason)
+            return anpr_captures.save(event, images, source_ip=source_ip, reason=reason)
         except Exception:
             log.exception("No se pudo guardar la placa no reconocida")
+            return None
+
+    def _trace_read(event, source_ip, outcome, capture=None):
+        # Historial de la placa (anpr_trace): TODA lectura, no solo las que
+        # van a Aditum. Igual que la bitacora, nunca tumba el handler.
+        if anpr_trace is None:
+            return
+        try:
+            anpr_trace.record_read(event, source_ip, outcome, capture)
+        except Exception:
+            log.exception("No se pudo registrar la lectura en el historial")
 
     @app.route("/update-plate", methods=["POST"])
     def update_plate():
@@ -614,7 +663,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                  data.get("requestId"), action, data.get("cameraId"),
                  plate_normalized)
         results, error_code = anpr_service.update_plate(
-            action, plate_normalized, cameras)
+            action, plate_normalized, cameras,
+            context={"requestId": data.get("requestId"),
+                     "cameraId": data.get("cameraId")})
         applied = sum(1 for r in results if r["ok"])
         body = {
             "ok": error_code is None and applied > 0,
@@ -646,7 +697,10 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                       if isinstance(p, dict) and p.get("plateNormalized")]
         log.info("sync-plates: requestId=%s cameraId=%s placas=%s",
                  data.get("requestId"), data.get("cameraId"), len(normalized))
-        results, error_code = anpr_service.sync_plates(normalized, cameras)
+        results, error_code = anpr_service.sync_plates(
+            normalized, cameras,
+            context={"requestId": data.get("requestId"),
+                     "cameraId": data.get("cameraId")})
         applied = sum(1 for r in results if r["ok"])
         body = {
             "ok": error_code is None and applied > 0,
@@ -683,18 +737,30 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             return jsonify({"error": "empty body"}), 400
         event = parse_event_xml(xml_bytes)
         if event is None:
+            # No es ANPR. Si es un evento IO (sensor de la barrera en la
+            # ALARM IN de la camara) queda en el historial: es la evidencia
+            # de apertura fisica que cruza /anpr-plate-history.
+            io_event = parse_io_event_xml(xml_bytes)
+            if io_event is not None and anpr_trace is not None:
+                try:
+                    anpr_trace.record_io(io_event, source_ip)
+                except Exception:
+                    log.exception("No se pudo registrar el evento IO")
+                return jsonify({"recorded": "io"})
             return jsonify({"ignored": True})
         if event["licensePlate"] is None:
             # Placa ilegible ("unknown"): no hay nada que encolar, pero la
             # foto es justo lo que hace falta para saber que vio la camara.
-            _capture_unrecognized(event, source_ip, REASON_UNREADABLE)
+            capture = _capture_unrecognized(event, source_ip, REASON_UNREADABLE)
+            _trace_read(event, source_ip, OUTCOME_UNREADABLE, capture)
             log.info("Evento ANPR sin placa legible desde=%s", source_ip)
             return jsonify({"ignored": "placa ilegible"})
+        capture = None
         if not is_authorized(event):
             # Fuera del allow list: se guarda con foto haya o no filtro, para
             # poder revisar en sitio si fue una lectura mala de una placa
             # que si esta autorizada.
-            _capture_unrecognized(event, source_ip, REASON_NOT_AUTHORIZED)
+            capture = _capture_unrecognized(event, source_ip, REASON_NOT_AUTHORIZED)
         # Switch anpr.onlyAuthorized (default true): solo se encolan lecturas
         # del allow list (whiteList). En false se encolan todas para revisar.
         if settings.anpr_only_authorized and not is_authorized(event):
@@ -706,6 +772,7 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
             # purga se la lleva igual que a las confirmadas) para poder
             # responder desde /admin por que una placa no esta en la bitacora.
             anpr_store.record_discarded(event, source_ip=source_ip)
+            _trace_read(event, source_ip, OUTCOME_DISCARDED, capture)
             log.info("Evento ANPR descartado por allowlist: placa=%s lista=%r "
                      "desde=%s", event["licensePlate"], event["vehicleList"],
                      source_ip)
@@ -713,6 +780,7 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                             "vehicleList": event["vehicleList"]})
         anpr_store.record_list_outcome(event["vehicleList"], discarded=False)
         queued = anpr_store.enqueue(event, source_ip=source_ip)
+        _trace_read(event, source_ip, OUTCOME_QUEUED, capture)
         log.info("Evento ANPR %s: placa=%s capturado=%s desde=%s (%s)",
                  event["eventUid"], event["licensePlate"], event["capturedAt"],
                  source_ip, "encolado" if queued else "duplicado ignorado")
@@ -731,17 +799,11 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         action = (data.get("action") or "CHECK").upper()
         if not ip:
             return jsonify({"error": "ip requerida"}), 400
-        # La camara vive en la LAN del condominio. Sin este guard el endpoint
-        # convierte al Pi en un proxy para golpear cualquier host de internet
-        # con las credenciales que le pasen (SSRF). Se valida solo el host:
-        # la IP puede venir con puerto (192.168.1.64:8000), que es como se
-        # configura una camara detras de un NAT o en un puerto no estandar.
-        host = ip.rsplit(":", 1)[0] if ip.count(":") == 1 else ip
-        try:
-            if not ipaddress.ip_address(host).is_private:
-                return jsonify({"error": "la IP debe ser de la red local"}), 400
-        except ValueError:
-            return jsonify({"error": "IP invalida"}), 400
+        # La camara vive en la LAN del condominio (anti-SSRF, ver
+        # _camera_host_error).
+        host_error = _camera_host_error(ip)
+        if host_error:
+            return jsonify({"error": host_error}), 400
         if action not in ("CHECK", "LIST", "FIND", "ADD", "DELETE"):
             return jsonify(
                 {"error": "action debe ser CHECK, LIST, FIND, ADD o DELETE"}), 400
@@ -772,7 +834,9 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                          "encontrada" if result["found"] else "no esta")
                 return jsonify(dict(result, ok=True, action=action,
                                     plateNormalized=plate))
-            detail = client.apply_plate(ip, user, password, action, plate)
+            # Pasa por el servicio para que el cambio manual quede en el
+            # historial de la placa (source TEST).
+            detail = anpr_service.apply_test_plate(ip, user, password, action, plate)
             log.info("anpr-test %s %s en %s -> %s", action, plate, ip, detail)
             return jsonify({"ok": True, "action": action, "plateNormalized": plate,
                             "detail": detail})
@@ -803,6 +867,86 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
         deleted = anpr_store.delete_pending()
         log.warning("Cola ANPR: %s pendientes borradas via /anpr-status/pending", deleted)
         return jsonify({"deleted": deleted})
+
+    # ------------------------------------------------------------
+    # Historial de UNA placa (anpr_trace + anpr_history): cuando entro y
+    # salio de la lista de la camara, cada lectura y en que lista, si estaba
+    # en el allowlist en ese momento y si hay evidencia de apertura. POST
+    # porque puede traer credenciales de camara (no se guardan ni loguean).
+    # ------------------------------------------------------------
+
+    def _diag_credentials(raw, target_ips):
+        """cameras[] del request -> credenciales validas para la consulta en
+        vivo (solo IPs de la LAN y, si se pidio una camara, solo esa)."""
+        creds = []
+        for camera in raw or []:
+            if not isinstance(camera, dict):
+                continue
+            ip = (camera.get("ip") or "").strip()
+            if not ip:
+                continue
+            host_error = _camera_host_error(ip)
+            if host_error:
+                raise ValueError(f"{ip}: {host_error}")
+            if target_ips and camera_host(ip) not in target_ips:
+                continue
+            creds.append({"ip": ip, "user": camera.get("user") or "admin",
+                          "password": camera.get("password") or ""})
+        return creds
+
+    @app.route("/anpr-plate-history", methods=["POST"])
+    def anpr_plate_history():
+        if anpr_trace is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
+        data = request.get_json(silent=True) or {}
+        plate = normalize_plate(data.get("plate"))
+        if not plate:
+            return jsonify({"error": "plate requerida"}), 400
+        camera_ips = None
+        camera_ip = camera_host(data.get("cameraIp"))
+        if camera_ip:
+            camera_ips = [camera_ip]
+        elif data.get("cameraId") not in (None, ""):
+            camera_ips = anpr_trace.camera_ips_for_id(data.get("cameraId"))
+            if not camera_ips:
+                return jsonify({"error": "ese cameraId no tiene historial en "
+                                         "este equipo"}), 404
+        try:
+            until_ts = _parse_range_bound(data.get("to"), end_of_day=True) or time.time()
+            since_ts = (_parse_range_bound(data.get("from"), end_of_day=False)
+                        or until_ts - PLATE_HISTORY_DEFAULT_DAYS * 86400)
+            credentials = _diag_credentials(data.get("cameras"), camera_ips)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if since_ts > until_ts:
+            return jsonify({"error": "from debe ser anterior a to"}), 400
+        log.info("anpr-plate-history: placa=%s camaras=%s rango=%s..%s en_vivo=%s",
+                 plate, camera_ips or "todas", int(since_ts), int(until_ts),
+                 [c["ip"] for c in credentials])
+        client = anpr_service.client if anpr_service is not None else None
+        result = plate_history(anpr_trace, plate, camera_ips, since_ts, until_ts,
+                               client=client, credentials=credentials,
+                               captures=anpr_captures)
+        return jsonify(result)
+
+    @app.route("/anpr-plate-history/probe", methods=["POST"])
+    def anpr_plate_history_probe():
+        # Que expone ESTA camara para confirmar aperturas (log de ALARM OUT,
+        # salidas/entradas IO, linkage, SD, barrierGate). Solo lectura.
+        if anpr_service is None:
+            return jsonify({"error": "ANPR deshabilitado en este dispositivo"}), 404
+        data = request.get_json(silent=True) or {}
+        ip = (data.get("ip") or "").strip()
+        if not ip:
+            return jsonify({"error": "ip requerida"}), 400
+        host_error = _camera_host_error(ip)
+        if host_error:
+            return jsonify({"error": host_error}), 400
+        report = anpr_camera_diag.probe(anpr_service.client, ip,
+                                        data.get("user") or "admin",
+                                        data.get("password") or "")
+        log.info("anpr-plate-history/probe %s -> %s", ip, report.get("summary"))
+        return jsonify(dict(report, ip=ip))
 
     # ------------------------------------------------------------
     # Bitacora local de placas NO reconocidas (anpr_captures): JSON + fotos
