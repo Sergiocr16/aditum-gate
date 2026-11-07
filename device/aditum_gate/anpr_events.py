@@ -40,6 +40,12 @@ Decisiones clave:
     `purgeDays` dias, o al instante si `purgeDays` es 0 (unica excepcion al
     no-DELETE: es una cola, no historial). Lo PENDIENTE no se borra nunca:
     se reintenta hasta que Aditum lo confirme.
+  - Lecturas repetidas: la camara ya no filtra la misma placa durante 1 min
+    (para que una vuelta en U cuente), asi que puede disparar dos o tres veces
+    por una sola pasada. El filtro de anpr_dedupe colapsa esas repeticiones
+    ANTES de encolar; las repetidas quedan como filas 'duplicate' (nunca se
+    reenvian, la purga se las lleva) para poder ver desde /admin que la camara
+    disparo mas de una vez.
 """
 import logging
 import sqlite3
@@ -300,6 +306,15 @@ class AnprEventStore:
         /admin, sin tener que entrar por SSH a leer el log."""
         return self._insert(event, source_ip, "discarded")
 
+    def record_duplicate(self, event, source_ip=None):
+        """Guarda una lectura que el filtro de repetidas (anpr_dedupe) colapso
+        con la anterior de la misma placa.
+
+        Fila 'duplicate': NO se reenvia nunca y la purga se la lleva igual que
+        a las confirmadas. Es la evidencia de que la camara disparo mas de una
+        vez por la misma pasada; en /admin se ve como contador."""
+        return self._insert(event, source_ip, "duplicate")
+
     def record_list_outcome(self, vehicle_list, discarded):
         """Suma una lectura al contador de su <vehicleListName>.
 
@@ -369,19 +384,21 @@ class AnprEventStore:
 
     def purge_processed(self, days):
         """Borra lo que ya no tiene nada pendiente que hacer: confirmadas por
-        Aditum y descartadas por el filtro. Lo PENDIENTE no se toca nunca.
+        Aditum, descartadas por el filtro de allowlist y repetidas colapsadas
+        por el filtro de lecturas repetidas. Lo PENDIENTE no se toca nunca.
 
-        Las descartadas no tienen sent_at, asi que su edad se mide por
-        received_at."""
+        Las descartadas y repetidas no tienen sent_at, asi que su edad se
+        mide por received_at."""
         cutoff = (datetime.now().astimezone() - timedelta(days=days)) \
             .isoformat(timespec="seconds")
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM anpr_event WHERE status IN ('sent', 'discarded') "
+                "DELETE FROM anpr_event "
+                "WHERE status IN ('sent', 'discarded', 'duplicate') "
                 "AND COALESCE(sent_at, received_at) < ?", (cutoff,))
             if cursor.rowcount:
                 log.info("Purga ANPR: %s eventos procesados eliminados "
-                         "(confirmados + descartados)", cursor.rowcount)
+                         "(confirmados + descartados + repetidos)", cursor.rowcount)
             return cursor.rowcount
 
     def stats(self):
@@ -401,12 +418,13 @@ class AnprEventStore:
             lists = [dict(r) for r in conn.execute(
                 "SELECT vehicle_list, queued, discarded, last_at "
                 "FROM anpr_list_stat ORDER BY queued + discarded DESC")]
-            # La cola y los descartes van por separado: si se mezclaran, el
-            # ruido de la calle (otherList) taparia las lecturas que importan.
+            # La cola, los descartes y las repetidas van por separado: si se
+            # mezclaran, el ruido de la calle (otherList) y los disparos
+            # dobles de la camara taparian las lecturas que importan.
             last = conn.execute(
                 "SELECT event_uid, license_plate, captured_at, status, attempts,"
                 " last_error, source_ip, retry_after, vehicle_list "
-                "FROM anpr_event WHERE status <> 'discarded' "
+                "FROM anpr_event WHERE status NOT IN ('discarded', 'duplicate') "
                 "ORDER BY id DESC LIMIT 5").fetchall()
             last_discarded = conn.execute(
                 "SELECT license_plate, captured_at, received_at, source_ip,"
@@ -414,6 +432,9 @@ class AnprEventStore:
                 "ORDER BY id DESC LIMIT 10").fetchall()
             discarded_stored = conn.execute(
                 "SELECT COUNT(*) FROM anpr_event WHERE status='discarded'"
+            ).fetchone()[0]
+            duplicates = conn.execute(
+                "SELECT COUNT(*) FROM anpr_event WHERE status='duplicate'"
             ).fetchone()[0]
             return {
                 "pending": pending,
@@ -424,6 +445,9 @@ class AnprEventStore:
                 # mantiene aunque la purga ya se haya llevado las filas.
                 "discarded": sum(r["discarded"] for r in lists),
                 "discardedStored": discarded_stored,
+                # Lecturas repetidas colapsadas por anpr_dedupe que siguen
+                # guardadas (la purga se las lleva a los purgeDays dias).
+                "duplicates": duplicates,
                 "lists": lists,
                 "recent": [dict(r) for r in last],
                 "recentDiscarded": [dict(r) for r in last_discarded],

@@ -689,6 +689,16 @@
                 eventos de apertura. Es lo que consulta <b>Historial de una placa</b>.</div>
             </div>
           </div>
+          <div class="subbox" style="margin-top:12px">
+            <div class="hsub">Lecturas repetidas</div>
+            <div class="field" style="margin:0">
+              <label for="f_anprDupWindow">Ignorar la misma placa durante <span class="muted">(segundos)</span> <span class="key">duplicateWindowSeconds</span></label>
+              <input type="number" id="f_anprDupWindow" min="0" max="60" value="15" style="max-width:200px">
+              <div class="hint">Si la misma cámara vuelve a leer la misma placa dentro de este lapso (el carro frena en la aguja
+                y la cámara dispara dos veces) se envía a Aditum <b>un solo evento</b>. La cámara ya no filtra repetidas, para que
+                una vuelta en U dentro del minuto sí cuente. <b>0</b> = enviar todas las lecturas.</div>
+            </div>
+          </div>
         </div>
 
         <!-- 3. Operacion: la cola de envios -->
@@ -1167,6 +1177,7 @@
     setVal('f_anprCaptureDays', anpr.captureRetentionDays !== undefined ? anpr.captureRetentionDays : 15);
     setVal('f_anprCaptureMb', anpr.captureMaxMb !== undefined ? anpr.captureMaxMb : 500);
     setVal('f_anprHistoryDays', anpr.historyDays !== undefined ? anpr.historyDays : HISTORY_DAYS_DEFAULT);
+    setVal('f_anprDupWindow', anpr.duplicateWindowSeconds !== undefined ? anpr.duplicateWindowSeconds : DUP_WINDOW_DEFAULT);
     refreshAnprUrls();
 
     applyConditionalVisibility();
@@ -1509,6 +1520,7 @@
         '<span class="chip">Ya confirmadas: <b>' + d.sent + '</b></span>' +
         (d.failed ? '<span class="chip bad">Descartadas por Aditum: <b>' + d.failed + '</b></span>' : '') +
         (d.deferred ? '<span class="chip bad">Aditum está rechazando el envío: <b>' + d.deferred + '</b> en pausa</span>' : '') +
+        (d.duplicates ? '<span class="chip">Repetidas ignoradas: <b>' + d.duplicates + '</b></span>' : '') +
         '</div>';
       // Estado del filtro de allowlist. Las descartadas no quedan en la
       // cola, asi que sin estos contadores no hay forma de saber si el
@@ -1578,6 +1590,7 @@
 
   // ---------- Historial de una placa (/anpr-plate-history) ----------
   const HISTORY_DAYS_DEFAULT = 90;
+  const DUP_WINDOW_DEFAULT = 15;
   const HIST_SOURCE = {
     SYNC: 'envío de Aditum', UPDATE: 'alta/baja suelta de Aditum', TEST: 'prueba desde este editor',
     BASELINE: 'ya estaba al empezar el historial', EXTERNAL: 'cambio hecho directo en la cámara',
@@ -2181,6 +2194,12 @@
     if (historyDays !== HISTORY_DAYS_DEFAULT || (state.anpr && state.anpr.historyDays !== undefined)) {
       cfg.anpr.historyDays = historyDays;
     }
+    // Igual que historyDays: una config con la clave no la acepta un equipo
+    // con una version anterior (schema estricto).
+    const dupWindow = toInt($('f_anprDupWindow').value, DUP_WINDOW_DEFAULT);
+    if (dupWindow !== DUP_WINDOW_DEFAULT || (state.anpr && state.anpr.duplicateWindowSeconds !== undefined)) {
+      cfg.anpr.duplicateWindowSeconds = dupWindow;
+    }
 
     // Poller pull de respaldo: fijo, sin opciones en la UI
     cfg.polling = { enabled: true, intervalSeconds: 40 };
@@ -2219,6 +2238,7 @@
     if (cfg.hikvision.nightlyCleanupHour < 0 || cfg.hikvision.nightlyCleanupHour > 23) errs.push('nightlyCleanupHour debe estar entre 0 y 23');
     if (cfg.anpr.purgeDays < 0 || cfg.anpr.purgeDays > 90) errs.push('Los días de retención de lecturas deben estar entre 0 y 90');
     if (cfg.anpr.historyDays !== undefined && (cfg.anpr.historyDays < 7 || cfg.anpr.historyDays > 365)) errs.push('Los días del historial de placas deben estar entre 7 y 365');
+    if (cfg.anpr.duplicateWindowSeconds !== undefined && (cfg.anpr.duplicateWindowSeconds < 0 || cfg.anpr.duplicateWindowSeconds > 60)) errs.push('La ventana de lecturas repetidas debe estar entre 0 y 60 segundos');
     return errs;
   }
 

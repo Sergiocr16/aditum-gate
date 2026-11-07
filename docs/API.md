@@ -605,7 +605,7 @@ que hablan con la cámara (`/update-plate`, `/sync-plates`, `/anpr-test`) y
 |---|---|---|---|
 | `/update-plate` | POST | token | Alta o baja de UNA placa. Contrato de `AnprPlateSyncDispatchService` (TAR-1033) |
 | `/sync-plates` | POST | token | Reemplazo COMPLETO de la lista de la cámara (TAR-1037) |
-| `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola (y solo del allow list si `anpr.onlyAuthorized`): no abre portones ni toca configuración |
+| `/anpr-event` | POST | **público** + filtro por IP | Lo postea la cámara (no sabe mandar bearer). Solo encola (solo del allow list si `anpr.onlyAuthorized`, y una sola vez por placa dentro de `anpr.duplicateWindowSeconds`): no abre portones ni toca configuración |
 | `/anpr-status` | GET | token | Pendientes/enviados de la cola y los últimos 5 eventos. Lo consume el editor local y sirve para verificar un cutover |
 | `/anpr-status/pending` | DELETE | token | Borra las lecturas **pendientes** de enviar (no toca las confirmadas/descartadas). Botón "Borrar pendientes" del editor, para limpiar tras pruebas o un cutover |
 | `/anpr-captures` | GET / DELETE | token | **Bitácora local de placas no reconocidas**: lecturas ilegibles o fuera del allow list, con las fotos que mandó la cámara. `DELETE` la vacía. Ver sección abajo |
@@ -727,7 +727,7 @@ con cuerpo vacío queda solo el código.
 ```json
 {
   "pending": 6, "sent": 128, "failed": 0, "deferred": 1,
-  "discarded": 12, "discardedStored": 9, "onlyAuthorized": true,
+  "discarded": 12, "discardedStored": 9, "duplicates": 3, "onlyAuthorized": true,
   "lists": [
     { "vehicle_list": "whitelist", "queued": 128, "discarded": 0,
       "last_at": "2026-08-24T23:48:55-06:00" },
@@ -760,6 +760,11 @@ tráfico de calle (`otherList`) tapara las lecturas que importan. `recent` exclu
 
 No confundir `discarded` con `discardedStored`: el primero es el **acumulado histórico** del contador
 `lists`, que sobrevive a la purga; el segundo, cuántas filas hay ahora en la ventana de retención.
+
+`duplicates` son las lecturas **repetidas** que el Pi colapsó con la anterior de la misma placa
+(ver *Lecturas repetidas de la misma placa* más abajo): filas `status: "duplicate"` que nunca se
+reenvían, no cuentan en `lists` (no fueron ni encoladas ni descartadas por el filtro de allowlist),
+`recent` las excluye igual que a las descartadas, y la purga se las lleva a los `purgeDays` días.
 
 **`lists` es lo que hace verificable el filtro de allowlist.** Cuenta cada lectura recibida por el
 `<vehicleListName>` que reportó la cámara y qué se hizo con ella. Hace falta porque una lectura
@@ -806,6 +811,26 @@ allowList/blockList). El Pi acepta los dos como autorizadas — comparacion en
 minusculas, ver `ALLOW_LIST_NAMES` en `anpr_events.py`. Cualquier otro valor
 (`blackList`, `blockList`, `otherList`, un nombre localizado) se descarta.
 
+**Lecturas repetidas de la misma placa.** Las cámaras traían un filtro propio que
+no volvía a reportar una placa durante 1 minuto; se quitó a propósito para que un
+carro que da vuelta en U y vuelve a pasar por la aguja dentro de ese minuto sí se
+lea de nuevo. A cambio, una sola pasada puede llegar como dos o tres eventos
+seguidos (el carro frena en la aguja, avanza, la cámara dispara otra vez). El Pi
+los colapsa: si la **misma cámara** vuelve a leer la **misma placa** (normalizada,
+`ABC-123` = `ABC123`) dentro de `anpr.duplicateWindowSeconds` (default **15 s**,
+0 = apagado, máx. 60), solo la primera lectura se encola; las demás responden
+`200 {"ignored": "placa repetida", "secondsSinceLast": 4.2, "windowSeconds": 15}`,
+quedan como filas `status: "duplicate"` (contador `duplicates` en `/anpr-status`,
+nunca se reenvían, la purga se las lleva) y en el historial de la placa con
+`outcome: "duplicate"`. La ventana es **deslizante**: cada repetida la renueva, así
+que un carro detenido en la aguja que se lee cada pocos segundos es un solo
+evento; la vuelta en U sigue contando porque entre una pasada y la otra hay un
+silencio mayor que la ventana. Se aplica **después** del filtro de allowlist (una
+lectura descartada no arma la ventana) y por cámara (entrada y salida del mismo
+Pi son eventos distintos). Es en memoria: tras un reinicio del servicio puede
+pasar un duplicado. El reintento de la cámara con el mismo `UUID` sigue siendo
+idempotente por `eventUid`, como antes.
+
 **Configuración en el editor local** (`/admin` → **ANPR**). Esa pantalla concentra
 las dos patas del flujo: la **URL de Aditum** a la que se envían las lecturas
 (`api.baseUrl`, solo lectura), la **URL que hay que configurarle a la cámara**
@@ -817,7 +842,7 @@ enviarse.
 ```json
 "anpr": { "enabled": true, "purgeDays": 7,
           "captureUnrecognized": true, "captureRetentionDays": 15, "captureMaxMb": 500,
-          "historyDays": 90 }
+          "historyDays": 90, "duplicateWindowSeconds": 15 }
 ```
 
 `purgeDays` rige por igual para las confirmadas y las descartadas: una sola

@@ -118,6 +118,10 @@ class Settings:
         # Historial de placas (anpr_trace): entradas/salidas de la lista de
         # la camara, todas las lecturas y eventos IO, para /anpr-plate-history.
         self.anpr_history_days = anpr.get("historyDays", 90)
+        # Lecturas repetidas (anpr_dedupe): la misma placa leida de nuevo por
+        # la misma camara dentro de esta ventana (segundos, deslizante) se
+        # colapsa en un solo evento hacia Aditum. 0 = enviar todas.
+        self.anpr_duplicate_window_seconds = anpr.get("duplicateWindowSeconds", 15)
 
 
 def load_settings():

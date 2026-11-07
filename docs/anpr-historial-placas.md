@@ -149,7 +149,7 @@ de la cámara, y hoy por diseño no lo hace.
 
 | Dato | Dónde | Hasta cuándo |
 |---|---|---|
-| Lecturas allowlist / descartadas | `anpr_event` del Pi (`/anpr-status`) | `purgeDays` (7 días) |
+| Lecturas allowlist / descartadas / repetidas | `anpr_event` del Pi (`/anpr-status`) | `purgeDays` (7 días) |
 | Lecturas no reconocidas con foto | `anpr-captures` del Pi | 15 días / 500 MB |
 | Lecturas recibidas por Aditum | `anpr_camera_event` en Aditum | Sin purga |
 | Registro y cambios del carro | `bitacora_acciones` en Aditum (tipo 9) | Sin purga |

@@ -50,6 +50,9 @@ REMOVED = "REMOVED"
 OUTCOME_QUEUED = "queued"
 OUTCOME_DISCARDED = "discarded"
 OUTCOME_UNREADABLE = "unreadable"
+# Repetida: la misma camara volvio a leer la misma placa dentro de la ventana
+# anpr.duplicateWindowSeconds; no se envio a Aditum (ver anpr_dedupe).
+OUTCOME_DUPLICATE = "duplicate"
 
 # Tope de filas que devuelve una consulta: protege a un equipo modesto de una
 # respuesta enorme (una placa normal tiene decenas de lecturas al mes).
