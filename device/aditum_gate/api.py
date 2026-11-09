@@ -25,9 +25,11 @@ from . import admin_auth, github_token, health, maintenance
 from . import anpr_camera_diag
 from .anpr import AnprCameraError, camera_host, http_status_for, normalize_plate
 from .anpr_captures import REASON_NOT_AUTHORIZED, REASON_UNREADABLE
+from .anpr_dedupe import RecentPlateFilter
 from .anpr_events import parse_event_xml, parse_io_event_xml, is_authorized
 from .anpr_history import plate_history
-from .anpr_trace import OUTCOME_DISCARDED, OUTCOME_QUEUED, OUTCOME_UNREADABLE, iso_to_ts
+from .anpr_trace import (OUTCOME_DISCARDED, OUTCOME_DUPLICATE, OUTCOME_QUEUED,
+                         OUTCOME_UNREADABLE, iso_to_ts)
 from .auth import init_auth
 from .config_agent import SUPPORTED_SCHEMA_VERSION, apply_config, restart_process
 from .hikvision import normalize_card_nos
@@ -167,8 +169,13 @@ PLATE_HISTORY_DEFAULT_DAYS = 30
 
 def create_app(settings, gates, hikvision_service, screen, leds=None,
                anpr_service=None, anpr_store=None, anpr_captures=None,
-               anpr_trace=None):
+               anpr_trace=None, anpr_dedupe=None):
     app = Flask(__name__)
+
+    # Filtro de lecturas repetidas de la misma placa (anpr_dedupe). Se arma
+    # desde la config salvo que el caller pase uno (tests, reloj controlado).
+    if anpr_dedupe is None and anpr_store is not None:
+        anpr_dedupe = RecentPlateFilter(settings.anpr_duplicate_window_seconds)
 
     # Sesion del login admin (cookie firmada HttpOnly). El secreto se persiste
     # fuera del repo; sin HTTPS en el Pi, la cookie no es Secure pero si HttpOnly.
@@ -778,6 +785,24 @@ def create_app(settings, gates, hikvision_service, screen, leds=None,
                      source_ip)
             return jsonify({"ignored": "no autorizada",
                             "vehicleList": event["vehicleList"]})
+        # Lecturas repetidas (anpr_dedupe): la camara ya no filtra la misma
+        # placa durante 1 min (para que una vuelta en U cuente), asi que una
+        # sola pasada puede llegar como dos o tres eventos seguidos. Dentro de
+        # la ventana solo el primero va a Aditum; el resto queda como fila
+        # 'duplicate' y en el historial. Va DESPUES del filtro de allowlist:
+        # una lectura descartada no arma la ventana.
+        repeated = (anpr_dedupe.repeated_within(event["licensePlate"], source_ip)
+                    if anpr_dedupe is not None else None)
+        if repeated is not None:
+            anpr_store.record_duplicate(event, source_ip=source_ip)
+            _trace_read(event, source_ip, OUTCOME_DUPLICATE, capture)
+            log.info("Evento ANPR %s ignorado: placa %s leida de nuevo %.1f s despues "
+                     "de la anterior (ventana %s s) desde=%s",
+                     event["eventUid"], event["licensePlate"], repeated,
+                     anpr_dedupe.window_seconds, source_ip)
+            return jsonify({"ignored": "placa repetida", "eventUid": event["eventUid"],
+                            "secondsSinceLast": round(repeated, 1),
+                            "windowSeconds": anpr_dedupe.window_seconds})
         anpr_store.record_list_outcome(event["vehicleList"], discarded=False)
         queued = anpr_store.enqueue(event, source_ip=source_ip)
         _trace_read(event, source_ip, OUTCOME_QUEUED, capture)

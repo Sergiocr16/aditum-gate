@@ -124,7 +124,8 @@
         "captureUnrecognized": { "type": "boolean", "default": true, "description": "true (default): cada lectura NO reconocida (placa ilegible o fuera del allow list) se guarda en la Pi con la foto que manda la camara (anpr-captures/), para diagnosticar en sitio que vio la camara. false: no se guarda nada" },
         "captureRetentionDays": { "type": "integer", "minimum": 1, "maximum": 90, "default": 15, "description": "Dias que se conservan las lecturas no reconocidas y sus fotos antes de borrarlas automaticamente" },
         "captureMaxMb": { "type": "integer", "minimum": 10, "maximum": 4000, "default": 500, "description": "Tope en MB de la bitacora de placas no reconocidas: al superarlo se borran las mas viejas aunque no hayan cumplido la retencion (protege la SD de la Pi)" },
-        "historyDays": { "type": "integer", "minimum": 7, "maximum": 365, "default": 90, "description": "Dias que se conserva el historial de placas (entradas y salidas de la lista de la camara, todas las lecturas y eventos IO) que consulta /anpr-plate-history" }
+        "historyDays": { "type": "integer", "minimum": 7, "maximum": 365, "default": 90, "description": "Dias que se conserva el historial de placas (entradas y salidas de la lista de la camara, todas las lecturas y eventos IO) que consulta /anpr-plate-history" },
+        "duplicateWindowSeconds": { "type": "integer", "minimum": 0, "maximum": 60, "default": 15, "description": "Segundos durante los que una nueva lectura de la MISMA placa por la MISMA camara se considera repetida y no se envia a Aditum (la camara ya no filtra repetidas, para que una vuelta en U dentro del minuto si cuente). Ventana deslizante: cada repetida la renueva. 0 = enviar todas las lecturas" }
       }
     },
     "polling": {
